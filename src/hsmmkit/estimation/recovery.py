@@ -549,7 +549,7 @@ def _coefficient_checks(
 
 
 def run_scenario(
-    name: str, seed: int, t_len: int | None = None, *, restarts: int = RESTARTS
+    name: str, seed: int, t_len: int | None = None, *, restarts: int = RESTARTS, device: str = "cpu"
 ) -> RecoveryReport:
     """Simulate `name`'s truth model at `seed`, MAP-fit it, and check every applicable tolerance.
 
@@ -565,7 +565,9 @@ def run_scenario(
     data = _simulate(scenario, spec, theta_star, seed, t)
 
     cfg = EstimationSection(
-        restarts=restarts, init=["rollvol_kmeans", "lattice_jitter", "random"], device="cpu"
+        restarts=restarts,
+        init=["rollvol_kmeans", "lattice_jitter", "random"],
+        device=device,
     )
     result = fit(spec, data, cfg, seed)
 

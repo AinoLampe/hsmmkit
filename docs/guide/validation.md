@@ -124,3 +124,16 @@ print(suite.passed, suite.n_pass, suite.categories)
 The `T=5000` smoke run does not assert the sojourn or jump tolerances (see *Sample size*); it asserts the sigma category, which held in 4-5 of 5 seeds in every scenario at that size (the smoke test and one full `T=20000` scenario together ran in 17 minutes). The tests in
 `tests/unit/test_e5_t05a_recovery_smoke.py` run the same harness at a tiny `T` in the default (non-`slow`)
 suite, to keep coverage up without paying for the full cost.
+
+## `regimekit selftest`: a quick check of the installation
+
+`regimekit selftest` takes about 80 s on a Windows dev CPU (limit: two minutes) and answers "does estimation work on this machine and
+backend?". It simulates scenario 1 (`gbm_negbin`) at `T=1500` with two restarts and one seed
+(`--seed`; `--device cpu|gpu|auto`), fits it **twice**, and prints the backend (`jax` version, device,
+x64), a truth / estimate / tolerance table, and the determinism result. `--full` runs all six scenarios.
+
+The exit code rests on **non-statistical checks only**: every fitted value is finite and the second fit
+reproduces the first fit's unconstrained vector `u` bit for bit. A failure exits 4 (`NumericalError`)
+and names the failing scenario and rows. The table is information: at `T=1500` a path has about 15-20 regime visits, far
+below the roughly 250 the sojourn and jump tolerances need (see above), so even a perfect estimator misses
+them in most seeds. Judge recovery with the recovery suite at its attainable size, not with `selftest`.

@@ -27,6 +27,7 @@ from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.engine.explicit_duration import ExplicitDurationEngine
 from regimekit.estimation.report import diagnose
 from regimekit.estimation.results import FitResult
+from regimekit.estimation.selftest import SelftestResult, run_selftest
 from regimekit.evaluation.backtest import run_backtest
 from regimekit.evaluation.compare import CompareEntry, check_snapshots, comparison_table, render_markdown
 from regimekit.evaluation.report import build_report, versions
@@ -52,7 +53,14 @@ from regimekit.persistence.results import (
 from regimekit.persistence.store import ModelStore
 from regimekit.statespace.builders import build_expanded, build_explicit
 from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
-from regimekit.utils.errors import EXIT_CODES, ConfigError, DataError, PersistenceError, RegimekitError
+from regimekit.utils.errors import (
+    EXIT_CODES,
+    ConfigError,
+    DataError,
+    NumericalError,
+    PersistenceError,
+    RegimekitError,
+)
 from regimekit.utils.logging import configure_logging, get_logger
 from regimekit.utils.rng import PURPOSE_SIMULATE, key_for
 
@@ -797,6 +805,53 @@ def compare_cmd(
             reuse=reuse,
             metrics=metric or None,
         )
+    except RegimekitError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=EXIT_CODES.get(type(exc), 1)) from exc
+
+
+def _selftest_lines(result: SelftestResult) -> list[str]:
+    """The printed report: backend, per-scenario information table, determinism, verdict."""
+    lines = [
+        f"backend: {result.backend}",
+        f"selftest: seed {result.seed}, T={result.t_len}, restarts={result.restarts}",
+    ]
+    for run in result.runs:
+        report = run.report
+        lines.append(f"scenario {report.scenario}  (statistical rows are informational at this size)")
+        lines.append(f"  {'parameter':<28}{'truth':>10}{'estimate':>12}  {'tolerance':<30}within")
+        for c in report.checks:
+            within = "yes" if c.passed else ("no" if c.evaluated else "n/a")
+            lines.append(f"  {c.name:<28}{c.truth:>10.4g}{c.estimate:>12.4g}  {c.rule:<30}{within}")
+        lines.append(f"  all fitted values finite: {'yes' if run.finite else 'NO'}")
+        lines.append(
+            f"  determinism (bitwise u over two fits): {'identical' if run.deterministic else 'DIFFERS'}"
+        )
+    lines.append("selftest " + ("passed" if result.passed else "FAILED"))
+    return lines
+
+
+@app.command("selftest")
+def selftest_cmd(
+    full: bool = typer.Option(
+        False, "--full/--quick", help="--quick (default): scenario gbm_negbin; --full: all six scenarios."
+    ),
+) -> None:
+    """Fit simulated data twice on this backend; exit 4 unless the fits are finite and reproducible."""
+    try:
+        configure_logging(_global_options.log_level or "INFO")
+        result = run_selftest(
+            seed=_global_options.seed if _global_options.seed is not None else 0,
+            full=full,
+            device=_global_options.device or "cpu",
+        )
+        for line in _selftest_lines(result):
+            typer.echo(line)
+        if not result.passed:
+            failing = [f"{r.report.scenario}: {c.line()}" for r in result.runs for c in r.non_finite_rows()]
+            bad = [r.report.scenario for r in result.runs if not r.passed]
+            detail = "; ".join(failing) if failing else "non-reproducible fit"
+            raise NumericalError(f"selftest failed for {', '.join(bad)} ({detail})")
     except RegimekitError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=EXIT_CODES.get(type(exc), 1)) from exc
