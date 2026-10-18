@@ -1,0 +1,416 @@
+"""Data contracts: the only shared types between the data layer and the model layer (FR-D07).
+
+`PreparedDataset` is the sole contract the model layer (`model`, `statespace`, `engine`,
+`estimation`, `inference`) may import from `regimekit.data` (the layer rule, overview §4.3).
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from dataclasses import dataclass, field
+from typing import Any, Literal
+
+import jax
+import numpy as np
+
+from regimekit.utils.errors import DataError
+from regimekit.utils.typing import Array
+
+Clock = Literal["trading", "calendar", "steps"]
+Support = Literal["real", "count", "binary", "categorical"]
+
+
+def _is_float_dtype(dtype: np.dtype[Any]) -> bool:
+    return np.issubdtype(dtype, np.floating)
+
+
+def _array_equal(a: np.ndarray | jax.Array | None, b: np.ndarray | jax.Array | None) -> bool:
+    if a is None or b is None:
+        return a is b
+    return bool(np.array_equal(np.asarray(a), np.asarray(b)))
+
+
+@dataclass(frozen=True, eq=False)
+class ObservationSet:
+    """Raw, per-provider observations before alignment (data layer only)."""
+
+    symbols: tuple[str, ...]
+    times: np.ndarray  # (T0,) datetime64[ns], strictly increasing
+    prices: np.ndarray  # (T0, M) float64
+    interval: Literal["1h", "1d", "1wk", "1mo"]
+    adjusted: bool
+    provider: str
+    snapshot_id: str
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __eq__(self, other: object) -> bool:
+        """Structural equality, safe for numpy array fields."""
+        if not isinstance(other, ObservationSet):
+            return NotImplemented
+        return (
+            self.symbols == other.symbols
+            and _array_equal(self.times, other.times)
+            and _array_equal(self.prices, other.prices)
+            and self.interval == other.interval
+            and self.adjusted == other.adjusted
+            and self.provider == other.provider
+            and self.snapshot_id == other.snapshot_id
+            and self.meta == other.meta
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class CovariateSeries:
+    """A single raw covariate series before alignment (data layer only)."""
+
+    name: str
+    times: np.ndarray  # (T1,)
+    values: np.ndarray  # (T1,), NaN allowed
+    provider: str
+    series_id: str
+    snapshot_id: str
+    frequency: str
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __eq__(self, other: object) -> bool:
+        """Structural equality, safe for numpy array fields."""
+        if not isinstance(other, CovariateSeries):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and _array_equal(self.times, other.times)
+            and _array_equal(self.values, other.values)
+            and self.provider == other.provider
+            and self.series_id == other.series_id
+            and self.snapshot_id == other.snapshot_id
+            and self.frequency == other.frequency
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class PrepStats:
+    """Preparation statistics fitted on the training window only."""
+
+    cov_mean: np.ndarray  # (K,)
+    cov_std: np.ndarray  # (K,)
+    train_window: tuple[str, str]
+    cov_names: tuple[str, ...]
+    transforms: dict[str, list[str]]
+    lags: dict[str, int]
+
+    def __eq__(self, other: object) -> bool:
+        """Structural equality, safe for numpy array fields."""
+        if not isinstance(other, PrepStats):
+            return NotImplemented
+        return (
+            _array_equal(self.cov_mean, other.cov_mean)
+            and _array_equal(self.cov_std, other.cov_std)
+            and self.train_window == other.train_window
+            and self.cov_names == other.cov_names
+            and self.transforms == other.transforms
+            and self.lags == other.lags
+        )
+
+    def __hash__(self) -> int:
+        """Content-based hash, consistent with `__eq__` (required: `PrepStats` sits in pytree aux data)."""
+        return hash(
+            (
+                self.cov_mean.shape,
+                self.cov_mean.dtype.str,
+                self.cov_mean.tobytes(),
+                self.cov_std.shape,
+                self.cov_std.dtype.str,
+                self.cov_std.tobytes(),
+                self.train_window,
+                self.cov_names,
+                tuple(sorted((k, tuple(v)) for k, v in self.transforms.items())),
+                tuple(sorted(self.lags.items())),
+            )
+        )
+
+
+@dataclass(frozen=True)
+class BoundaryConstraints:
+    """Part II supervision hook; always `None` on `PreparedDataset` in 0.1.0."""
+
+    must_switch_at: tuple[int, ...] = ()
+    must_not_switch_at: tuple[int, ...] = ()
+
+    def __hash__(self) -> int:
+        """Value-based hash over the two index tuples."""
+        return hash((self.must_switch_at, self.must_not_switch_at))
+
+
+@dataclass(frozen=True, eq=False)
+class PreparedDataset:
+    """The only object the model layer consumes."""
+
+    times: np.ndarray  # (T,) grid end times; metadata only, never a jit leaf
+    observations: Array  # (T, M) float64
+    dt: Array  # (T,) clock units, > 0
+    mask: Array  # (T, M) bool, True = observed
+    cov_transition: Array | None  # (T, K_pi)
+    cov_duration: Array | None  # (T, K_d)
+    cov_emission: Array | None  # (T, K_e)
+    cov_names: dict[str, tuple[str, ...]]
+    clock: Clock
+    nominal_dt: float
+    prep_stats: PrepStats
+    snapshot_ids: tuple[str, ...]
+    support: Support = "real"
+    n_categories: int | None = None
+    labels: Array | None = None  # (T, N) bool
+    boundaries: BoundaryConstraints | None = None
+    group: str | None = None
+
+    def __hash__(self) -> int:
+        """Identity-based hash; equality below is value-based (fine: only used for `is`-safety)."""
+        return object.__hash__(self)
+
+    def __eq__(self, other: object) -> bool:
+        """Structural equality, safe for array-valued fields (used by round-trip tests)."""
+        if not isinstance(other, PreparedDataset):
+            return NotImplemented
+        return (
+            _array_equal(self.times, other.times)
+            and _array_equal(self.observations, other.observations)
+            and _array_equal(self.dt, other.dt)
+            and _array_equal(self.mask, other.mask)
+            and _array_equal(self.cov_transition, other.cov_transition)
+            and _array_equal(self.cov_duration, other.cov_duration)
+            and _array_equal(self.cov_emission, other.cov_emission)
+            and self.cov_names == other.cov_names
+            and self.clock == other.clock
+            and self.nominal_dt == other.nominal_dt
+            and self.prep_stats == other.prep_stats
+            and self.snapshot_ids == other.snapshot_ids
+            and self.support == other.support
+            and self.n_categories == other.n_categories
+            and _array_equal(self.labels, other.labels)
+            and self.boundaries == other.boundaries
+            and self.group == other.group
+        )
+
+    def window(self, start: int, end: int) -> PreparedDataset:
+        """Slice `[start, end)` along `T`.
+
+        Keeps `dt`, masks, covariates, `cov_names`, `prep_stats`, `snapshot_ids`, `support`,
+        `group`, and `nominal_dt` (a property of the grid, not the slice).
+        """
+
+        def _slice(arr: Array | None) -> Array | None:
+            return None if arr is None else arr[start:end]
+
+        def _slice_required(arr: Array) -> Array:
+            return arr[start:end]
+
+        boundaries = None
+        if self.boundaries is not None:
+            boundaries = BoundaryConstraints(
+                must_switch_at=tuple(i - start for i in self.boundaries.must_switch_at if start <= i < end),
+                must_not_switch_at=tuple(
+                    i - start for i in self.boundaries.must_not_switch_at if start <= i < end
+                ),
+            )
+
+        return dataclasses.replace(
+            self,
+            times=self.times[start:end],
+            observations=_slice_required(self.observations),
+            dt=_slice_required(self.dt),
+            mask=_slice_required(self.mask),
+            cov_transition=_slice(self.cov_transition),
+            cov_duration=_slice(self.cov_duration),
+            cov_emission=_slice(self.cov_emission),
+            labels=_slice(self.labels),
+            boundaries=boundaries,
+        )
+
+    def validate(self) -> None:
+        """Raise `DataError(path=<field>)` on any contract violation."""
+        times, observations, dt, mask = self.times, self.observations, self.dt, self.mask
+
+        if times.ndim != 1:
+            raise DataError("times must be 1-D", path="times")
+        t = times.shape[0]
+        if t > 1 and not np.all(np.diff(times) > np.timedelta64(0, "ns")):
+            raise DataError("times must be strictly increasing", path="times")
+
+        if observations.ndim != 2 or observations.shape[0] != t:
+            raise DataError(f"observations must have shape (T={t}, M)", path="observations")
+        m = observations.shape[1]
+
+        if dt.ndim != 1 or dt.shape[0] != t:
+            raise DataError(f"dt must have shape (T={t},)", path="dt")
+        if not bool(np.all(np.asarray(dt) > 0)):
+            raise DataError("dt must be > 0 everywhere", path="dt")
+        if self.clock == "steps" and not bool(np.all(np.asarray(dt) == 1)):
+            raise DataError("dt must be exactly 1 under clock='steps'", path="dt")
+
+        if mask.shape != (t, m) or np.asarray(mask).dtype != np.bool_:
+            raise DataError(f"mask must be a bool array of shape (T={t}, M={m})", path="mask")
+
+        obs_np = np.asarray(observations)
+        mask_np = np.asarray(mask)
+        if not np.all(np.isfinite(obs_np[mask_np])):
+            raise DataError("observations must be finite where mask is True", path="observations")
+
+        self._validate_support(obs_np, mask_np)
+        self._validate_covariates(t)
+        self._validate_labels(t)
+        self._validate_boundaries(t)
+
+    def _validate_support(self, obs_np: np.ndarray, mask_np: np.ndarray) -> None:
+        observed = obs_np[mask_np]
+        if self.support == "real":
+            if not _is_float_dtype(obs_np.dtype):
+                raise DataError("support='real' requires float observations", path="observations")
+        elif self.support == "count":
+            if not (np.issubdtype(obs_np.dtype, np.integer) and bool(np.all(observed >= 0))):
+                raise DataError(
+                    "support='count' requires non-negative integer observations", path="observations"
+                )
+        elif self.support == "binary":
+            if not bool(np.all(np.isin(observed, [0, 1]))):
+                raise DataError("support='binary' requires observations in {0, 1}", path="observations")
+        elif self.support == "categorical":
+            if self.n_categories is None:
+                raise DataError("support='categorical' requires n_categories", path="n_categories")
+            if not (
+                np.issubdtype(obs_np.dtype, np.integer)
+                and bool(np.all((observed >= 0) & (observed < self.n_categories)))
+            ):
+                raise DataError(
+                    f"support='categorical' requires integers in [0, {self.n_categories})",
+                    path="observations",
+                )
+
+    def _validate_covariates(self, t: int) -> None:
+        blocks = {
+            "transition": self.cov_transition,
+            "duration": self.cov_duration,
+            "emission": self.cov_emission,
+        }
+        for entry_point, block in blocks.items():
+            path = f"cov_{entry_point}"
+            names = self.cov_names.get(entry_point, ())
+            if block is None:
+                if names:
+                    raise DataError(f"cov_names['{entry_point}'] set but {path} is None", path="cov_names")
+                continue
+            if block.ndim != 2 or block.shape[0] != t:
+                raise DataError(f"{path} must have shape (T={t}, K)", path=path)
+            if len(names) != block.shape[1]:
+                raise DataError(
+                    f"cov_names['{entry_point}'] length must match {path}.shape[1]", path="cov_names"
+                )
+
+    def _validate_labels(self, t: int) -> None:
+        if self.labels is None:
+            return
+        if self.labels.ndim != 2 or self.labels.shape[0] != t or np.asarray(self.labels).dtype != np.bool_:
+            raise DataError("labels must be a bool array of shape (T, N)", path="labels")
+
+    def _validate_boundaries(self, t: int) -> None:
+        if self.boundaries is None:
+            return
+        for indices in (self.boundaries.must_switch_at, self.boundaries.must_not_switch_at):
+            for i in indices:
+                if not (1 <= i <= t - 1):
+                    raise DataError(f"boundary index {i} outside [1, {t - 1}]", path="boundaries")
+
+
+@dataclass(frozen=True)
+class _HashableArray:
+    """Wraps a numpy array so it can sit in a pytree's static aux data.
+
+    `times` is metadata (grid end times, dtype `datetime64[ns]`): not a valid JAX array dtype, so
+    it cannot be a pytree leaf (`jax.jit` would reject it), yet a raw `np.ndarray` is also not
+    safely hashable/comparable as plain aux data (`array == array` returns an array, not a bool,
+    breaking JAX's aux-equality check whenever `times` has more than one element — see CLAUDE.md
+    §5's "NumPy arrays are unhashable" gotcha). This wrapper is used only inside flatten/unflatten
+    below; `PreparedDataset.times` itself stays a plain `np.ndarray`.
+    """
+
+    array: np.ndarray
+
+    def __eq__(self, other: object) -> bool:
+        """Value equality via `np.array_equal`, always returning a plain `bool`."""
+        if not isinstance(other, _HashableArray):
+            return NotImplemented
+        return bool(np.array_equal(self.array, other.array))
+
+    def __hash__(self) -> int:
+        """Hash the array's shape, dtype, and bytes."""
+        return hash((self.array.shape, self.array.dtype.str, self.array.tobytes()))
+
+
+def _flatten_prepared_dataset(
+    dataset: PreparedDataset,
+) -> tuple[tuple[Array | None, ...], tuple[Any, ...]]:
+    children = (
+        dataset.observations,
+        dataset.dt,
+        dataset.mask,
+        dataset.cov_transition,
+        dataset.cov_duration,
+        dataset.cov_emission,
+        dataset.labels,
+    )
+    aux = (
+        _HashableArray(dataset.times),
+        tuple(sorted(dataset.cov_names.items())),
+        dataset.clock,
+        dataset.nominal_dt,
+        dataset.prep_stats,
+        dataset.snapshot_ids,
+        dataset.support,
+        dataset.n_categories,
+        dataset.boundaries,
+        dataset.group,
+    )
+    return children, aux
+
+
+def _unflatten_prepared_dataset(aux: tuple[Any, ...], children: tuple[Array | None, ...]) -> PreparedDataset:
+    (
+        times,
+        cov_names_items,
+        clock,
+        nominal_dt,
+        prep_stats,
+        snapshot_ids,
+        support,
+        n_categories,
+        boundaries,
+        group,
+    ) = aux
+    observations, dt, mask, cov_transition, cov_duration, cov_emission, labels = children
+    assert observations is not None
+    assert dt is not None
+    assert mask is not None
+    return PreparedDataset(
+        times=times.array,
+        observations=observations,
+        dt=dt,
+        mask=mask,
+        cov_transition=cov_transition,
+        cov_duration=cov_duration,
+        cov_emission=cov_emission,
+        cov_names=dict(cov_names_items),
+        clock=clock,
+        nominal_dt=nominal_dt,
+        prep_stats=prep_stats,
+        snapshot_ids=snapshot_ids,
+        support=support,
+        n_categories=n_categories,
+        labels=labels,
+        boundaries=boundaries,
+        group=group,
+    )
+
+
+jax.tree_util.register_pytree_node(PreparedDataset, _flatten_prepared_dataset, _unflatten_prepared_dataset)

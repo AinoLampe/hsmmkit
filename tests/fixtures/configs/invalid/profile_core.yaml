@@ -1,0 +1,64 @@
+# Appendix A with profile: core -- fails on path "profile" (profile 'core' not executable in 0.1.0)
+profile: core
+schema_version: 1
+project:
+  name: dax_3state_gbm_nb
+  seed: 42
+  output_dir: runs/dax_3state_gbm_nb
+  log_level: INFO
+data:
+  primary:
+    provider: yfinance
+    symbols: ["^GDAXI"]
+    interval: 1d
+    start: "2000-01-03"
+    end: null
+    adjusted: true
+    field: close
+  clock: trading
+  bars_per_day: 1
+  cache: {dir: ~/.cache/regimekit, snapshot: latest, max_age_days: 1}
+  covariates: []
+  preparation: {returns: log, standardize_covariates: true, missing_returns: drop}
+model:
+  n_states: 2
+  engine: expanded
+  d_max: 50
+  initial_state: uniform
+  emission:
+    family: gbm
+    params:
+      mu: {mode: fixed, values: [-0.1, 0.1]}
+      sigma: {mode: free, init: [0.1, 0.2]}
+    covariates: {drift: [], log_vol: []}
+  duration:
+    family: negbin
+    r: [1, 1]
+    params:
+      rate: {mode: free, init_mean_sojourn_days: [30, 30]}
+    covariates: []
+  transition:
+    mode: jump
+    order: 1
+    duration_conditioning: current
+    covariates: []
+estimation:
+  optimizer: lbfgs
+  max_iter: 1000
+  tol_f: 1.0e-9
+  tol_g: 1.0e-6
+  restarts: 8
+  init: [random]
+  use_priors: true
+  std_errors: false
+  device: auto
+forecast:
+  horizon: 5
+  n_sim: 100
+  covariate_forecaster: {type: freeze}
+  quantiles: [0.1, 0.5, 0.9]
+evaluation:
+  metrics: [log_score]
+  backtest: {scheme: expanding, initial_train_years: 2, refit_every_steps: 21, horizons: [1], embargo_steps: 0}
+output:
+  write: [posterior]

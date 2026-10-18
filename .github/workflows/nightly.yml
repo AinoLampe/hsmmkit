@@ -1,0 +1,42 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      REGIMEKIT_TYPECHECK: "1"
+      JAX_PLATFORMS: cpu
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-groups
+      - run: uv run nox -s recovery_smoke
+
+  benchmark:
+    runs-on: ubuntu-latest
+    env:
+      REGIMEKIT_TYPECHECK: "1"
+      JAX_PLATFORMS: cpu
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-groups
+      - run: uv run pytest -m benchmark --benchmark-json=bench.json
+      - run: uv run python scripts/compare_benchmarks.py bench.json benchmarks/baseline.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark
+          path: bench.json

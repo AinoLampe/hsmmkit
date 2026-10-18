@@ -1,0 +1,121 @@
+"""`ProjectConfig` + `PreparedDataset` -> `ModelSpec` (CLAUDE.md §3.3 unowned deliverable).
+
+No ticket's "Creates" named this module; CLAUDE.md §3.3 assigns it to "the first ticket that needs a
+`ModelSpec` from a config, at the latest E6-T02" -- that is this ticket (`decode`'s temporary model
+loader needs to rebuild a `ModelSpec` from the resolved config it reads out of `spec.json`).
+
+`EMISSION_FAMILIES`/`DURATION_FAMILIES` are keyed by the config's own family names (`config/schema.py`'s
+`EmissionFamily`/`DurationFamily` Literal types); every family already has a `from_config` classmethod
+(the E3-T01 pattern). `model.lattice` (multi-start initialization grids, E3-T06) is not consulted here --
+`build_model_spec` only needs the model's *structure*, not `lattice_jitter`'s init values -- so lattice
+validation (`model.lattice.validate_lattice`, flagged as unwired in E3-T06's STATUS findings) stays a
+follow-up for whoever first builds a lattice-configured model end to end.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, cast
+
+from regimekit.model.duration.gamma import GammaDuration
+from regimekit.model.duration.geometric import GeometricDuration
+from regimekit.model.duration.lognormal import LogNormalDuration
+from regimekit.model.duration.negbin import NegBinDuration
+from regimekit.model.duration.nonparametric import NonparametricDuration
+from regimekit.model.duration.poisson import PoissonDuration
+from regimekit.model.duration.weibull import WeibullDuration
+from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.student_t import StudentTFamily
+from regimekit.model.spec import ModelSpec
+from regimekit.model.transition import JumpTransition
+from regimekit.utils.clock import days_to_steps
+from regimekit.utils.errors import ConfigError
+
+if TYPE_CHECKING:
+    from regimekit.config.schema import DurationCfg, ProjectConfig
+    from regimekit.data.contracts import PreparedDataset
+    from regimekit.model.transition import TransitionModel
+    from regimekit.utils.clock import Clock
+
+EMISSION_FAMILIES: dict[str, Any] = {"gbm": GBMFamily, "student_t": StudentTFamily}
+DURATION_FAMILIES: dict[str, Any] = {
+    "geometric": GeometricDuration,
+    "negbin": NegBinDuration,
+    "poisson": PoissonDuration,
+    "gamma": GammaDuration,
+    "weibull": WeibullDuration,
+    "lognormal": LogNormalDuration,
+    "nonparametric": NonparametricDuration,
+}
+
+
+def _with_mean_sojourn_steps(
+    cfg: DurationCfg, clock: Clock, nominal_dt: float, bars_per_day: int
+) -> DurationCfg:
+    """`init_mean_sojourn_days` -> `init_mean_sojourn_steps` via `days_to_steps` (CLAUDE.md §3.3).
+
+    Every `DurationFamily.from_config` rejects `init_mean_sojourn_days` directly (it has no clock or
+    `nominal_dt`); this is the one place that conversion happens, before the family ever sees the config.
+    """
+    new_params = {}
+    for key, param in cfg.params.items():
+        if param.init_mean_sojourn_days is not None:
+            steps = [days_to_steps(d, clock, nominal_dt, bars_per_day) for d in param.init_mean_sojourn_days]
+            param = param.model_copy(
+                update={"init_mean_sojourn_days": None, "init_mean_sojourn_steps": steps}
+            )
+        new_params[key] = param
+    return cfg.model_copy(update={"params": new_params})
+
+
+def build_model_spec(cfg: ProjectConfig, data: PreparedDataset) -> ModelSpec:
+    """Assemble a `ModelSpec` (structure + `param_specs`) from `cfg.model` and `data`'s covariate names.
+
+    `data` supplies what the config alone cannot: the realized `n_series`, the per-entry-point covariate
+    name tuples (`data.cov_names`), and `nominal_dt`/`clock` for the duration family's days->steps
+    conversion. `cfg.model.d_max` is always a concrete int by this point (`config/schema.py`'s
+    `_resolve_d_max` cross-field validator fills in a default during `load_config`).
+
+    Raises:
+        ConfigError: an unregistered `emission.family`/`duration.family` name.
+    """
+    m = cfg.model
+    n = m.n_states
+    n_series = data.observations.shape[1]
+
+    emis_cls = EMISSION_FAMILIES.get(m.emission.family)
+    if emis_cls is None:
+        raise ConfigError(f"unknown emission family {m.emission.family!r}", path="model.emission.family")
+    emission_cov_names = data.cov_names.get("emission", ())
+    emission, emission_specs = emis_cls.from_config(m.emission, n, n_series, emission_cov_names)
+
+    dur_cls = DURATION_FAMILIES.get(m.duration.family)
+    if dur_cls is None:
+        raise ConfigError(f"unknown duration family {m.duration.family!r}", path="model.duration.family")
+    duration_cfg = _with_mean_sojourn_steps(m.duration, data.clock, data.nominal_dt, cfg.data.bars_per_day)
+    if m.duration.family == "nonparametric":
+        duration, duration_specs = dur_cls.from_config(
+            duration_cfg, n, data.cov_names.get("duration", ()), data.nominal_dt, d_max=m.d_max
+        )
+    else:
+        duration, duration_specs = dur_cls.from_config(
+            duration_cfg, n, data.cov_names.get("duration", ()), data.nominal_dt
+        )
+
+    transition, transition_specs = JumpTransition.from_config(
+        m.transition, n, m.transition.order, data.cov_names.get("transition", ())
+    )
+    assert m.d_max is not None  # `_resolve_d_max` (config/schema.py) always fills this in
+
+    return ModelSpec(
+        n_states=n,
+        n_series=n_series,
+        emission=emission,
+        duration=duration,
+        transition=cast("TransitionModel", transition),
+        order=m.transition.order,
+        duration_conditioning=m.transition.duration_conditioning,
+        engine=m.engine,
+        d_max=m.d_max,
+        initial=m.initial_state,
+        param_specs=tuple(emission_specs) + tuple(duration_specs) + tuple(transition_specs),
+    )

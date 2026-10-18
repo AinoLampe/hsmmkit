@@ -1,0 +1,42 @@
+[
+  {
+    "name": "test_e4_t03a_forward_time_budget",
+    "mean": 0.041264
+  },
+  {
+    "name": "test_e4_t03b_forward_backward_time_budget",
+    "mean": 0.082027
+  },
+  {
+    "name": "test_e4_t06a_forward_backward_time_budget",
+    "mean": 0.841914
+  },
+  {
+    "name": "test_e4_t06a_loglik_time_budget",
+    "mean": 0.136708
+  },
+  {
+    "name": "test_e4_t07_expanded_forward_backward_budget",
+    "mean": 0.084435
+  },
+  {
+    "name": "test_e4_t07_expanded_viterbi_time",
+    "mean": 0.031864
+  },
+  {
+    "name": "test_e4_t07_explicit_forward_backward_budget",
+    "mean": 0.787569
+  },
+  {
+    "name": "test_e4_t07_explicit_viterbi_time",
+    "mean": 0.042046
+  },
+  {
+    "name": "test_e4_t07_parallel_scan_forward_backward_time",
+    "mean": 0.07678
+  },
+  {
+    "name": "test_e5_t02_lbfgs_fit_completes_within_budget",
+    "mean": 3.9422
+  }
+]

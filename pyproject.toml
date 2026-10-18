@@ -1,0 +1,102 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "regimekit"
+version = "0.1.0.dev0"
+description = "JAX-based Hidden Semi-Markov Model framework for market-regime detection and probabilistic return forecasting."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = [
+  "jax>=0.11",
+  "equinox>=0.13",
+  "optax>=0.2.8",
+  "numpy>=2.1",
+  "pandas>=2.2",
+  "pyarrow>=25",
+  "pydantic>=2.13",
+  "ruamel.yaml>=0.18",
+  "typer>=0.15",
+  "structlog>=25",
+  "jaxtyping>=0.3",
+]
+
+[project.optional-dependencies]
+gpu = ["jax[cuda12]>=0.11"]
+providers = ["yfinance>=1.7", "curl_cffi>=0.15", "pandas-datareader>=0.10", "fredapi>=0.5"]
+mcmc = ["numpyro>=0.20"]
+
+[dependency-groups]
+dev = [
+  "pytest>=9",
+  "pytest-cov",
+  "pytest-xdist",
+  "pytest-benchmark",
+  "hypothesis>=6.163",
+  "beartype",
+  "ruff>=0.16",
+  "mypy>=2.1",
+  "pre-commit",
+  "nox",
+  "scipy>=1.15",
+  "mkdocs-material>=9.7",
+  "mkdocstrings[python]",
+  "pandas-stubs>=3.0.5.260914",
+]
+
+[project.scripts]
+regimekit = "regimekit.cli.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/regimekit"]
+
+[tool.coverage.run]
+source = ["regimekit"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+exclude_also = ["if TYPE_CHECKING:", "@overload"]
+
+[tool.coverage.json]
+output = "coverage.json"
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["pyarrow", "pyarrow.*"]  # pyarrow ships no type information
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["optax", "optax.*"]  # optax ships no py.typed marker
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = ["spec/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PT", "RUF", "D", "ANN", "NPY"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"src/regimekit/cli/*.py" = ["B008"]  # typer's Option()/Argument() defaults require call-in-default
+
+[tool.pytest.ini_options]
+markers = [
+  "slow: nightly suites",
+  "live: network tests",
+  "benchmark: pytest-benchmark",
+  "gpu: requires GPU",
+]
+addopts = "-m 'not slow and not live and not benchmark and not gpu' --import-mode=importlib"

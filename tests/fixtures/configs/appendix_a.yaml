@@ -1,0 +1,103 @@
+schema_version: 1
+project:
+  name: dax_3state_gbm_nb
+  seed: 42
+  output_dir: runs/dax_3state_gbm_nb
+  log_level: INFO
+
+data:
+  primary:
+    provider: yfinance
+    symbols: ["^GDAXI"]
+    interval: 1d
+    start: "2000-01-03"
+    end: null
+    adjusted: true
+    field: close
+  clock: trading
+  bars_per_day: 1
+  cache:
+    dir: ~/.cache/regimekit
+    snapshot: latest
+    max_age_days: 1
+  covariates:
+    - name: log_vix
+      provider: fred
+      series: VIXCLS
+      transform: [log]
+      lag: 1
+      missing: ffill
+      max_staleness: 5
+      use_in: [transition, duration]
+    - name: term_spread
+      provider: fred
+      series: T10Y2Y
+      transform: []
+      lag: 1
+      missing: ffill
+      max_staleness: 5
+      use_in: [transition]
+  preparation:
+    returns: log
+    standardize_covariates: true
+    missing_returns: drop
+
+model:
+  n_states: 3
+  engine: expanded
+  d_max: 500
+  initial_state: uniform
+  emission:
+    family: gbm
+    params:
+      mu:    {mode: fixed, values: [-0.30, 0.00, 0.20]}
+      sigma: {mode: free, init: [0.12, 0.18, 0.35], constraint: increasing,
+              prior: {type: lognormal, sd: 1.0}}
+    covariates: {drift: [], log_vol: []}
+  duration:
+    family: negbin
+    r: [3, 3, 2]
+    params:
+      rate: {mode: free, init_mean_sojourn_days: [60, 120, 30],
+             prior: {type: lognormal, sd: 1.0}}
+    covariates: [log_vix]
+  transition:
+    mode: jump
+    order: 1
+    duration_conditioning: current
+    covariates: [log_vix, term_spread]
+    prior: {type: dirichlet, alpha: 1.0}
+    coef_prior_sd: 1.0
+
+estimation:
+  optimizer: lbfgs
+  max_iter: 1000
+  tol_f: 1.0e-9
+  tol_g: 1.0e-6
+  restarts: 8
+  init: [rollvol_kmeans, lattice_jitter, random]
+  use_priors: true
+  std_errors: true
+  device: auto
+
+forecast:
+  horizon: 20
+  n_sim: 10000
+  covariate_forecaster: {type: bootstrap, mean_block_length: 10}
+  quantiles: [0.05, 0.25, 0.50, 0.75, 0.95]
+
+evaluation:
+  metrics: [log_score, crps, pit_coverage, bic, icl, regime_occupancy, regime_persistence, sharpe, max_drawdown]
+  backtest:
+    scheme: expanding
+    initial_train_years: 8
+    refit_every_steps: 63
+    horizons: [1, 5, 20]
+    embargo_steps: 0
+  strategy:
+    type: regime_long_flat
+    flat_if: {regime: 0, prob_above: 0.6, use: filtered}
+    cost_bps: 5
+
+output:
+  write: [posterior, forecast, backtest, strategy, report]
