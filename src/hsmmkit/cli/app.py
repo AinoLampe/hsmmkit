@@ -4,23 +4,34 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, NamedTuple
 
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pydantic
 import typer
 
 from regimekit.config.schema import DataSection, PriceSource, ProjectConfig
 from regimekit.config.yaml_io import dump_resolved, export_json_schema, load_config
 from regimekit.data.cache import Cache, CachedProvider, SnapshotPolicy
-from regimekit.data.contracts import ObservationSet, PreparedDataset
+from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
 from regimekit.data.prepare import Preparer, PrepDiagnostics, prep_stats_to_json
 from regimekit.data.quality import build_quality_report
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.engine.explicit_duration import ExplicitDurationEngine
+from regimekit.estimation.report import diagnose
+from regimekit.estimation.results import FitResult
+from regimekit.evaluation.backtest import run_backtest
+from regimekit.evaluation.compare import CompareEntry, check_snapshots, comparison_table, render_markdown
+from regimekit.evaluation.report import build_report, versions
+from regimekit.evaluation.results import BacktestResult
+from regimekit.evaluation.strategies import make_strategy
 from regimekit.finance.providers import get_provider
 from regimekit.inference.covariate_forecasters import CovariateForecaster, make_forecaster
 from regimekit.inference.decode import decode
@@ -29,7 +40,10 @@ from regimekit.inference.simulate import segments_of, simulate_paths
 from regimekit.model.build import build_model_spec
 from regimekit.model.params.manager import ParamManager
 from regimekit.persistence.results import (
+    BACKTEST_META,
+    read_backtest,
     read_prepared,
+    write_backtest,
     write_forecast,
     write_posterior,
     write_prepared,
@@ -182,19 +196,16 @@ def _dropped_rows(diagnostics: PrepDiagnostics | None, completed: bool) -> dict[
     }
 
 
-def run_fetch(config: ProjectConfig, config_dir: Path, out_dir: Path, offline: bool) -> None:
-    """Fetch through the cache, prepare, and write the dataset, stats, snapshot ids and quality report.
+class _Fetched(NamedTuple):
+    """Raw inputs of a run: primary prices, covariate series, and the cache/provider they came through."""
 
-    The quality report is written even when preparation fails (e.g. `missing: error`); the error is
-    then re-raised.
+    obs: ObservationSet
+    covs: list[CovariateSeries]
+    cache: Cache
+    primary_name: str
 
-    Raises:
-        ConfigError: a pinned `data.cache.snapshot` combined with covariates (one id names one cache
-            entry; pinning multi-source runs awaits an owner decision).
-        DataError: an empty primary request, or preparation failed.
-        ProviderError: a provider failed.
-        PersistenceError: the output directory cannot be written (exit 1, CLAUDE.md §3.8).
-    """
+
+def _check_pinned(config: ProjectConfig, offline: bool) -> None:
     data = config.data
     policy = SnapshotPolicy(data.cache.snapshot, data.cache.max_age_days, offline)
     if policy.pinned is not None and data.covariates:
@@ -203,13 +214,20 @@ def run_fetch(config: ProjectConfig, config_dir: Path, out_dir: Path, offline: b
             "`snapshot: latest` with `--offline` to replay a run with covariates",
             path="data.cache.snapshot",
         )
+
+
+def _fetch_inputs(config: ProjectConfig, config_dir: Path, offline: bool) -> _Fetched:
+    """Fetch the primary prices and covariates through the cache (shared by `fetch` and `backtest`).
+
+    Raises:
+        ConfigError: a pinned snapshot together with covariates.
+        DataError: the primary request returned fewer than two rows.
+        ProviderError: a provider failed.
+    """
+    data = config.data
+    _check_pinned(config, offline)
+    policy = SnapshotPolicy(data.cache.snapshot, data.cache.max_age_days, offline)
     log = get_logger("regimekit.fetch")
-    outputs = [out_dir / n for n in ("prepared.parquet", "prep_stats.json", "snapshots.json")]
-    try:  # a failed run must not leave an earlier run's dataset next to its own report
-        for stale in outputs:
-            stale.unlink(missing_ok=True)
-    except OSError as exc:
-        raise PersistenceError(f"cannot clear {out_dir}: {exc}", path=str(out_dir)) from exc
     cache = Cache(data.cache.dir)
     providers: dict[str, CachedProvider] = {}
 
@@ -226,7 +244,34 @@ def run_fetch(config: ProjectConfig, config_dir: Path, out_dir: Path, offline: b
     covs = [cached(c.provider).fetch_series(c.series, p.start, p.end) for c in data.covariates]
     if obs.times.shape[0] < 2:
         raise DataError(f"the primary request returned {obs.times.shape[0]} rows", path="data.primary")
-    generations = _two_newest_generations(cache, primary.name, p)
+    return _Fetched(obs, covs, cache, primary.name)
+
+
+def run_fetch(config: ProjectConfig, config_dir: Path, out_dir: Path, offline: bool) -> None:
+    """Fetch through the cache, prepare, and write the dataset, stats, snapshot ids and quality report.
+
+    The quality report is written even when preparation fails (e.g. `missing: error`); the error is
+    then re-raised.
+
+    Raises:
+        ConfigError: a pinned `data.cache.snapshot` combined with covariates (one id names one cache
+            entry; pinning multi-source runs awaits an owner decision).
+        DataError: an empty primary request, or preparation failed.
+        ProviderError: a provider failed.
+        PersistenceError: the output directory cannot be written (exit 1, CLAUDE.md §3.8).
+    """
+    data = config.data
+    _check_pinned(config, offline)
+    log = get_logger("regimekit.fetch")
+    outputs = [out_dir / n for n in ("prepared.parquet", "prep_stats.json", "snapshots.json")]
+    try:  # a failed run must not leave an earlier run's dataset next to its own report
+        for stale in outputs:
+            stale.unlink(missing_ok=True)
+    except OSError as exc:
+        raise PersistenceError(f"cannot clear {out_dir}: {exc}", path=str(out_dir)) from exc
+    fetched = _fetch_inputs(config, config_dir, offline)
+    obs, covs, p = fetched.obs, fetched.covs, data.primary
+    generations = _two_newest_generations(fetched.cache, fetched.primary_name, p)
 
     preparer = Preparer(data)
     failure: DataError | None = None
@@ -579,6 +624,178 @@ def simulate_cmd(
             model_dir=model,
             steps=steps,
             n_paths=n_paths,
+        )
+    except RegimekitError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=EXIT_CODES.get(type(exc), 1)) from exc
+
+
+def _snapshot_ids(fetched: _Fetched) -> list[str]:
+    return [fetched.obs.snapshot_id, *(c.snapshot_id for c in fetched.covs)]
+
+
+def _execute_backtest(
+    config: ProjectConfig, fetched: _Fetched, name: str
+) -> tuple[BacktestResult, dict[str, Any], str]:
+    """Run the walk-forward backtest; returns `(result, meta, report markdown)`."""
+    obs, covs = fetched.obs, fetched.covs
+    grid = Preparer(config.data).fit(obs, covs, train_end=obs.times[-1]).transform(obs, covs)
+    spec = build_model_spec(config, grid)
+    n_free = ParamManager(spec.param_specs).n_free
+    cfg_strategy = config.evaluation.strategy
+    strategy = (
+        None
+        if cfg_strategy is None
+        else make_strategy(cfg_strategy, grid.nominal_dt, int(grid.observations.shape[1]))
+    )
+    last: dict[str, Any] = {}
+
+    def on_fold(fold: object, fitted: FitResult, train: PreparedDataset) -> None:
+        last["fit"], last["train"] = fitted, train
+
+    started = time.perf_counter()
+    result = run_backtest(config, obs, covs, config.project.seed, strategy, on_fold)
+    wall = time.perf_counter() - started
+    diagnostics = None
+    if "fit" in last:
+        space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
+        try:
+            diagnostics = diagnose(last["fit"], spec, space, _engine_for(config, spec.engine), last["train"])
+        except RegimekitError as exc:  # the backtest itself succeeded: report without diagnostics
+            get_logger("regimekit.backtest").warning("diagnostics_unavailable", error=str(exc))
+    meta: dict[str, Any] = {
+        "config": name,
+        "seed": config.project.seed,
+        "snapshot_ids": _snapshot_ids(fetched),
+        "n_free": n_free,
+        "versions": versions(),
+        "wall_s": wall,
+    }
+    return result, meta, build_report(name, config, result, meta, diagnostics)
+
+
+def run_backtest_command(config: ProjectConfig, config_dir: Path, out_dir: Path, offline: bool) -> None:
+    """Fetch, run `run_backtest`, and write the backtest artifacts (metrics, folds, strategy, report).
+
+    Also written: `backtest_summary.parquet` and `backtest.json` (metadata for `compare --reuse`).
+
+    Raises:
+        ConfigError, DataError, ProviderError, NumericalError: from the fetch and the backtest.
+        PersistenceError: the output directory cannot be written.
+    """
+    fetched = _fetch_inputs(config, config_dir, offline)
+    result, meta, report = _execute_backtest(config, fetched, config.project.name)
+    write_backtest(result, out_dir, meta)
+    try:
+        (out_dir / "report.md").write_text(report, encoding="utf-8")
+    except OSError as exc:
+        raise PersistenceError(f"cannot write the report to {out_dir}: {exc}", path=str(out_dir)) from exc
+    get_logger("regimekit.backtest").info(
+        "backtest_done", out=str(out_dir), folds=len(result.folds), wall_s=round(meta["wall_s"], 1)
+    )
+
+
+@app.command("backtest")
+def backtest_cmd(config_path: Path) -> None:
+    """Walk-forward backtest: metrics, folds, strategy trace and `report.md` in the output directory."""
+    try:
+        config = load_config(config_path)
+        _apply_overrides(config, _global_options)
+        configure_logging(config.project.log_level)
+        out_dir = _global_options.out or config.project.output_dir
+        run_backtest_command(config, config_path.resolve().parent, out_dir, _global_options.offline)
+    except RegimekitError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=EXIT_CODES.get(type(exc), 1)) from exc
+
+
+def run_compare(
+    config_paths: list[Path],
+    out_dir: Path,
+    offline: bool,
+    *,
+    allow_mixed: bool,
+    reuse: bool,
+    metrics: list[str] | None,
+) -> None:
+    """Backtest every config (or reuse its stored result), check the snapshots, write `compare.*`.
+
+    Raises:
+        DataError: the configurations use different snapshots and `allow_mixed` is false.
+        ConfigError, ProviderError, NumericalError, PersistenceError: from loading, fetching and running.
+    """
+    names = [p.stem for p in config_paths]
+    if len(set(names)) != len(names):
+        names = [f"{n}_{i}" for i, n in enumerate(names)]
+    if metrics is not None and not metrics:
+        metrics = None
+    plan: list[tuple[str, ProjectConfig, Path, Path, _Fetched | None]] = []
+    snapshots: dict[str, list[str]] = {}
+    for name, path in zip(names, config_paths, strict=True):
+        config = load_config(path)
+        _apply_overrides(config, _global_options)
+        run_dir = Path(config.project.output_dir)
+        if any(run_dir == other[3] for other in plan):
+            raise ConfigError(
+                f"{path} shares project.output_dir {run_dir} with another configuration; "
+                "give each configuration its own output directory",
+                path="project.output_dir",
+            )
+        fetched: _Fetched | None = None
+        if reuse and (run_dir / BACKTEST_META).exists():
+            snapshots[name] = list(read_backtest(run_dir)[1]["snapshot_ids"])
+        else:
+            fetched = _fetch_inputs(config, path.resolve().parent, offline)
+            snapshots[name] = _snapshot_ids(fetched)
+        plan.append((name, config, path, run_dir, fetched))
+    check_snapshots(snapshots, allow_mixed)
+
+    entries: list[CompareEntry] = []
+    for name, config, _path, run_dir, fetched in plan:
+        if fetched is None:
+            result, meta = read_backtest(run_dir)
+        else:
+            result, meta, report = _execute_backtest(config, fetched, name)
+            write_backtest(result, run_dir, meta)
+            try:
+                (run_dir / "report.md").write_text(report, encoding="utf-8")
+            except OSError as exc:
+                raise PersistenceError(
+                    f"cannot write the report to {run_dir}: {exc}", path=str(run_dir)
+                ) from exc
+        entries.append(CompareEntry(name, result, meta))
+
+    table = comparison_table(entries, metrics)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        pq.write_table(pa.Table.from_pandas(table, preserve_index=False), out_dir / "compare.parquet")
+        (out_dir / "compare.md").write_text(render_markdown(table, snapshots), encoding="utf-8")
+    except OSError as exc:
+        raise PersistenceError(f"cannot write the comparison to {out_dir}: {exc}", path=str(out_dir)) from exc
+
+
+@app.command("compare")
+def compare_cmd(
+    configs: list[Path] = typer.Argument(..., help="Two or more configuration files."),
+    allow_mixed: bool = typer.Option(
+        False, "--allow-mixed", help="Compare runs on different data snapshots."
+    ),
+    metric: list[str] = typer.Option([], "--metric", help="Only these metrics (repeatable)."),
+    reuse: bool = typer.Option(
+        False, "--reuse", help="Use a config's stored backtest instead of re-running."
+    ),
+) -> None:
+    """Backtest several configs and tabulate them (`compare.parquet`, `compare.md` in the output dir)."""
+    try:
+        configure_logging(_global_options.log_level or "INFO")
+        out_dir = _global_options.out or Path("runs") / "compare"
+        run_compare(
+            configs,
+            out_dir,
+            _global_options.offline,
+            allow_mixed=allow_mixed,
+            reuse=reuse,
+            metrics=metric or None,
         )
     except RegimekitError as exc:
         typer.echo(str(exc), err=True)

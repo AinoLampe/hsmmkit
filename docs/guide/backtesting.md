@@ -120,3 +120,10 @@ at 1) and stored with `horizon == 0`:
 | `max_drawdown` | largest peak-to-trough fall of the equity curve as a fraction of the peak, `>= 0` (equity starts at 1) |
 | `turnover` | `sum |change in position|` per unit of clock time (per year on the trading/calendar clocks) |
 | `hit_rate` | share of the invested periods with `position . y > 0` |
+
+## Command line
+
+`regimekit backtest CONFIG` fetches the data (respecting `--offline`), runs `run_backtest` with the
+configured strategy and writes the files listed in [Outputs](outputs.md#backtest-files), including
+`report.md`. `regimekit compare CONFIG... [--reuse] [--allow-mixed] [--metric M]` backtests several
+configurations on the same data snapshot and writes `compare.parquet` / `compare.md`.

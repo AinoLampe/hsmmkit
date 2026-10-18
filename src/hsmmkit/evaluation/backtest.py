@@ -11,7 +11,7 @@ data `[0, o + 1)`; the realized `Y_h` uses rows `o + 1 .. o + h`.
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -243,6 +243,7 @@ def run_backtest(
     covs: Sequence[CovariateSeries],
     seed: int,
     strategy: Strategy | None = None,
+    on_fold: Callable[[Fold, FitResult, PreparedDataset], None] | None = None,
 ) -> BacktestResult:
     """Walk-forward evaluation: per fold refit on the train window, forecast from every test origin.
 
@@ -262,10 +263,12 @@ def run_backtest(
     trace (`evaluation.strategies.strategy_trace`, costs from `evaluation.strategy.cost_bps`) is returned in
     `BacktestResult.strategy` and the strategy metrics (`sharpe`, `max_drawdown`, `turnover`, `hit_rate`) are
     evaluated per fold on its slice (`horizon == 0`). Without a strategy those metrics, and metrics that need
-    labels, are skipped.
+    labels, are skipped. `on_fold(fold, fit, train)` is called after every fold's fit with the fitted model
+    and the (unpadded) train window, e.g. to run the fit diagnostics of the last fold.
 
     Returns:
-        `BacktestResult` with `folds` (`schedule_folds` table + `fit_time` seconds), `metrics` (one row per
+        `BacktestResult` with `folds` (`schedule_folds` table + `fit_time` seconds and the fit summary
+        `objective`, `loglik`, `converged`, `n_iter`, `restart_gap`), `metrics` (one row per
         `(fold, horizon, metric)`: the mean over the fold's origins, root mean square for `rmse`),
         `strategy` (the trace, or `None` without a strategy) and `summary` (per `(horizon, metric)`:
         `mean`, `sd` across folds, `n` folds).
@@ -317,6 +320,7 @@ def run_backtest(
     decisions: list[tuple[int, int, np.ndarray]] = []  # (fold, origin, position decided there)
     fold_rows: list[tuple[int, int, str, float]] = []
     fit_times: list[float] = []
+    fit_rows: list[dict[str, object]] = []
     warm: Array | None = None
     for fold in folds:
         prep = Preparer(cfg.data).fit(
@@ -340,6 +344,19 @@ def run_backtest(
         )
         fit_times.append(time.perf_counter() - started)
         warm = fitted.uparams
+        objectives = np.sort(fitted.restarts["objective"].to_numpy(dtype=np.float64))
+        objectives = objectives[np.isfinite(objectives)]  # a failed restart has no objective to compare
+        fit_rows.append(
+            {
+                "objective": fitted.objective,
+                "loglik": fitted.loglik,
+                "converged": bool(fitted.converged),
+                "n_iter": int(fitted.n_iter),
+                "restart_gap": float(objectives[1] - objectives[0]) if objectives.shape[0] > 1 else 0.0,
+            }
+        )
+        if on_fold is not None:
+            on_fold(fold, fitted, train)
 
         if per_fold:
             ctx = {"posterior": decode(fitted, train, engine), "fit": fitted}
@@ -383,6 +400,7 @@ def run_backtest(
         fold_frame = _with_strategy_metrics(fold_frame, trace, per_strategy)
     folds_table = fold_table(folds, grid.times)
     folds_table["fit_time"] = fit_times
+    folds_table = pd.concat([folds_table, pd.DataFrame(fit_rows)], axis=1)
     return BacktestResult(
         folds=folds_table,
         metrics=fold_frame,

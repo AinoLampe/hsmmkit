@@ -14,11 +14,13 @@ from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from regimekit.data.contracts import BoundaryConstraints, PreparedDataset
 from regimekit.data.prepare import prep_stats_from_json, prep_stats_to_json
+from regimekit.evaluation.results import BacktestResult
 from regimekit.inference.results import ForecastResult
 from regimekit.utils.errors import PersistenceError
 
@@ -389,3 +391,71 @@ def write_simulation(
         (out / "simulation_segments.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except OSError as exc:
         raise PersistenceError(f"cannot write simulation outputs to {out}: {exc}", path=str(out)) from exc
+
+
+# --- backtest (E7-T04) -------------------------------------------------------------------------------
+
+_BACKTEST_PARQUET = {
+    "metrics": "backtest_metrics.parquet",
+    "folds": "backtest_folds.parquet",
+    "summary": "backtest_summary.parquet",
+}
+BACKTEST_META = "backtest.json"
+STRATEGY_FILE = "strategy.parquet"
+
+
+def _table(frame: pd.DataFrame) -> pa.Table:
+    """Arrow table of `frame` (no index): `timestamp[ns]` for datetimes, plain `string` for text."""
+    cast = {
+        c: frame[c].astype("datetime64[ns]")
+        for c in frame.columns
+        if str(frame[c].dtype).startswith("datetime64")
+    }
+    table = pa.Table.from_pandas(frame.assign(**cast), preserve_index=False)
+    fields = [pa.field(f.name, pa.string()) if pa.types.is_large_string(f.type) else f for f in table.schema]
+    return table.cast(pa.schema(fields))
+
+
+def write_backtest(result: BacktestResult, out_dir: Path | str, meta: dict[str, Any]) -> None:
+    """Write a `BacktestResult` and its metadata.
+
+    Files: `backtest_metrics.parquet` (long: `fold, horizon, metric, value`), `backtest_folds.parquet`,
+    `backtest_summary.parquet` (`horizon, metric, mean, sd, n`), `strategy.parquet` (only with a strategy;
+    an older file is removed) and `backtest.json` (`meta`).
+
+    `horizon == 0` marks per-fold model and strategy metrics. `meta` must be JSON-serializable.
+
+    Raises:
+        PersistenceError: the output directory cannot be written.
+    """
+    out = Path(out_dir)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        pq.write_table(_table(result.metrics), out / _BACKTEST_PARQUET["metrics"])
+        pq.write_table(_table(result.folds), out / _BACKTEST_PARQUET["folds"])
+        pq.write_table(_table(result.summary), out / _BACKTEST_PARQUET["summary"])
+        if result.strategy is not None:
+            pq.write_table(_table(result.strategy), out / STRATEGY_FILE)
+        else:
+            (out / STRATEGY_FILE).unlink(missing_ok=True)
+        (out / BACKTEST_META).write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError as exc:
+        raise PersistenceError(f"cannot write backtest outputs to {out}: {exc}", path=str(out)) from exc
+
+
+def read_backtest(out_dir: Path | str) -> tuple[BacktestResult, dict[str, Any]]:
+    """Restore `(BacktestResult, meta)` written by `write_backtest`.
+
+    Raises:
+        PersistenceError: a file is missing or unreadable.
+    """
+    out = Path(out_dir)
+    try:
+        frames = {k: pq.read_table(out / name).to_pandas() for k, name in _BACKTEST_PARQUET.items()}
+        strategy = pq.read_table(out / STRATEGY_FILE).to_pandas() if (out / STRATEGY_FILE).exists() else None
+        meta = json.loads((out / BACKTEST_META).read_text(encoding="utf-8"))
+    except (OSError, ValueError, pa.ArrowException) as exc:
+        raise PersistenceError(f"cannot read backtest outputs from {out}: {exc}", path=str(out)) from exc
+    if not isinstance(meta, dict) or "snapshot_ids" not in meta:
+        raise PersistenceError(f"{out / BACKTEST_META} has no snapshot_ids", path=str(out))
+    return BacktestResult(frames["folds"], frames["metrics"], strategy, frames["summary"]), meta
