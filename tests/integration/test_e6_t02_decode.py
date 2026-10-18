@@ -19,7 +19,7 @@ from regimekit.inference.decode import decode
 from regimekit.model.build import build_model_spec
 from regimekit.model.params.manager import ParamManager
 from regimekit.persistence.results import read_prepared
-from regimekit.persistence.temp_model import load_temp_model, write_temp_model
+from regimekit.persistence.store import ModelStore
 from tests.integration.test_e2_t08_fetch import _fetch, _write_csv_project
 
 _runner = CliRunner()
@@ -32,7 +32,7 @@ def _empty_restarts() -> pd.DataFrame:
 
 
 def _write_model(config_path: Path, out_dir: Path, model_dir: Path, *, u: jnp.ndarray | None = None) -> None:
-    """Build a `ModelSpec` from the resolved config + prepared data, write a temp model directory."""
+    """Build a `ModelSpec` from the resolved config + prepared data, write a model bundle."""
     cfg = load_config(config_path)
     dataset = read_prepared(out_dir / "prepared.parquet")
     spec = build_model_spec(cfg, dataset)
@@ -53,7 +53,7 @@ def _write_model(config_path: Path, out_dir: Path, model_dir: Path, *, u: jnp.nd
         prep_stats=dataset.prep_stats,
         config_resolved={},
     )
-    write_temp_model(fit, cfg, model_dir)
+    ModelStore.save(fit, model_dir, cfg, dataset)
 
 
 def _decode(config: Path, out: Path, model: Path, *extra: str) -> Result:
@@ -166,7 +166,7 @@ def test_e6_t02_decode_api_matches_cli_output(tmp_path: Path) -> None:
     assert _decode(config, out, model_dir).exit_code == 0
 
     dataset = read_prepared(out / "prepared.parquet")
-    fit = load_temp_model(model_dir, dataset)
+    fit = ModelStore.load(model_dir)
     api_result = decode(fit, dataset)
 
     table = pd.read_parquet(out / "posterior.parquet")

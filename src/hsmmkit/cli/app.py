@@ -49,7 +49,7 @@ from regimekit.persistence.results import (
     write_prepared,
     write_simulation,
 )
-from regimekit.persistence.temp_model import load_temp_model
+from regimekit.persistence.store import ModelStore
 from regimekit.statespace.builders import build_expanded, build_explicit
 from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from regimekit.utils.errors import EXIT_CODES, ConfigError, DataError, PersistenceError, RegimekitError
@@ -365,10 +365,10 @@ def run_decode(
     Raises:
         DataError: no prepared dataset exists and `--offline` forbids fetching one.
         NumericalError: the engine's log-likelihood is non-finite (exit code 4).
-        PersistenceError: `model_dir` is not a `write_temp_model` directory, or outputs can't be written.
+        PersistenceError: `model_dir` is not a model bundle, or outputs can't be written.
     """
     dataset = _load_prepared(config, config_dir, out_dir, offline)
-    fit = load_temp_model(model_dir, dataset)
+    fit = ModelStore.load(model_dir)
     # `decode`'s own `engine=None` default always builds a default-configured engine; pass one built
     # from `config.estimation` (`chunk_size`/`parallel_scan`) so decoding matches how the model was
     # fit, the same way `estimation.map.fit` builds its engine (independent review finding).
@@ -382,7 +382,7 @@ def run_decode(
 @app.command("decode")
 def decode_cmd(
     config_path: Path,
-    model: Path = typer.Option(..., "--model", help="Directory from `write_temp_model`."),
+    model: Path = typer.Option(..., "--model", help="Model bundle directory (`<name>.rkmodel`)."),
     augmented: bool = typer.Option(False, "--augmented", help="Also write augmented.parquet."),
 ) -> None:
     """Decode a fitted model against `config_path`'s data: filtered/smoothed/Viterbi/segments/IC."""
@@ -462,7 +462,7 @@ def run_forecast(
         PersistenceError: `model_dir` is not a model directory or outputs can't be written.
     """
     dataset = _load_prepared(config, config_dir, out_dir, offline)
-    fit = load_temp_model(model_dir, dataset)
+    fit = ModelStore.load(model_dir)
     spec = fit.spec
     space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
     forecaster = _covariate_forecaster(config, config_dir, dataset, scenario)
@@ -490,7 +490,7 @@ def run_forecast(
 @app.command("forecast")
 def forecast_cmd(
     config_path: Path,
-    model: Path = typer.Option(..., "--model", help="Directory from `write_temp_model`."),
+    model: Path = typer.Option(..., "--model", help="Model bundle directory (`<name>.rkmodel`)."),
     horizon: int | None = typer.Option(None, "--horizon", help="Steps ahead (default forecast.horizon)."),
     n_sim: int | None = typer.Option(None, "--n-sim", help="Simulated paths (default forecast.n_sim)."),
     scenario: Path | None = typer.Option(None, "--scenario", help="Scenario CSV of future covariates."),
@@ -549,7 +549,7 @@ def run_simulate(
     if params == "model":
         if model_dir is None:
             raise ConfigError("--params model requires --model DIR", path="--model")
-        fit = load_temp_model(model_dir, dataset)
+        fit = ModelStore.load(model_dir)
         spec, theta = fit.spec, fit.params
     else:
         spec = build_model_spec(config, dataset)

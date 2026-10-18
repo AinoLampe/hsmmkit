@@ -50,6 +50,7 @@ nav:
       - Configuration reference: guide/config.md
       - Data providers & ToS: guide/providers.md
       - Forecasting: guide/forecasting.md
+      - Model bundle: guide/bundle.md
       - Output files: guide/outputs.md
       - Backtesting: guide/backtesting.md
       - Validation: guide/validation.md
@@ -77,5 +78,6 @@ nav:
       - "0008 Approximate-inference plug-in interface": adr/0008-approx-inference-plugin.md
       - "0009 pydantic v2 + YAML configuration": adr/0009-pydantic-v2-yaml-config.md
       - "0010 typer CLI, pandas, pyarrow": adr/0010-typer-cli-pandas-pyarrow.md
+      - "0011 safetensors model bundle": adr/0011-safetensors.md
       - "0012 Core/profile split": adr/0012-core-profile-split.md
       - "0013 Three clocks including steps": adr/0013-three-clocks.md

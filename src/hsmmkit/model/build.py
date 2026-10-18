@@ -1,8 +1,8 @@
 """`ProjectConfig` + `PreparedDataset` -> `ModelSpec` (CLAUDE.md §3.3 unowned deliverable).
 
 No ticket's "Creates" named this module; CLAUDE.md §3.3 assigns it to "the first ticket that needs a
-`ModelSpec` from a config, at the latest E6-T02" -- that is this ticket (`decode`'s temporary model
-loader needs to rebuild a `ModelSpec` from the resolved config it reads out of `spec.json`).
+`ModelSpec` from a config, at the latest E6-T02" -- that is this ticket (`decode` needs to rebuild
+a `ModelSpec` from a stored configuration; `persistence.store` now does so through `build_model_spec_from`).
 
 `EMISSION_FAMILIES`/`DURATION_FAMILIES` are keyed by the config's own family names (`config/schema.py`'s
 `EmissionFamily`/`DurationFamily` Literal types); every family already has a `from_config` classmethod
@@ -14,6 +14,7 @@ follow-up for whoever first builds a lattice-configured model end to end.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from regimekit.model.duration.gamma import GammaDuration
@@ -67,42 +68,72 @@ def _with_mean_sojourn_steps(
     return cfg.model_copy(update={"params": new_params})
 
 
+@dataclass(frozen=True)
+class BuildInputs:
+    """What the config alone cannot say about a model: the facts it takes from the dataset.
+
+    `n_series`, the per-entry-point covariate name tuples (`cov_names`), and `clock`/`nominal_dt` for the
+    duration families' days->steps conversion. A model bundle stores these so that its `ModelSpec` can be
+    rebuilt without data.
+    """
+
+    n_series: int
+    cov_names: dict[str, tuple[str, ...]]
+    clock: Clock
+    nominal_dt: float
+
+    @classmethod
+    def from_data(cls, data: PreparedDataset) -> BuildInputs:
+        """The inputs of a prepared dataset."""
+        return cls(int(data.observations.shape[1]), dict(data.cov_names), data.clock, float(data.nominal_dt))
+
+
 def build_model_spec(cfg: ProjectConfig, data: PreparedDataset) -> ModelSpec:
     """Assemble a `ModelSpec` (structure + `param_specs`) from `cfg.model` and `data`'s covariate names.
 
-    `data` supplies what the config alone cannot: the realized `n_series`, the per-entry-point covariate
-    name tuples (`data.cov_names`), and `nominal_dt`/`clock` for the duration family's days->steps
-    conversion. `cfg.model.d_max` is always a concrete int by this point (`config/schema.py`'s
-    `_resolve_d_max` cross-field validator fills in a default during `load_config`).
+    `data` supplies what the config alone cannot (see `BuildInputs`). `cfg.model.d_max` is always a
+    concrete int by this point (`config/schema.py`'s `_resolve_d_max` cross-field validator fills in a
+    default during `load_config`).
+
+    Raises:
+        ConfigError: an unregistered `emission.family`/`duration.family` name.
+    """
+    return build_model_spec_from(cfg, BuildInputs.from_data(data))
+
+
+def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
+    """`build_model_spec` from explicit `BuildInputs` (no dataset needed).
 
     Raises:
         ConfigError: an unregistered `emission.family`/`duration.family` name.
     """
     m = cfg.model
     n = m.n_states
-    n_series = data.observations.shape[1]
+    n_series = inputs.n_series
 
     emis_cls = EMISSION_FAMILIES.get(m.emission.family)
     if emis_cls is None:
         raise ConfigError(f"unknown emission family {m.emission.family!r}", path="model.emission.family")
-    emission_cov_names = data.cov_names.get("emission", ())
+    emission_cov_names = inputs.cov_names.get("emission", ())
     emission, emission_specs = emis_cls.from_config(m.emission, n, n_series, emission_cov_names)
 
     dur_cls = DURATION_FAMILIES.get(m.duration.family)
     if dur_cls is None:
         raise ConfigError(f"unknown duration family {m.duration.family!r}", path="model.duration.family")
-    duration_cfg = _with_mean_sojourn_steps(m.duration, data.clock, data.nominal_dt, cfg.data.bars_per_day)
+    duration_cfg = _with_mean_sojourn_steps(
+        m.duration, inputs.clock, inputs.nominal_dt, cfg.data.bars_per_day
+    )
     if m.duration.family == "nonparametric":
         duration, duration_specs = dur_cls.from_config(
-            duration_cfg, n, data.cov_names.get("duration", ()), data.nominal_dt, d_max=m.d_max
+            duration_cfg, n, inputs.cov_names.get("duration", ()), inputs.nominal_dt, d_max=m.d_max
         )
     else:
         duration, duration_specs = dur_cls.from_config(
-            duration_cfg, n, data.cov_names.get("duration", ()), data.nominal_dt
+            duration_cfg, n, inputs.cov_names.get("duration", ()), inputs.nominal_dt
         )
 
     transition, transition_specs = JumpTransition.from_config(
-        m.transition, n, m.transition.order, data.cov_names.get("transition", ())
+        m.transition, n, m.transition.order, inputs.cov_names.get("transition", ())
     )
     assert m.d_max is not None  # `_resolve_d_max` (config/schema.py) always fills this in
 

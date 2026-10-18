@@ -59,6 +59,8 @@ def test_e0_t04_adr_consequences_non_empty(number: str) -> None:
     assert len(match.group(1).strip()) > 20
 
 
-def test_e0_t04_adr_0011_absent_until_e8_t01() -> None:
-    """ADR-0011 (safetensors bundle format) does not exist yet; E8-T01 writes it."""
-    assert not list(ADR_DIR.glob("0011-*.md"))
+def test_e0_t04_adr_0011_is_the_safetensors_adr_written_by_e8_t01() -> None:
+    """E0-T04 leaves ADR-0011 to E8-T01 (it was absent before); now exactly one, about safetensors."""
+    found = list(ADR_DIR.glob("0011-*.md"))
+    assert len(found) == 1
+    assert "safetensors" in found[0].read_text(encoding="utf-8").splitlines()[0].lower()

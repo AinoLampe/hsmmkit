@@ -11,10 +11,8 @@ See [Math → Forecasting](../math/forecasting.md) for the governing Monte Carlo
 dataset into a decoded posterior: filtered and smoothed regime probabilities, the Viterbi path, its
 run-length-encoded segments, and the AIC/BIC/ICL information criteria.
 
-`--model DIR` points at a directory written by `persistence.temp_model.write_temp_model` -- a
-temporary `params.npz` + `spec.json` pair that stands in for the real model bundle until E8-T01 lands
-(CLAUDE.md §4 invariant 6 forbids adding the `safetensors` dependency ahead of its own ADR-0011, which
-E8-T01 owns). `prepared.parquet` is read from the output directory, or fetched first if missing and
+`--model DIR` points at a model bundle (`<name>.rkmodel/`, see [Model bundle](bundle.md)) written by
+`ModelStore.save`. `prepared.parquet` is read from the output directory, or fetched first if missing and
 `--offline` is not set.
 
 Outputs, written to the output directory:

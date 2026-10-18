@@ -25,7 +25,7 @@ from regimekit.inference.simulate import segments_of
 from regimekit.model.build import build_model_spec
 from regimekit.model.params.manager import ParamManager
 from regimekit.persistence.results import read_forecast, read_prepared, write_forecast, write_simulation
-from regimekit.persistence.temp_model import load_temp_model
+from regimekit.persistence.store import ModelStore
 from regimekit.statespace.builders import build_expanded
 from regimekit.utils.errors import ConfigError, PersistenceError
 from tests.integration.test_e2_t08_fetch import _fetch, _write_csv_project
@@ -116,7 +116,7 @@ def test_e6_t05_forecast_cli_matches_a_direct_library_call(tmp_path: Path) -> No
 
     cfg = load_config(config)
     dataset = read_prepared(out / "prepared.parquet")
-    fit = load_temp_model(model_dir, dataset)
+    fit = ModelStore.load(model_dir)
     mc = MonteCarloForecaster(
         fit.spec,
         build_expanded(fit.spec),

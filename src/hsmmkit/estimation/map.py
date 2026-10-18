@@ -16,7 +16,7 @@ import pandas as pd
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.engine.explicit_duration import ExplicitDurationEngine
 from regimekit.estimation.init import lattice_jitter, observed_rows, random, rollvol_kmeans
-from regimekit.estimation.objective import make_objective
+from regimekit.estimation.objective import canonical_data, make_objective
 from regimekit.estimation.optimizers import minimize
 from regimekit.estimation.results import FitResult
 from regimekit.model.lattice import has_identifiability_guard, post_sort_states
@@ -142,7 +142,8 @@ def fit(
         theta, _ = post_sort_states(theta, spec, by=scale_name)
         u = manager.flatten(theta)
 
-    loglik = float(objective.loglik(u))  # canonical data: no retrace per walk-forward fold
+    # canonical data: the engine's own kernel, without a retrace per walk-forward fold
+    loglik = float(engine.loglik(theta, spec, space, canonical_data(data)))
 
     return FitResult(
         estimator="map",
