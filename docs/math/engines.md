@@ -72,3 +72,12 @@ Performance guardrails (NFR-02, `tests/benchmark`, `pytest -m benchmark`): expan
 $T = 5000$, $N = 4$, NB $r = 5$, two covariates: at most 100 ms; explicit-duration `forward_backward` with
 $D_{\max} = 250$: at most 2 s. `benchmarks/baseline.json` holds the reference means; the nightly job fails on a
 30 % regression (`scripts/compare_benchmarks.py`).
+
+## Symbols and code names
+
+| Math | Code |
+|---|---|
+| `\log \alpha_t` | `log_alpha` inside `ExpandedHMMEngine` |
+| `\ell` | `InferenceEngine.loglik` (0-d array) |
+| filtered / smoothed posteriors | `InferenceEngine.forward_backward` -> `Posterior` |
+| Viterbi path | `InferenceEngine.viterbi` |

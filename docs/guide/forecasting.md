@@ -1,8 +1,5 @@
 # Forecasting
 
-!!! note
-    Stub page (E0-T04). Forecasting/simulation are filled in by E6-T03…E6-T05; completed in E8-T04.
-
 See [Math → Forecasting](../math/forecasting.md) for the governing Monte Carlo aggregation formula.
 
 ## Decode

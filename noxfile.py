@@ -96,7 +96,8 @@ def examples(session: nox.Session) -> None:
 
 @nox.session
 def docs(session: nox.Session) -> None:
-    """Strict mkdocs build."""
+    """Regenerate the config reference from the schema, then a strict mkdocs build."""
+    session.run("uv", "run", "python", "scripts/gen_config_reference.py", external=True)
     session.run("uv", "run", "mkdocs", "build", "--strict", external=True)
 
 

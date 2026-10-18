@@ -82,3 +82,12 @@ Regime labels are only identified up to permutation; three helpers guard against
   by subtracting the new reference's logit; `jump_probs` is invariant up to the permutation.
 - `has_identifiability_guard(spec)` is true when some spec is `increasing`, or when every location/scale
   emission spec (`mu`, `sigma`, `m`, `s`) is `fixed`.
+
+## Symbols and code names
+
+| Math | Code |
+|---|---|
+| `u` | `ParamManager.flatten` / `FitResult.uparams` (flat unconstrained vector) |
+| `\theta` | `Params` (dict of arrays named `<component>.<key>`, e.g. `emission.sigma`) |
+| `g`, its log-det-Jacobian | `Bijector.forward`, `Bijector.log_det_jac` in `model/params/bijectors.py` |
+| declaration | `ParamSpec` / `ParamManager` in `model/params/` |

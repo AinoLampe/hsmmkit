@@ -51,3 +51,13 @@ negative, and `jax.grad` through non-symmetric eigenvectors is unsupported by JA
 neither problem and is fully differentiable, at the cost of a fixed iteration count (500) rather than an
 exact closed form; `π A_bar = π` still holds within tolerance for the well-conditioned, aperiodic chains
 this domain produces.
+
+## Symbols and code names
+
+| Math | Code |
+|---|---|
+| `N` | `model.n_states` |
+| `S` | `StateSpace.n_expanded` |
+| `D_{max}` | `model.d_max` |
+| regime / phase of state `s` | `StateIndex.regime_of`, `StateIndex.phase_of` (1-based) |
+| `A_t` | built per step by `statespace.transitions` (never materialized as `(T, S, S)`) |

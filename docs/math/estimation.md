@@ -1,8 +1,5 @@
 # Estimation
 
-!!! note
-    Stub page (E0-T04). Filled in by E5-T01…E5-T04 (objective, optimizers, init, diagnostics); completed in E8-T04.
-
 MAP estimation (ADR-0005) maximizes the log-posterior in the unconstrained parameterization `u` (parameters
 section):
 
@@ -117,3 +114,13 @@ is the observed information (`objective.value` is already the negative log-poste
 sign flip); `Cov_u = inv(H)`; the delta method (`Cov_theta = J Cov_u J^T`, `J = jacfwd(manager.unflatten)`)
 gives one SE array per `theta` key, shaped like that parameter. Returns `None` (not an exception) when
 `H`'s smallest eigenvalue is non-positive or non-finite.
+
+## Symbols and code names
+
+| Math | Code |
+|---|---|
+| `\hat u` | `FitResult.uparams` |
+| objective | `estimation.objective.make_objective`, `value_and_grad` |
+| fit | `regimekit.estimation.fit(spec, data, cfg, seed)` |
+| restarts | `FitResult.restarts` (one row per start) |
+| standard errors | `estimation.report.std_errors` |

@@ -56,18 +56,33 @@ nav:
       - Validation: guide/validation.md
       - Python API and CLI: guide/project.md
       - Examples and tutorial: guide/examples.md
+      - Troubleshooting: guide/troubleshooting.md
   - Math:
+      - Time conventions: math/time.md
       - Parameters: math/parameters.md
       - Emissions: math/emissions.md
       - Durations: math/durations.md
       - Transitions: math/transitions.md
+      - Higher-order memory: math/higher_order.md
       - State space: math/statespace.md
       - Engines: math/engines.md
       - Explicit-duration engine: math/engine_explicit.md
       - Estimation: math/estimation.md
+      - Model selection: math/model_selection.md
       - Forecasting: math/forecasting.md
       - Evaluation: math/evaluation.md
-  - API reference: api/index.md
+  - API reference:
+      - Overview: api/index.md
+      - Project and CLI: api/project.md
+      - Configuration: api/config.md
+      - Data: api/data.md
+      - Model: api/model.md
+      - Engines and estimation: api/engines.md
+      - Inference: api/inference.md
+      - Evaluation: api/evaluation.md
+      - Persistence and utilities: api/persistence.md
+  - Releases:
+      - 0.1.0: releases/0.1.0.md
   - Architecture decisions:
       - Index: adr/index.md
       - "0001 Continuous-time parameters, discrete-time inference": adr/0001-continuous-time-parameters-discrete-inference.md

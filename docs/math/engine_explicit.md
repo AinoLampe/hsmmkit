@@ -89,3 +89,12 @@ noise-like data can favour.
 Full `(T, N, D_max)` tables (`forward`, unchunked `forward_backward`) raise `NumericalError`
 ("use chunked scan") when `T N D_max > 5e7`. Only `order == 1`, `duration_conditioning == "current"` and
 `initial in {uniform, free}` (over the first segment's regime) are supported.
+
+## Symbols and code names
+
+| Math | Code |
+|---|---|
+| `p_i(d)`, `h_i(d)` | `DurationFamily` explicit pmf / hazard |
+| `D_{max}` | `model.d_max` |
+| engine | `ExplicitDurationEngine` (`chunk_size` from `estimation.chunk_size`) |
+| nominal step `\Delta` | `PreparedDataset.nominal_dt` |

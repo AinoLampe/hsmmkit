@@ -40,20 +40,15 @@ every series.
 
 ## Student-t (`StudentTFamily`, E3-T02)
 
-Heavy-tailed location-scale emission with per-state (or tied) degrees of freedom `
-u_i > 2`:
+Heavy-tailed location-scale emission with per-state (or tied) degrees of freedom `\nu_i > 2`:
 
 $$
-y_t \mid z_t = i \sim m_i(t)\,\Delta_t + s_i(t)\sqrt{\Delta_t}\; t_{
-u_i}, \qquad
-m_i(t) = m_i + \gamma_i^	op z^e_t, \quad \log s_i(t) = \log s_i + \delta_i^	op z^e_t
+y_t \mid z_t = i \sim m_i(t)\,\Delta_t + s_i(t)\sqrt{\Delta_t}\; t_{\nu_i}, \qquad
+m_i(t) = m_i + \gamma_i^\top z^e_t, \quad \log s_i(t) = \log s_i + \delta_i^\top z^e_t
 $$
 
-`s_i` is a **scale, not the standard deviation**: `\mathrm{sd} = s_i \sqrt{
-u_i/(
-u_i - 2)}\,\sqrt{\Delta_t}`.
-`m_i` is the location of the log-return itself, so there is no `-\sigma^2/2` term; as `
-u 	o \infty` the density
+`s_i` is a **scale, not the standard deviation**: `\mathrm{sd} = s_i \sqrt{\nu_i/(\nu_i - 2)}\,\sqrt{\Delta_t}`.
+`m_i` is the location of the log-return itself, so there is no `-\sigma^2/2` term; as `\nu \to \infty` the density
 tends to GBM with `\mu - \sigma^2/2 = m`, `\sigma = s`. Parameters: `emission.{m,s,nu,gamma,delta}`;
 `emission.nu` has shape `(N,)` on the `nu_gt_2` domain, and mode `tied` shares one value (tie group `"nu"`),
 i.e. one free coordinate.
@@ -62,3 +57,14 @@ i.e. one free coordinate.
 
 !!! note
     OU/jump/GARCH families are out of scope for 0.1.0 (see E9-T03 spike).
+
+## Symbols and code names
+
+| Math | Code |
+|---|---|
+| `\mu_i, \sigma_i` | `emission.mu`, `emission.sigma` (GBM) |
+| `\gamma_i, \delta_i` | `emission.gamma`, `emission.delta` (drift and log-volatility covariate coefficients) |
+| `m_i, s_i, \nu_i` | `emission.m`, `emission.s`, `emission.nu` (Student-t) |
+| `\Delta_t` | `PreparedDataset.dt` |
+| `z^e_t` | `PreparedDataset.cov_emission` |
+| families | `GBMFamily`, `StudentTFamily` (`EMISSION_FAMILIES` registry in `model/build.py`) |

@@ -50,6 +50,8 @@ dev = [
   "nbclient>=0.11.0",
   "ipykernel>=7.4.0",
   "nbformat>=5.11.1",
+  "towncrier>=26.9.0",
+  "python-semantic-release>=10.7.0",
 ]
 
 [project.scripts]
@@ -106,3 +108,15 @@ markers = [
   "gpu: requires GPU",
 ]
 addopts = "-m 'not slow and not live and not benchmark and not gpu' --import-mode=importlib"
+
+[tool.semantic_release]
+tag_format = "v{version}"
+commit_parser = "conventional"
+allow_zero_version = true  # 0.y.z until the factorial extension lands
+major_on_zero = false
+version_toml = ["pyproject.toml:project.version"]
+commit_message = "chore(release): {version}"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false

@@ -1,8 +1,5 @@
 # Durations
 
-!!! note
-    Explicit families (E3-T04) still land as a stub page section below.
-
 Each `DurationFamily` gives the sojourn-length pmf `p_i(d)` over `d` steps in regime `i` (geometric, shifted
 negative-binomial, Poisson, Gamma, Weibull, log-normal, or nonparametric over `D_max`, per family):
 
@@ -79,3 +76,16 @@ the pmf as given; an untruncated geometric pmf has constant hazard `a`, and a pm
 **`D_max` rule.** `check_d_max` warns when the truncated mass `1 - F(D_{\max}\Delta)` exceeds `10^{-6}` or
 `D_{\max} < 2 \times` the mean sojourn in steps. The phase-family API (`n_phases`, `advance_prob`) raises
 `NotImplementedError` for explicit families.
+
+## Symbols and code names
+
+| Math | Code |
+|---|---|
+| `\lambda_i` | `duration.rate` (phase families) |
+| `a_i(t)` | `DurationFamily.advance_prob_t` |
+| `r_i` | `model.duration.r` (hyperparameter, not in `u`) |
+| `c_i` | `duration.c` (duration covariate coefficients) |
+| `\kappa, \text{shape}, \text{scale}, \mu_{\log}, \text{sd}_{\log}` | `duration.kappa`, `duration.shape`, `duration.scale`, `duration.mu_log`, `duration.sd_log` |
+| nonparametric pmf | `duration.logits` |
+| mean sojourn | `DurationFamily.mean_sojourn(theta, nominal_dt)` |
+| families | `GeometricDuration`, `NegBinDuration`, `PoissonDuration`, `GammaDuration`, `WeibullDuration`, `LogNormalDuration`, `NonparametricDuration` |

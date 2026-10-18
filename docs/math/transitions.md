@@ -41,3 +41,13 @@ $$
 via `jax.scipy.linalg.expm`. The first-order approximation `\lambda_i \Delta_t` (what the discrete-step
 jump chain uses) converges to the exact `\exp(Q\Delta_t)` off-diagonal as `\Delta_t \to 0`, with per-entry
 error `O((\lambda_{\max}\Delta_t)^2)`.
+
+## Symbols and code names
+
+| Math | Code |
+|---|---|
+| `\pi_{ij}(t)` | `TransitionModel.jump_probs(theta, z_pi, memory)` |
+| `a_{ij}, b_{ij}` | `transition.a`, `transition.b` (with covariates), `transition.pi_rows` (without) |
+| `z^\pi_t` | `PreparedDataset.cov_transition` |
+| memory rows | `MemoryLayout` in `model/transition.py` |
+| generator mode | `model.transition.mode: generator` |
