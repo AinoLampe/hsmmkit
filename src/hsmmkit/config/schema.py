@@ -245,6 +245,7 @@ class BacktestCfg(_Base):
     refit_every_steps: int
     horizons: list[int]
     embargo_steps: int = 0
+    n_sim: int | None = Field(default=None, ge=1)  # simulated paths per origin (None = forecast.n_sim)
 
 
 class StrategyCfg(_Base):

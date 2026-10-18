@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import jax
@@ -32,7 +33,24 @@ def _shift(memory: tuple[int, ...], current: int, order: int) -> tuple[int, ...]
 
 
 def build_expanded(spec: ModelSpec) -> StateSpace:
-    """Enumerate the expanded state space `(memory, regime, phase)` from a `ModelSpec`."""
+    """Enumerate the expanded state space `(memory, regime, phase)` from a `ModelSpec`.
+
+    Memoized per `spec`: `StateSpace` carries its `transition_fn` closure in the pytree metadata, which jit
+    compares by identity, so two builds of the same spec would otherwise compile every jitted function twice
+    (a walk-forward run refits once per fold).
+    """
+    space = _build_expanded_cached(spec)
+    if spec.order > 2:  # outside the cache: every build of such a model warns
+        warnings.warn(
+            f"transition.order={spec.order} > 2 expands the state space to S={space.n_expanded} states",
+            stacklevel=2,
+        )
+    return space
+
+
+@lru_cache(maxsize=16)
+def _build_expanded_cached(spec: ModelSpec) -> StateSpace:
+    """`build_expanded` without the order warning (memoized per `spec`)."""
     n_states = spec.n_states
     order = spec.order
     layout = build_memory_layout(n_states, order)
@@ -63,11 +81,6 @@ def build_expanded(spec: ModelSpec) -> StateSpace:
             s += 1
 
     n_expanded = s
-    if order > 2:
-        warnings.warn(
-            f"transition.order={order} > 2 expands the state space to S={n_expanded} states",
-            stacklevel=2,
-        )
 
     regime_of_arr = np.asarray(regime_of, dtype=np.int64)
     phase_of_arr = np.asarray(phase_of, dtype=np.int64)
@@ -195,6 +208,7 @@ def initial_log_rho(spec: ModelSpec, space: StateSpace, theta: Params, nominal_d
     raise ConfigError(f"unknown initial distribution {spec.initial!r}", path="model.initial_state")
 
 
+@lru_cache(maxsize=16)
 def build_explicit(spec: ModelSpec) -> StateSpace:
     """Augmented `(regime, elapsed)` state space of the explicit-duration engine (E4-T06a).
 

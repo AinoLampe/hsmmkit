@@ -110,6 +110,14 @@ class ParamManager:
 
         self._n_free = offset
 
+    def __hash__(self) -> int:
+        """Hash of the specs: the layout is a pure function of them (a static jit argument, CLAUDE.md 5)."""
+        return hash(self._specs)
+
+    def __eq__(self, other: object) -> bool:
+        """Managers over equal specs share one layout, so jitted functions keyed on one serve the other."""
+        return isinstance(other, ParamManager) and self._specs == other._specs
+
     # --- planning ------------------------------------------------------------------------
 
     def _plan_regular(self, spec: ParamSpec, offset: int, tie_coords: dict[str, _Coord]) -> int:

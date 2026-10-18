@@ -130,14 +130,17 @@ class Preparer:
         obs: ObservationSet,
         covs: Sequence[CovariateSeries],
         train_end: str | np.datetime64 | pd.Timestamp,
+        train_start: str | np.datetime64 | pd.Timestamp | None = None,
     ) -> Preparer:
-        """Fit standardization statistics on rows whose end time is `<= train_end`.
+        """Fit standardization statistics on rows whose end time is `<= train_end` (and `>= train_start`).
 
         Args:
             obs: primary prices.
             covs: raw covariate series in `data.covariates` order.
             train_end: last training timestamp (inclusive), any `pd.Timestamp`-parsable value;
                 naive means UTC, timezone-aware values are converted to UTC.
+            train_start: optional first training timestamp (inclusive; a rolling walk-forward window).
+                `None` = from the first prepared row.
 
         Returns:
             `self`, fitted.
@@ -147,6 +150,8 @@ class Preparer:
         """
         frame = self._frame(obs, covs)
         train = frame.times <= _utc_ns(train_end)
+        if train_start is not None:
+            train &= frame.times >= _utc_ns(train_start)
         if not train.any():
             raise DataError(
                 f"train_end {train_end!r} is before the first prepared observation {_iso(frame.times[0])}",
@@ -175,7 +180,7 @@ class Preparer:
         self._stats = PrepStats(
             cov_mean=mean,
             cov_std=std,
-            train_window=(_iso(frame.times[0]), _iso(frame.times[train][-1])),
+            train_window=(_iso(frame.times[train][0]), _iso(frame.times[train][-1])),
             cov_names=tuple(c.name for c in covariates),
             transforms={c.name: list(c.transform) for c in covariates},
             lags={c.name: c.lag for c in covariates},

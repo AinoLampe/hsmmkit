@@ -47,3 +47,44 @@ into a fold table (pure index arithmetic; indices are grid rows, ends exclusive,
 * For an origin `o` and horizon `h` the realized return is `Y_h = sum(y[o+1 .. o+h])`.
 
 `fold_table(folds, times)` adds the timestamps of the first/last training row and the first/last origin.
+
+## Running a walk-forward backtest
+
+`run_backtest(cfg, obs, covs, seed) -> BacktestResult` executes the folds of `schedule_folds` end to end.
+For every fold:
+
+1. `Preparer.fit(train_end=<last train row>)` and `transform` of the whole sample. Standardization statistics
+   come from the fold's train window only, `[train_start, train_end)` (`PrepStats.train_window` records it); a covariate with `lag: 1`
+   reaches step `t` only through prints stamped at or before `tau_{t-1}`.
+2. `fit` (E5-T03) on `window(train_start, train_end)`. The previous fold's optimum is added as one extra
+   restart (`init_strategy == "warm_start"`) next to the `estimation.restarts` regular ones.
+3. One forward pass over `window(0, test_end)` gives the filtered state at every origin. The filter is
+   causal, so row `o` is exactly the filter of `window(0, o + 1)`; the Monte-Carlo forecast of horizon
+   `max(horizons)` starts from it with the seed `derive_seed(seed, PURPOSE_BACKTEST_FORECAST, fold, o)`
+   (`evaluation.backtest.n_sim` simulated paths, default `forecast.n_sim`).
+4. Every configured forecast metric is evaluated per horizon against the realized `Y_h`. The first forecast
+   step uses the last *observed* covariate row (see [Forecasting](forecasting.md)).
+
+Metrics that need a decoded posterior (`aic`, `bic`, `icl`, `regime_*`) are evaluated once per fold on the
+train window and stored with `horizon == 0`; metrics that need labels or a strategy trace are skipped
+(strategies: E7-T03). Dict-valued metrics become `<metric>.<key>` rows (`pit_coverage.coverage_90`).
+
+`BacktestResult.folds` is the `fold_table` plus `fit_time` (seconds). `metrics` has one row per
+`(fold, horizon, metric)` (mean over the fold's origins; `rmse` is the root mean square). `summary` has one
+row per `(horizon, metric)` with `mean`, `sd` across folds and `n` folds (`rmse`: root mean square over
+folds). `pit_ks` / `pit_ks_pvalue` rows pool the PIT values of all origins per horizon (`n` = pooled
+origins); for horizons above 1 consecutive origins overlap, so the p-value is optimistic there.
+
+### Padding and compilation
+
+Every distinct window length `T` is a new compilation of the jitted engine functions. Fit and filter windows
+are therefore padded at the end to the next multiple of 256 rows (`evaluation.padding.pad_dataset`): the
+extra rows have `mask=False`, `observations=0`, the last `dt` and zero covariates, so they add no
+log-density and leave the filter rows `0..T-1` untouched. Folds that pad to the same length share one
+compilation of the objective and of the engine. The data-driven initializations (`rollvol_kmeans`, `random`)
+read only the observed rows (`estimation.init.observed_rows`), so padding cannot bias the starting values.
+
+The posterior metrics are the exception to padding: they decode the *unpadded* train window, because the
+Viterbi path of the last rows is not invariant to trailing masked rows. Their decode therefore compiles once
+per distinct train length (per fold under the expanding scheme); the fit and the filter compile once per
+padded length.

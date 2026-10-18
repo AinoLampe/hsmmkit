@@ -7,6 +7,7 @@ literal `252`/`365.25` (CLAUDE.md §3.2).
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 from typing import TYPE_CHECKING
 
@@ -124,6 +125,35 @@ def _empirical_pi_rows(labels: np.ndarray, spec: ModelSpec) -> np.ndarray | None
         targets = [j for j in range(n) if j != c]
         pi_rows[r] = trans[c, targets]
     return pi_rows
+
+
+def observed_rows(data: PreparedDataset) -> PreparedDataset:
+    """`data` restricted to the rows where every series is observed (`data` itself if there are none to drop).
+
+    The data-driven init strategies (`rollvol_kmeans`, `random`) read `observations` directly, so rows with
+    `mask=False` -- padding rows of a walk-forward window (E7-T02b) or missing prints -- would enter as
+    zeros and bias the starting volatilities. `estimation.map.fit` initializes from this view; the
+    objective itself always sees the full, masked dataset.
+    """
+    keep = np.all(np.asarray(data.mask), axis=-1)
+    if bool(keep.all()):
+        return data
+
+    def pick(block: Array | None) -> Array | None:
+        return None if block is None else jnp.asarray(block)[keep]
+
+    return dataclasses.replace(
+        data,
+        times=np.asarray(data.times)[keep],
+        observations=jnp.asarray(data.observations)[keep],
+        dt=jnp.asarray(data.dt)[keep],
+        mask=jnp.asarray(data.mask)[keep],
+        cov_transition=pick(data.cov_transition),
+        cov_duration=pick(data.cov_duration),
+        cov_emission=pick(data.cov_emission),
+        labels=pick(data.labels),
+        boundaries=None,
+    )
 
 
 def rollvol_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:

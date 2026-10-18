@@ -1,6 +1,7 @@
-"""Walk-forward fold scheduler (E7-T02a): pure index arithmetic, no model code.
+"""Walk-forward evaluation: fold scheduler (E7-T02a) and runner (E7-T02b).
 
-Concept refs: §3.1 FR-E02, §5.7 `BacktestCfg`. All indices are rows of the prepared grid
+Concept refs: §3.1 FR-E02, §5.4 `BacktestResult`, §5.7 `BacktestCfg`. The scheduler is pure index
+arithmetic, the runner (`run_backtest`, below) executes the folds. All indices are rows of the prepared grid
 (`PreparedDataset.times` / `dt`, length `T`), with **exclusive** ends (CLAUDE.md §3.7), i.e. the same
 `[start, end)` convention as `PreparedDataset.window`. A forecast origin is a row `o` of
 `[test_start, test_end)`: the model is fitted on rows `[train_start, train_end)` and forecasts from the
@@ -9,16 +10,45 @@ data `[0, o + 1)`; the realized `Y_h` uses rows `o + 1 .. o + h`.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
+from regimekit.data.prepare import Preparer
+from regimekit.engine.base import Posterior
+from regimekit.engine.expanded_hmm import ExpandedHMMEngine
+from regimekit.engine.explicit_duration import ExplicitDurationEngine
+from regimekit.estimation.map import fit as fit_map
+from regimekit.estimation.objective import canonical_data
+from regimekit.evaluation.metrics.predictive import one_step_mixture_weights, pit_histogram
+from regimekit.evaluation.metrics.registry import resolve
+from regimekit.evaluation.padding import pad_dataset
+from regimekit.evaluation.results import BacktestResult
+from regimekit.inference.covariate_forecasters import make_forecaster
+from regimekit.inference.decode import decode
+from regimekit.inference.forecast import MonteCarloForecaster
+from regimekit.model.build import build_model_spec
+from regimekit.statespace.builders import build_expanded, build_explicit
+from regimekit.utils.clock import future_grid
 from regimekit.utils.errors import ConfigError, DataError
+from regimekit.utils.logging import get_logger
+from regimekit.utils.rng import PURPOSE_BACKTEST_FIT, PURPOSE_BACKTEST_FORECAST, derive_seed
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import BacktestCfg
+    from regimekit.config.schema import BacktestCfg, ProjectConfig
+    from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
+    from regimekit.engine.base import InferenceEngine
+    from regimekit.estimation.results import FitResult
+    from regimekit.evaluation.metrics.registry import Metric
+    from regimekit.statespace.index import StateSpace
+    from regimekit.utils.typing import Array
+
+_LOG = get_logger("regimekit.backtest")
 
 _YEARS_TOL = 1e-9  # elapsed-time comparisons: `504 * (1/252)` must count as 2 years
 
@@ -149,3 +179,298 @@ def fold_table(folds: list[Fold], times: np.ndarray) -> pd.DataFrame:
             "test_end_time": stamps[[f.test_end - 1 for f in folds]],
         }
     )
+
+
+# --- runner (E7-T02b) ----------------------------------------------------------------------------
+
+_ORIGIN_COLUMNS = ["fold", "origin", "horizon", "metric", "value"]
+_FOLD_COLUMNS = ["fold", "horizon", "metric", "value"]
+_PIT_PREFIX = "pit_coverage.pit"
+
+OriginRow = tuple[int, int, int, str, float]
+
+
+def _flatten(name: str, value: float | dict[str, float]) -> dict[str, float]:
+    """A metric result as `{row name: value}`; dict components become `<metric>.<key>`."""
+    if isinstance(value, dict):
+        return {(k if k.startswith(name) else f"{name}.{k}"): float(v) for k, v in value.items()}
+    return {name: float(value)}
+
+
+def _pool(values: np.ndarray, how: str) -> float:
+    """Combine values with the metric's `aggregate` rule: mean, or root mean square."""
+    return float(np.sqrt(np.mean(values**2))) if how == "rms" else float(np.mean(values))
+
+
+def _filter_posterior(log_alpha: Array, loglik: Array, space: StateSpace, engine_tag: str) -> Posterior:
+    """A `Posterior` carrying only the filter rows.
+
+    `MonteCarloForecaster` reads `log_alpha[-1]` and nothing else; `log_beta` / `smoothed` are placeholders
+    (the same rows) so that the dataclass is complete.
+    """
+    return Posterior(
+        log_alpha=log_alpha,
+        log_beta=log_alpha,
+        smoothed=log_alpha,
+        loglik=loglik,
+        index=space.index,
+        engine="explicit" if engine_tag == "explicit" else "expanded",
+    )
+
+
+def _next_dt(data: PreparedDataset, bars_per_day: int) -> float:
+    """`Δ` of the first forecast step, on the same grid `MonteCarloForecaster` samples on."""
+    times = np.asarray(data.times).astype("datetime64[ns]")
+    step = np.median(np.diff(times)).astype("m8[ns]") if times.shape[0] > 1 else None
+    _, dt = future_grid(times[-1], 1, data.clock, bars_per_day, step)
+    return float(dt[0])
+
+
+def _row(block: Array | None, index: int) -> Array | None:
+    return None if block is None else jnp.asarray(block)[index]
+
+
+def _rule(name: str, agg_of: dict[str, str]) -> str:
+    """The aggregation rule of a (possibly flattened `metric.key`) row name."""
+    return agg_of.get(name, agg_of.get(name.split(".", 1)[0], "mean"))
+
+
+def run_backtest(
+    cfg: ProjectConfig, obs: ObservationSet, covs: Sequence[CovariateSeries], seed: int
+) -> BacktestResult:
+    """Walk-forward evaluation: per fold refit on the train window, forecast from every test origin.
+
+    Per fold (`schedule_folds` on the full grid): `Preparer.fit(train_end=<last train row>)` and `transform`
+    of the whole sample (standardization statistics from the train window only, `PrepStats.train_window`);
+    `fit` (E5-T03) on `window(train_start, train_end)` with the previous fold's optimum as one *extra*
+    restart; one forward pass over `window(0, test_end)` gives the filtered state at every origin (the
+    filter is causal, so row `o` equals the filter of `window(0, o + 1)`); for every origin `o` of the test
+    range the Monte-Carlo forecast of horizon `max(horizons)` starts from that filter, with
+    `derive_seed(seed, PURPOSE_BACKTEST_FORECAST, fold, o)`, and each configured metric is evaluated per
+    horizon against the realized cumulative return. Windows are padded with masked rows to a multiple of 256
+    (`evaluation.padding`), so the jitted engine functions compile once per padded length, not per fold.
+
+    Metrics that need a decoded posterior (`aic`, `bic`, `icl`, `regime_*`) are evaluated once per fold on
+    the train window and stored with `horizon == 0`. Metrics that need labels or a strategy trace are
+    skipped (strategies arrive with E7-T03).
+
+    Returns:
+        `BacktestResult` with `folds` (`schedule_folds` table + `fit_time` seconds), `metrics` (one row per
+        `(fold, horizon, metric)`: the mean over the fold's origins, root mean square for `rmse`),
+        `strategy` (`None`) and `summary` (per `(horizon, metric)`: `mean`, `sd` across folds, `n` folds).
+        `pit_ks` / `pit_ks_pvalue` rows pool the PIT values of all origins per horizon (`n` = pooled
+        origins; the p-value ignores the overlap between horizons > 1 and is optimistic there).
+
+    Raises:
+        ConfigError: unknown metrics, a `scenario` covariate forecaster, or an infeasible fold schedule.
+        DataError: the per-fold preparation changes the grid.
+        NumericalError: a non-finite fit, filter or forecast.
+    """
+    bt = cfg.evaluation.backtest
+    horizons = sorted(set(bt.horizons))
+    n_sim = bt.n_sim if bt.n_sim is not None else cfg.forecast.n_sim
+    metrics = resolve(list(cfg.evaluation.metrics))
+    per_origin = [m for m in metrics if m.needs <= {"forecast", "fit"}]
+    per_fold = [m for m in metrics if "posterior" in m.needs and m.needs <= {"posterior", "fit"}]
+    skipped = [m.name for m in metrics if m not in per_origin and m not in per_fold]
+    if skipped:
+        _LOG.info("backtest_metrics_skipped", metrics=skipped, reason="need labels or a strategy trace")
+    agg_of = {m.name: m.aggregate for m in per_origin + per_fold}
+
+    # The grid does not depend on the fitted statistics: one full-sample preparation fixes the fold table.
+    grid = Preparer(cfg.data).fit(obs, covs, train_end=obs.times[-1]).transform(obs, covs)
+    folds = schedule_folds(np.asarray(grid.times), np.asarray(grid.dt), bt, horizons[-1])
+    spec = build_model_spec(cfg, grid)
+    space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
+    engine: InferenceEngine = (
+        ExplicitDurationEngine(chunk_size=cfg.estimation.chunk_size)
+        if spec.engine == "explicit"
+        else ExpandedHMMEngine(parallel_scan=cfg.estimation.parallel_scan)
+    )
+    forecaster = None
+    if grid.prep_stats.cov_names:
+        if cfg.forecast.covariate_forecaster.type == "scenario":
+            raise ConfigError(
+                "a fixed scenario cannot be used in a walk-forward backtest (one path for every origin)",
+                path="forecast.covariate_forecaster.type",
+            )
+        forecaster = make_forecaster(cfg.forecast.covariate_forecaster)
+    mc = MonteCarloForecaster(
+        spec, space, engine, forecaster, cfg.forecast, bars_per_day=cfg.data.bars_per_day
+    )
+
+    origin_rows: list[OriginRow] = []
+    fold_rows: list[tuple[int, int, str, float]] = []
+    fit_times: list[float] = []
+    warm: Array | None = None
+    for fold in folds:
+        prep = Preparer(cfg.data).fit(
+            obs,
+            covs,
+            train_end=grid.times[fold.train_end - 1],
+            train_start=grid.times[fold.train_start],  # row 0 for expanding folds
+        )
+        data = prep.transform(obs, covs)
+        if not np.array_equal(data.times, grid.times):
+            raise DataError(f"fold {fold.fold}: the per-fold preparation changed the grid", path="data")
+
+        train = data.window(fold.train_start, fold.train_end)
+        started = time.perf_counter()
+        fitted = fit_map(
+            spec,
+            pad_dataset(train),
+            cfg.estimation,
+            derive_seed(seed, PURPOSE_BACKTEST_FIT, fold.fold),
+            warm_start=warm,
+        )
+        fit_times.append(time.perf_counter() - started)
+        warm = fitted.uparams
+
+        if per_fold:
+            ctx = {"posterior": decode(fitted, train, engine), "fit": fitted}
+            for metric in per_fold:
+                for name, value in _flatten(metric.name, metric(**ctx)).items():
+                    fold_rows.append((fold.fold, 0, name, value))
+
+        if per_origin:
+            origin_rows += _forecast_fold(
+                fold_index=fold.fold,
+                origins=fold.origins(),
+                data=data,
+                test_end=fold.test_end,
+                fitted=fitted,
+                mc=mc,
+                engine=engine,
+                space=space,
+                metrics=per_origin,
+                horizons=horizons,
+                n_sim=n_sim,
+                seed=seed,
+                bars_per_day=cfg.data.bars_per_day,
+            )
+        _LOG.info(
+            "backtest_fold_done",
+            fold=fold.fold,
+            train_rows=fold.train_end - fold.train_start,
+            origins=len(fold.origins()),
+            fit_s=round(fit_times[-1], 3),
+            converged=fitted.converged,
+        )
+
+    origin_frame = pd.DataFrame(origin_rows, columns=_ORIGIN_COLUMNS)
+    fold_frame = _fold_metrics(origin_frame, fold_rows, agg_of)
+    folds_table = fold_table(folds, grid.times)
+    folds_table["fit_time"] = fit_times
+    return BacktestResult(
+        folds=folds_table,
+        metrics=fold_frame,
+        strategy=None,
+        summary=_summary(fold_frame, origin_frame, agg_of),
+    )
+
+
+def _forecast_fold(
+    *,
+    fold_index: int,
+    origins: range,
+    data: PreparedDataset,
+    test_end: int,
+    fitted: FitResult,
+    mc: MonteCarloForecaster,
+    engine: InferenceEngine,
+    space: StateSpace,
+    metrics: Sequence[Metric],
+    horizons: list[int],
+    n_sim: int,
+    seed: int,
+    bars_per_day: int,
+) -> list[OriginRow]:
+    """`(fold, origin, horizon, metric, value)` rows for every origin of one fold."""
+    max_h = horizons[-1]
+    engine_tag = fitted.spec.engine
+    wants_mixture = any(m.name == "log_score_mixture" for m in metrics)
+    padded = pad_dataset(data.window(0, test_end))
+    log_alpha, loglik = engine.forward(fitted.params, fitted.spec, space, canonical_data(padded))
+    obs_np = np.asarray(data.observations)
+    mask_np = np.asarray(data.mask)
+    rows: list[OriginRow] = []
+    for o in origins:
+        post = _filter_posterior(log_alpha[: o + 1], loglik, space, engine_tag)
+        data_o = data.window(0, o + 1)
+        forecast = mc.forecast(
+            fitted, data_o, max_h, n_sim, derive_seed(seed, PURPOSE_BACKTEST_FORECAST, fold_index, o), post
+        )
+        base: dict[str, object] = {
+            "forecast": forecast,
+            "fit": fitted,
+            "realized": obs_np[o + 1 : o + 1 + max_h],
+        }
+        if wants_mixture:
+            dt_next = _next_dt(data_o, bars_per_day)
+            base["dt_next"] = dt_next
+            base["z_emission_next"] = _row(data.cov_emission, o)
+            if engine_tag == "expanded":
+                base["mixture_weights"] = one_step_mixture_weights(
+                    log_alpha[o],
+                    fitted.params,
+                    space,
+                    dt_next,
+                    _row(data.cov_transition, o),
+                    _row(data.cov_duration, o),
+                )
+        for h in horizons:
+            if not bool(mask_np[o + 1 : o + 1 + h].all()):
+                continue  # a missing realized return: no score for this (origin, horizon)
+            ctx = {**base, "horizon": h}
+            for metric in metrics:
+                if metric.name == "log_score_mixture" and h != 1:
+                    continue
+                for name, value in _flatten(metric.name, metric(**ctx)).items():
+                    rows.append((fold_index, o, h, name, value))
+    return rows
+
+
+def _fold_metrics(
+    origin_frame: pd.DataFrame, fold_rows: list[tuple[int, int, str, float]], agg_of: dict[str, str]
+) -> pd.DataFrame:
+    """`fold, horizon, metric, value`: origin values pooled within each fold, plus the per-fold metrics."""
+    rows: list[tuple[int, int, str, float]] = list(fold_rows)
+    for keys, group in origin_frame.groupby(["fold", "horizon", "metric"], sort=True):
+        fold, horizon, name = (int(keys[0]), int(keys[1]), str(keys[2]))  # type: ignore[call-overload]
+        rows.append((fold, horizon, name, _pool(group["value"].to_numpy(), _rule(name, agg_of))))
+    frame = pd.DataFrame(rows, columns=_FOLD_COLUMNS).astype(
+        {"fold": "int64", "horizon": "int64", "value": "float64"}
+    )
+    return frame.sort_values(["fold", "horizon", "metric"], kind="stable").reset_index(drop=True)
+
+
+def _summary(fold_frame: pd.DataFrame, origin_frame: pd.DataFrame, agg_of: dict[str, str]) -> pd.DataFrame:
+    """`horizon, metric, mean, sd, n`: across folds, plus the pooled-PIT Kolmogorov-Smirnov rows."""
+    rows: list[dict[str, object]] = []
+    for (horizon, name), group in fold_frame.groupby(["horizon", "metric"], sort=True):
+        values = group["value"].to_numpy()
+        rows.append(
+            {
+                "horizon": int(horizon),  # type: ignore[call-overload]
+                "metric": str(name),
+                "mean": _pool(values, _rule(str(name), agg_of)),
+                "sd": float(np.std(values, ddof=1)) if values.shape[0] > 1 else float("nan"),
+                "n": int(values.shape[0]),
+            }
+        )
+    pit = origin_frame[origin_frame["metric"].str.startswith(_PIT_PREFIX)]
+    for (horizon, name), group in pit.groupby(["horizon", "metric"], sort=True):
+        _, d_stat, p_value = pit_histogram(group["value"].to_numpy())
+        suffix = str(name)[len(_PIT_PREFIX) :]
+        for label, value in ((f"pit_ks{suffix}", d_stat), (f"pit_ks_pvalue{suffix}", p_value)):
+            rows.append(
+                {
+                    "horizon": int(horizon),  # type: ignore[call-overload]
+                    "metric": label,
+                    "mean": value,
+                    "sd": float("nan"),
+                    "n": int(group.shape[0]),
+                }
+            )
+    summary = pd.DataFrame(rows, columns=["horizon", "metric", "mean", "sd", "n"])
+    return summary.sort_values(["horizon", "metric"], kind="stable").reset_index(drop=True)

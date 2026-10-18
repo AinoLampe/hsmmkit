@@ -54,6 +54,15 @@ def _canonical(data: PreparedDataset) -> PreparedDataset:
     return dataclasses.replace(data, times=times, prep_stats=_CANONICAL_STATS, snapshot_ids=())
 
 
+def canonical_data(data: PreparedDataset) -> PreparedDataset:
+    """`data` for direct engine calls that should share a compilation across datasets of one shape.
+
+    `times`, `prep_stats` and `snapshot_ids` sit in the dataset's pytree metadata, which jit compares by
+    value: every walk-forward fold would otherwise retrace the engine functions (see `Objective`).
+    """
+    return _canonical(data)
+
+
 def _log_prior(theta: Params, spec: ModelSpec, space: StateSpace, manager: ParamManager) -> Array:
     """`manager.log_prior` plus the transition model's extra prior (0 when it defines none)."""
     total = manager.log_prior(theta)

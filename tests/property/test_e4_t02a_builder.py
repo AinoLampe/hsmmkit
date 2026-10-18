@@ -14,7 +14,7 @@ from hypothesis import strategies as st
 from regimekit.model.duration.negbin import NegBinDuration
 from regimekit.model.emission.gbm import GBMFamily
 from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition
+from regimekit.model.transition import JumpTransition, build_memory_layout
 from regimekit.statespace.builders import build_expanded, initial_log_rho
 
 
@@ -80,16 +80,16 @@ def test_e4_t02a_state_space_no_recompile_across_equal_layouts() -> None:
     `tests/property/test_e4_t02b_transitions.py`.
     """
     duration = NegBinDuration(r=(2, 3))
-    space1 = build_expanded(_spec(2, 1, duration))
-    space2 = build_expanded(_spec(2, 1, duration))
-    assert space1.layout is not space2.layout
+    del duration
+    layout1, layout2 = build_memory_layout(2, 1), build_memory_layout(2, 1)  # built twice, not memoized
+    assert layout1 is not layout2
 
     @functools.partial(jax.jit, static_argnums=0)
     def f(layout: object) -> jax.Array:
         return jnp.asarray(layout.n_states)  # type: ignore[attr-defined]
 
-    f(space1.layout)
-    f(space2.layout)
+    f(layout1)
+    f(layout2)
     assert f._cache_size() == 1
 
 
