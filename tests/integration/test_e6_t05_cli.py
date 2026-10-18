@@ -15,7 +15,7 @@ import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
-from regimekit.cli.app import _covariate_forecaster, app
+from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.inference.covariate_forecasters import make_forecaster
@@ -26,6 +26,7 @@ from regimekit.model.build import build_model_spec
 from regimekit.model.params.manager import ParamManager
 from regimekit.persistence.results import read_forecast, read_prepared, write_forecast, write_simulation
 from regimekit.persistence.store import ModelStore
+from regimekit.project import covariate_forecaster as _covariate_forecaster
 from regimekit.statespace.builders import build_expanded
 from regimekit.utils.errors import ConfigError, PersistenceError
 from tests.integration.test_e2_t08_fetch import _fetch, _write_csv_project

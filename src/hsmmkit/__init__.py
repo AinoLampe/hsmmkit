@@ -8,4 +8,6 @@ __version__ = _version("regimekit")
 
 _setup()
 
-__all__ = ["__version__"]
+from regimekit.project import Project  # noqa: E402  (after x64 setup)
+
+__all__ = ["Project", "__version__"]

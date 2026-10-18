@@ -54,6 +54,7 @@ nav:
       - Output files: guide/outputs.md
       - Backtesting: guide/backtesting.md
       - Validation: guide/validation.md
+      - Python API and CLI: guide/project.md
   - Math:
       - Parameters: math/parameters.md
       - Emissions: math/emissions.md

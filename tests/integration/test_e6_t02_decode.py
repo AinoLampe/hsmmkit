@@ -197,7 +197,7 @@ def test_e6_t02_run_decode_builds_engine_from_estimation_config(
     `parallel_scan: true`/a non-default `chunk_size` would silently use different engine settings
     than the fit did).
     """
-    from regimekit.cli import app as app_module
+    from regimekit import project as app_module
 
     config = _write_csv_project(tmp_path, estimation__parallel_scan=True)
     out = tmp_path / "out"
@@ -206,13 +206,13 @@ def test_e6_t02_run_decode_builds_engine_from_estimation_config(
     _write_model(config, out, model_dir)
 
     captured: dict[str, object] = {}
-    real_decode = app_module.decode
+    real_decode = app_module.decode_posterior
 
     def _spy_decode(fit: object, data: object, engine: object = None) -> object:
         captured["engine"] = engine
         return real_decode(fit, data, engine)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(app_module, "decode", _spy_decode)
+    monkeypatch.setattr(app_module, "decode_posterior", _spy_decode)
     result = _decode(config, out, model_dir)
     assert result.exit_code == 0, result.output
     assert captured["engine"].parallel_scan is True  # type: ignore[attr-defined]
