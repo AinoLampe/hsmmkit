@@ -24,7 +24,7 @@ with the forecast samples of the cumulative return at step `h`.
 | `regime_occupancy` | posterior | share of steps per regime on the Viterbi path |
 | `regime_persistence` | posterior | mean Viterbi segment length per regime (regimes that never occur are omitted) |
 | `balanced_accuracy` | posterior, labels | mean per-label recall of the Viterbi regimes against `labels`, maximised over relabellings (at most 6 distinct regimes/labels) |
-| `sharpe`, `max_drawdown` | strategy | registered by the strategy ticket (E7-T03); until then calling them raises |
+| `sharpe`, `max_drawdown`, `turnover`, `hit_rate` | strategy | see [Strategies](#strategies) |
 
 The forecast metrics read `forecast.samples`, so the forecast must keep its samples. With `M > 1` series,
 scalar metrics return `<name>_<m>` entries.
@@ -67,7 +67,7 @@ For every fold:
 
 Metrics that need a decoded posterior (`aic`, `bic`, `icl`, `regime_*`) are evaluated once per fold on the
 train window and stored with `horizon == 0`; metrics that need labels or a strategy trace are skipped
-(strategies: E7-T03). Dict-valued metrics become `<metric>.<key>` rows (`pit_coverage.coverage_90`).
+(see [Strategies](#strategies)). Dict-valued metrics become `<metric>.<key>` rows (`pit_coverage.coverage_90`).
 
 `BacktestResult.folds` is the `fold_table` plus `fit_time` (seconds). `metrics` has one row per
 `(fold, horizon, metric)` (mean over the fold's origins; `rmse` is the root mean square). `summary` has one
@@ -88,3 +88,35 @@ The posterior metrics are the exception to padding: they decode the *unpadded* t
 Viterbi path of the last rows is not invariant to trailing masked rows. Their decode therefore compiles once
 per distinct train length (per fold under the expanding scheme); the fit and the filter compile once per
 padded length.
+
+## Strategies
+
+`evaluation.strategy` maps the state of knowledge at an origin to positions in `[-1, 1]`
+(`regimekit.evaluation.strategies.make_strategy(cfg, nominal_dt, n_series)`). A position is *decided* at an
+origin from its filtered regime probabilities and forecast and *held* over the next step; the strategy
+return of a step is, in the log-return approximation,
+
+`r_t = pos_{t-1} . y_t - cost_bps * 1e-4 * sum_m |pos_{t-1,m} - pos_{t-2,m}|`  (flat before the first trade),
+
+and the equity curve is `exp(cumsum(r))`.
+
+* `regime_long_flat` (`flat_if: {regime, prob_above, use}`): position 1, flat (0) when
+  `P(regime) > prob_above` (strict). `use: smoothed` is look-ahead: it warns, and a backtest uses the filtered
+  probabilities of the origin instead.
+* `regime_target_vol` (`target_vol`, `cap = 1.0`, `allow_short = False`): magnitude
+  `min(cap, target_vol / sigma_pred)` with `sigma_pred = sqrt(var[0] / nominal_dt)` from the origin's
+  one-step forecast (annualized on the trading/calendar clocks, per step on `steps`); long when the
+  predictive mean is non-negative, otherwise flat, or short with the same magnitude when `allow_short`.
+
+`run_backtest(..., strategy=)` returns the trace in `BacktestResult.strategy`: `fold, time, position`
+(`position_<m>` for `M > 1`), `return`, `gross` (`position . y`, before costs), `equity`, `turnover`
+(`sum_m |change|`) and `dt`; `time` is the end of the step the position was held over. Where an origin's
+next return is missing no position is recorded. The metrics are evaluated on each fold's slice (equity restarts
+at 1) and stored with `horizon == 0`:
+
+| Metric | Value |
+|---|---|
+| `sharpe` | `mean(r) / std(r) * sqrt(1 / mean(dt))`; a constant non-zero return gives `+-inf`, an all-zero one 0 |
+| `max_drawdown` | largest peak-to-trough fall of the equity curve as a fraction of the peak, `>= 0` (equity starts at 1) |
+| `turnover` | `sum |change in position|` per unit of clock time (per year on the trading/calendar clocks) |
+| `hit_rate` | share of the invested periods with `position . y > 0` |

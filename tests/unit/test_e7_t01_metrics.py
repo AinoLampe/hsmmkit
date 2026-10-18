@@ -173,8 +173,8 @@ def test_e7_t01_register_rejects_duplicates_unless_replacing() -> None:
         register(original, replace=True)
 
 
-def test_e7_t01_strategy_placeholders_declare_their_need_and_refuse_to_run() -> None:
-    """`sharpe`/`max_drawdown` resolve (Appendix A) but need a strategy trace until E7-T03 lands."""
+def test_e7_t01_strategy_metrics_declare_their_need_and_refuse_to_run() -> None:
+    """`sharpe`/`max_drawdown` resolve (Appendix A), declare `strategy` and refuse to run without a trace."""
     for name in ("sharpe", "max_drawdown"):
         m = metric(name)
         assert m.needs == frozenset({"strategy"})

@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -29,6 +30,7 @@ from regimekit.evaluation.metrics.predictive import one_step_mixture_weights, pi
 from regimekit.evaluation.metrics.registry import resolve
 from regimekit.evaluation.padding import pad_dataset
 from regimekit.evaluation.results import BacktestResult
+from regimekit.evaluation.strategies import Strategy, check_backtest_admissible, strategy_trace
 from regimekit.inference.covariate_forecasters import make_forecaster
 from regimekit.inference.decode import decode
 from regimekit.inference.forecast import MonteCarloForecaster
@@ -236,7 +238,11 @@ def _rule(name: str, agg_of: dict[str, str]) -> str:
 
 
 def run_backtest(
-    cfg: ProjectConfig, obs: ObservationSet, covs: Sequence[CovariateSeries], seed: int
+    cfg: ProjectConfig,
+    obs: ObservationSet,
+    covs: Sequence[CovariateSeries],
+    seed: int,
+    strategy: Strategy | None = None,
 ) -> BacktestResult:
     """Walk-forward evaluation: per fold refit on the train window, forecast from every test origin.
 
@@ -251,13 +257,18 @@ def run_backtest(
     (`evaluation.padding`), so the jitted engine functions compile once per padded length, not per fold.
 
     Metrics that need a decoded posterior (`aic`, `bic`, `icl`, `regime_*`) are evaluated once per fold on
-    the train window and stored with `horizon == 0`. Metrics that need labels or a strategy trace are
-    skipped (strategies arrive with E7-T03).
+    the train window and stored with `horizon == 0`. With a `strategy` (E7-T03), the position decided at
+    every origin from its filtered probabilities and forecast is held over the next step; the resulting
+    trace (`evaluation.strategies.strategy_trace`, costs from `evaluation.strategy.cost_bps`) is returned in
+    `BacktestResult.strategy` and the strategy metrics (`sharpe`, `max_drawdown`, `turnover`, `hit_rate`) are
+    evaluated per fold on its slice (`horizon == 0`). Without a strategy those metrics, and metrics that need
+    labels, are skipped.
 
     Returns:
         `BacktestResult` with `folds` (`schedule_folds` table + `fit_time` seconds), `metrics` (one row per
         `(fold, horizon, metric)`: the mean over the fold's origins, root mean square for `rmse`),
-        `strategy` (`None`) and `summary` (per `(horizon, metric)`: `mean`, `sd` across folds, `n` folds).
+        `strategy` (the trace, or `None` without a strategy) and `summary` (per `(horizon, metric)`:
+        `mean`, `sd` across folds, `n` folds).
         `pit_ks` / `pit_ks_pvalue` rows pool the PIT values of all origins per horizon (`n` = pooled
         origins; the p-value ignores the overlap between horizons > 1 and is optimistic there).
 
@@ -272,10 +283,13 @@ def run_backtest(
     metrics = resolve(list(cfg.evaluation.metrics))
     per_origin = [m for m in metrics if m.needs <= {"forecast", "fit"}]
     per_fold = [m for m in metrics if "posterior" in m.needs and m.needs <= {"posterior", "fit"}]
-    skipped = [m.name for m in metrics if m not in per_origin and m not in per_fold]
+    per_strategy = [m for m in metrics if m.needs == {"strategy"}] if strategy is not None else []
+    skipped = [m.name for m in metrics if m not in per_origin + per_fold + per_strategy]
     if skipped:
         _LOG.info("backtest_metrics_skipped", metrics=skipped, reason="need labels or a strategy trace")
-    agg_of = {m.name: m.aggregate for m in per_origin + per_fold}
+    agg_of = {m.name: m.aggregate for m in per_origin + per_fold + per_strategy}
+    if strategy is not None:
+        check_backtest_admissible(strategy)
 
     # The grid does not depend on the fitted statistics: one full-sample preparation fixes the fold table.
     grid = Preparer(cfg.data).fit(obs, covs, train_end=obs.times[-1]).transform(obs, covs)
@@ -300,6 +314,7 @@ def run_backtest(
     )
 
     origin_rows: list[OriginRow] = []
+    decisions: list[tuple[int, int, np.ndarray]] = []  # (fold, origin, position decided there)
     fold_rows: list[tuple[int, int, str, float]] = []
     fit_times: list[float] = []
     warm: Array | None = None
@@ -332,8 +347,8 @@ def run_backtest(
                 for name, value in _flatten(metric.name, metric(**ctx)).items():
                     fold_rows.append((fold.fold, 0, name, value))
 
-        if per_origin:
-            origin_rows += _forecast_fold(
+        if per_origin or strategy is not None:
+            rows, taken = _forecast_fold(
                 fold_index=fold.fold,
                 origins=fold.origins(),
                 data=data,
@@ -347,7 +362,10 @@ def run_backtest(
                 n_sim=n_sim,
                 seed=seed,
                 bars_per_day=cfg.data.bars_per_day,
+                strategy=strategy,
             )
+            origin_rows += rows
+            decisions += taken
         _LOG.info(
             "backtest_fold_done",
             fold=fold.fold,
@@ -359,12 +377,16 @@ def run_backtest(
 
     origin_frame = pd.DataFrame(origin_rows, columns=_ORIGIN_COLUMNS)
     fold_frame = _fold_metrics(origin_frame, fold_rows, agg_of)
+    trace = None
+    if strategy is not None:
+        trace = _strategy_trace(decisions, grid, cfg)
+        fold_frame = _with_strategy_metrics(fold_frame, trace, per_strategy)
     folds_table = fold_table(folds, grid.times)
     folds_table["fit_time"] = fit_times
     return BacktestResult(
         folds=folds_table,
         metrics=fold_frame,
-        strategy=None,
+        strategy=trace,
         summary=_summary(fold_frame, origin_frame, agg_of),
     )
 
@@ -384,8 +406,9 @@ def _forecast_fold(
     n_sim: int,
     seed: int,
     bars_per_day: int,
-) -> list[OriginRow]:
-    """`(fold, origin, horizon, metric, value)` rows for every origin of one fold."""
+    strategy: Strategy | None,
+) -> tuple[list[OriginRow], list[tuple[int, int, np.ndarray]]]:
+    """Metric rows `(fold, origin, horizon, metric, value)` and strategy decisions of one fold."""
     max_h = horizons[-1]
     engine_tag = fitted.spec.engine
     wants_mixture = any(m.name == "log_score_mixture" for m in metrics)
@@ -394,12 +417,16 @@ def _forecast_fold(
     obs_np = np.asarray(data.observations)
     mask_np = np.asarray(data.mask)
     rows: list[OriginRow] = []
+    taken: list[tuple[int, int, np.ndarray]] = []
     for o in origins:
         post = _filter_posterior(log_alpha[: o + 1], loglik, space, engine_tag)
         data_o = data.window(0, o + 1)
         forecast = mc.forecast(
             fitted, data_o, max_h, n_sim, derive_seed(seed, PURPOSE_BACKTEST_FORECAST, fold_index, o), post
         )
+        if strategy is not None and bool(mask_np[o + 1].all()):
+            filtered = jax.nn.softmax(log_alpha[o]) @ space.index.collapse
+            taken.append((fold_index, o, np.asarray(strategy.decide(filtered, forecast), dtype=np.float64)))
         base: dict[str, object] = {
             "forecast": forecast,
             "fit": fitted,
@@ -427,7 +454,43 @@ def _forecast_fold(
                     continue
                 for name, value in _flatten(metric.name, metric(**ctx)).items():
                     rows.append((fold_index, o, h, name, value))
-    return rows
+    return rows, taken
+
+
+def _strategy_trace(
+    decisions: list[tuple[int, int, np.ndarray]], grid: PreparedDataset, cfg: ProjectConfig
+) -> pd.DataFrame:
+    """The strategy table of the decisions: the position decided at origin `o` is held over row `o + 1`."""
+    if not decisions:
+        raise DataError(
+            "the strategy recorded no position: every origin's next return is missing", path="data"
+        )
+    cost_bps = cfg.evaluation.strategy.cost_bps if cfg.evaluation.strategy is not None else 0.0
+    rows = np.asarray([o + 1 for _, o, _ in decisions], dtype=np.int64)
+    return strategy_trace(
+        np.asarray(grid.times)[rows],
+        np.vstack([pos for _, _, pos in decisions]),
+        np.asarray(grid.observations)[rows],
+        np.asarray(grid.dt)[rows],
+        cost_bps,
+        fold=np.asarray([f for f, _, _ in decisions], dtype=np.int64),
+    )
+
+
+def _with_strategy_metrics(
+    fold_frame: pd.DataFrame, trace: pd.DataFrame, metrics: Sequence[Metric]
+) -> pd.DataFrame:
+    """`fold_frame` plus the strategy metrics of each fold's slice of `trace` (`horizon == 0`)."""
+    rows: list[tuple[int, int, str, float]] = []
+    for fold, part in trace.groupby("fold", sort=True):
+        for metric in metrics:
+            for name, value in _flatten(metric.name, metric(strategy=part.reset_index(drop=True))).items():
+                rows.append((int(str(fold)), 0, name, value))
+    extra = pd.DataFrame(rows, columns=_FOLD_COLUMNS).astype(
+        {"fold": "int64", "horizon": "int64", "value": "float64"}
+    )
+    both = pd.concat([fold_frame, extra], ignore_index=True)
+    return both.sort_values(["fold", "horizon", "metric"], kind="stable").reset_index(drop=True)
 
 
 def _fold_metrics(

@@ -254,7 +254,9 @@ class StrategyCfg(_Base):
     type: Literal["regime_long_flat", "regime_target_vol"]
     flat_if: dict[str, Any] | None = None
     target_vol: float | None = None
-    cost_bps: float = 0.0
+    cost_bps: float = Field(default=0.0, ge=0.0)
+    cap: float = 1.0  # regime_target_vol: largest absolute position
+    allow_short: bool = False  # regime_target_vol: short when the predictive mean is negative
 
 
 class LabelSource(_Base):
