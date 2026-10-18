@@ -56,6 +56,7 @@ def recovery(session: nox.Session) -> None:
         "-m",
         "slow",
         "--ignore=tests/recovery/test_e5_t05a_recovery_smoke.py",
+        "--ignore=tests/integration/test_e8_t03_notebook.py",
         env=env,
         external=True,
     )
@@ -72,6 +73,22 @@ def recovery_smoke(session: nox.Session) -> None:
         "-m",
         "slow",
         "tests/recovery/test_e5_t05a_recovery_smoke.py",
+        env=env,
+        external=True,
+    )
+
+
+@nox.session
+def examples(session: nox.Session) -> None:
+    """Execute the tutorial notebook offline on synthetic data (a few minutes)."""
+    env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
+    session.run(
+        "uv",
+        "run",
+        "pytest",
+        "-m",
+        "slow",
+        "tests/integration/test_e8_t03_notebook.py",
         env=env,
         external=True,
     )

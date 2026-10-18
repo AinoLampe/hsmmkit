@@ -46,6 +46,10 @@ dev = [
   "mkdocs-material>=9.7",
   "mkdocstrings[python]",
   "pandas-stubs>=3.0.5.260914",
+  "matplotlib>=3.11.2",
+  "nbclient>=0.11.0",
+  "ipykernel>=7.4.0",
+  "nbformat>=5.11.1",
 ]
 
 [project.scripts]
@@ -94,6 +98,7 @@ convention = "google"
 "src/regimekit/cli/*.py" = ["B008"]  # typer's Option()/Argument() defaults require call-in-default
 
 [tool.pytest.ini_options]
+pythonpath = ["."]  # `examples/` (tutorial helpers) is imported by tests
 markers = [
   "slow: nightly suites",
   "live: network tests",
