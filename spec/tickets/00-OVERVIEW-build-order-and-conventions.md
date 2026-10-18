@@ -74,7 +74,7 @@ TDD is mandatory for `dists`, `params`, `statespace`, `engine`, `estimation.obje
 | Gradient vs central finite differences (step 1e-6) | rel ≤ 1e-5 |
 | Bijector log-det-Jacobian vs autodiff | ≤ 1e-8 |
 | Distribution log-pdf/pmf vs scipy | ≤ 1e-10 |
-| Parameter recovery (T=5000, N=3, GBM, NB r=3, 5 seeds, ≥4 pass) | σ ≤ 10 % rel; μ ≤ 2 SE; mean sojourn ≤ 25 % rel; π ≤ 0.15 abs; coefficients sign-correct, ≤ 2 SE |
+| Parameter recovery (T=20000, order 2: T=50000; N=3, GBM, NB r=3, 5 seeds, each tolerance category in ≥4 seeds; explicit-gamma mean sojourn report-only) | σ ≤ 10 % rel; μ ≤ 2 SE; mean sojourn ≤ 25 % rel; π ≤ 0.15 abs; coefficients sign-correct, ≤ 2 SE |
 | Simulation moments vs analytic | within 3 SE |
 | Determinism (same config/snapshot/seed/backend) | bitwise |
 | Bundle round-trip | bitwise `u`, `loglik` |
@@ -93,7 +93,7 @@ Trunk-based; short-lived branches; squash merges; conventional-commit prefix; `t
 | 1 | M0 Foundations | E1-T01 ‖ E1-T04 ‖ E1-T03a → E1-T03b → E1-T05 ‖ E1-T02a → E1-T02b | Appendix A config validates; `ParamManager`, `dists` fully tested |
 | 2 | M1 Data ‖ Families ‖ Reference | Track A: E2-T01 → (E2-T02 ‖ T03 ‖ T04 ‖ T09) → E2-T05; E2-T06 → E2-T07; then E2-T08. Track B: E3-T01 → E3-T02 ‖ E3-T06; E3-T03 → E3-T04; E3-T05. Track C: E4-T01 | `regimekit fetch` works on `^GDAXI` + VIX/T10Y2Y; offline replay |
 | 3 | M2 Core engine | E4-T02a → E4-T02b → E4-T03a → E4-T03b → (E4-T04 ‖ E4-T05); E4-T07 | golden tests pass; FB ≤ 100 ms |
-| 4 | M3 Estimation + explicit engine | E5-T01 → E5-T02 → E5-T03 → E5-T04 ‖ E4-T06a → E4-T06b ‖ E6-T01; then E5-T05a → E5-T05b | recovery suite passes 6 scenarios; engines agree on NB |
+| 4 | M3 Estimation + explicit engine | E5-T01 → E5-T02 → E5-T03 → E5-T04 ‖ E4-T06a → E4-T06b ‖ E6-T01; then E5-T05a → E5-T05b | recovery suite passes 6 scenarios (concept 6.4.4 criterion, weekly full run); engines agree on NB |
 | 5 | M4 Inference & forecasting | E6-T02 ‖ E6-T03; E6-T04a → E6-T04b → E6-T05 | `decode`/`forecast` CLI on real data |
 | 6 | M5 Evaluation | E7-T01 ‖ E7-T02a → E7-T02b → E7-T03 → E7-T04 | walk-forward + strategies + `compare` |
 | 7 | M6 Release 0.1.0 | E8-T01 → E8-T02 → E8-T03 → E8-T04 ‖ E9-T01…T04 (spikes) ‖ E5-T06 (v1.x) | bundle round-trip; docs; tag `v0.1.0` |
@@ -225,3 +225,17 @@ Decision: the finance project (Part I) is built first; the general-package exten
 | 9 | ADR-0012 (core/profile split) and ADR-0013 (`steps` clock) recorded with the baseline ADRs; ADR-0011 stays safetensors (E8-T01) | E0-T04 |
 
 **Guardrail.** Nothing beyond these nine items is generalized in 0.1.0. No batch (`B`) dimension, no family-agnostic M-steps, no `profile: core` execution path, no new extras. If an implementer finds such a change tempting while working on E4/E5, it is Part II work (E12/E13) and is deferred.
+
+## 9. Amendment 2026-10-18 -- parameter-recovery suite (E5-T05a, owner decision)
+
+E5-T05a could not meet its AC1 as written (`T=5000`, every tolerance met in the same seed, >= 4/5 seeds). The tolerances themselves are **unchanged**; the setup around them was corrected, with the owner's approval, after measuring what an oracle that reads the true regime path can achieve.
+
+| # | Change | Evidence |
+|---|---|---|
+| 1 | Default `T = 20000` (was 5000); `order 2` runs at `T = 50000`; `REGIMEKIT_RECOVERY_T` scales the base size | At `T=5000` the truth yields ~64 regime visits per path; an oracle meets the sojourn and jump tolerances together in 50 % of seeds (18 % for >= 4/5 seeds), at `T=20000` in 99 %. Order 2: all six memory rows within tolerance in 65 % of seeds at `T=20000`, 95 % at `T=50000` |
+| 2 | Pass rule per tolerance **category** (sigma, mu, mean sojourn, jump, coefficients), each >= 4/5 seeds | 2-SE checks miss ~5 % by design; `transition_covariates` and `order2` meet every category while only 2-3 of 5 seeds meet every check at once |
+| 3 | Duration-covariate truth `c = (0.6, -0.6, 0.4)` (was `(0.3, -0.3, 0.2)`) | the old values equal the standard error (~0.18) at `T=20000`: sign-correct misses in about half of the 5-seed runs even for a perfect estimator |
+| 4 | Explicit-gamma **mean-sojourn** category is report-only | free gamma shape and scale: two seeds miss 25 % on the 120-day regime while the oracle passes; all restarts agree and the fit's log-likelihood beats the truth's by ~12 nats (weak identifiability, not an optimizer defect) |
+| 5 | CI: nightly smoke (`nox -s recovery_smoke`, one scenario at `T=5000`, asserts the pipeline and the sigma category) and a weekly full job (`nox -s recovery`) replace the single nightly full suite | the full suite takes ~4-5 h; NFR-level 60-minute nightly budget cannot hold at `T=20000` |
+
+Documents amended: concept (header, 6.4.4, 6.5 CI list and nox sessions, 7.1 milestone M3, 7.2 ticket rows E0-T03 and E5-T05, Appendix D), this overview (section 4.7 table, phase-4 exit criterion, this section), tickets E5-T05a, E0-T03, E8-T04. Not amended: E5-T05b (the quick `selftest` sizing needs its own decision, see `spec/STATUS.md`). Measured results: `docs/guide/validation.md`.

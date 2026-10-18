@@ -49,7 +49,8 @@ uv run ruff format . && uv run ruff check --fix .
 uv run mypy
 uv run python scripts/check_package_coverage.py          # per-package ≥ 85 % (after a --cov run)
 uv run nox -s docs                                       # mkdocs build --strict (after E0-T04)
-uv run nox -s recovery                                   # -m slow (long)
+uv run nox -s recovery_smoke                             # nightly smoke: 1 scenario at T=5000
+uv run nox -s recovery                                   # -m slow, full suite (weekly, hours)
 uv run nox -s bench                                      # -m benchmark
 ```
 
@@ -229,7 +230,7 @@ Overview §4.8 applies. In addition:
 ## 9. Secrets and environment
 
 - `FRED_API_KEY`, `STOOQ_API_KEY`, `TIINGO_API_KEY` come from the environment only: never hardcode, log or write them.
-- Other env vars: `REGIMEKIT_TYPECHECK`, `REGIMEKIT_RECOVERY_T` (E5-T05a), `CI` (JSON logs), `JAX_PLATFORMS`.
+- Other env vars: `REGIMEKIT_TYPECHECK`, `REGIMEKIT_RECOVERY_T` (E5-T05a; base size, default 20000, `order2` runs at 2.5x), `CI` (JSON logs), `JAX_PLATFORMS`.
 - Linux/WSL2, CPU by default; nothing may require a GPU. `-m live` runs only when the user allows it.
 
 ## 10. Decide yourself

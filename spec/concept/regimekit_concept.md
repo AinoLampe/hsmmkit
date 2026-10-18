@@ -7,6 +7,7 @@
 | Version | 1.0 (concept baseline) |
 | Date | 2026-09-04 |
 | Status | Approved for ticket derivation |
+| Amended | 2026-10-18 -- parameter-recovery suite sizing and pass criterion (sections 6.4.4, 6.5 CI/CD, 7.1 milestones, 7.2 tickets, Appendix D); see the ticket overview, section 9 |
 | Owner | Aino |
 | Working package name | `regimekit` (rename is a one-line change; nothing depends on it) |
 | Scope | v1 = single series, full HSMM feature set; interfaces multivariate-ready |
@@ -798,7 +799,7 @@ select = ["E","F","W","I","N","UP","B","SIM","PT","RUF","D","ANN","NPY"]; pydocs
 
 **6.4.3 Gradient checks.** `jax.grad` of the objective vs. central finite differences on `u` (step 1e-6, relative error ≤ 1e-5) for every family/engine combination in a small instance.
 
-**6.4.4 Parameter-recovery suite** (`tests/recovery/`, nightly + on-demand `regimekit selftest`). Simulate with known `θ*`, fit with `restarts = 4`, assert (Appendix D): volatilities within 10 % relative, drifts within 2 SE, mean sojourns within 25 %, jump probabilities within 0.15 absolute, covariate coefficients sign-correct and within 2 SE. Scenarios: `3-state GBM/NB order 1`; `+ transition covariates`; `+ duration covariates`; `order 2`; `explicit gamma durations`; `fixed-drift lattice`. Pass criterion ≥ 4 of 5 seeds per scenario.
+**6.4.4 Parameter-recovery suite** (`tests/recovery/`; a nightly smoke run, a weekly full run and the on-demand `regimekit selftest`). Simulate with known `θ*`, fit with `restarts = 4`, assert (Appendix D): volatilities within 10 % relative, drifts within 2 SE, mean sojourns within 25 %, jump probabilities within 0.15 absolute, covariate coefficients sign-correct and within 2 SE. Scenarios: `3-state GBM/NB order 1`; `+ transition covariates`; `+ duration covariates` (coefficients `(0.6, −0.6, 0.4)`); `order 2`; `explicit gamma durations`; `fixed-drift lattice`. Default size `T = 20000` (`order 2`: `T = 50000`); `REGIMEKIT_RECOVERY_T` scales it. Pass criterion (amended 2026-10-18): each tolerance *category* (σ, μ, mean sojourn, jump probabilities, coefficients) holds in at least 4 of the 5 seeds, each category counted on its own; the mean-sojourn category of the explicit-gamma scenario is reported but not gated. Rationale: the tolerances are unchanged, but at `T = 5000` the default truth produces only about 64 regime visits per path, so even an oracle that reads the true regime path meets the sojourn and jump tolerances together in only half of the seeds (99 % at `T = 20000`); the 2-SE checks miss about 5 % of the time by design, so requiring every check in the same seed is not attainable; a duration-covariate effect of 0.2–0.3 is as small as its standard error at `T = 20000`; and with both gamma shape and scale free the mean sojourn is weakly identified (the fit's likelihood exceeds the truth's by about 12 nats). The nightly smoke run uses `T = 5000` on one scenario and asserts the pipeline and the σ category only.
 
 **6.4.5 Engine equivalence.** Expanded (NB) vs. explicit (shifted-NB pmf, `D_max` with truncated mass < 1e-10): log-likelihood relative difference ≤ 1e-6; smoothed regime marginals max-abs ≤ 1e-6.
 
@@ -808,9 +809,9 @@ select = ["E","F","W","I","N","UP","B","SIM","PT","RUF","D","ANN","NPY"]; pydocs
 
 ### 6.5 CI/CD
 
-- GitHub Actions: `lint` (ruff, mypy), `test` (Linux, Python 3.13, CPU, `pytest -n auto -m "not slow and not live and not benchmark"`), `docs` (mkdocs build strict), `recovery` (nightly, `-m slow`), `benchmark` (nightly, compares against stored baseline, fails on > 30 % regression), `gpu` (self-hosted runner if available, otherwise manual).
+- GitHub Actions: `lint` (ruff, mypy), `test` (Linux, Python 3.13, CPU, `pytest -n auto -m "not slow and not live and not benchmark"`), `docs` (mkdocs build strict), `recovery_smoke` (nightly, one scenario at `T = 5000`), `recovery` (weekly, `-m slow`, the full suite), `benchmark` (nightly, compares against stored baseline, fails on > 30 % regression), `gpu` (self-hosted runner if available, otherwise manual).
 - `pre-commit`: ruff format/lint, mypy (staged), end-of-file, yaml check, `uv lock --check`.
-- `nox` sessions: `lint`, `types`, `tests`, `recovery`, `docs`, `bench`.
+- `nox` sessions: `lint`, `types`, `tests`, `recovery_smoke`, `recovery`, `docs`, `bench`.
 - Branching: trunk-based; short-lived branches `feat/E4-T03-expanded-engine`; squash merges; PR title = ticket ID + title; conventional commit prefix.
 - Release: semantic-release on tags; changelog fragments via towncrier; `0.y.z` until the factorial extension lands.
 
@@ -868,7 +869,7 @@ Size: M
 | M0 Bootstrap | E0, E1 | `uv sync` + `nox -s lint types tests` green on an empty-but-structured package; config schema validates Appendix A; `ParamManager` and `dists` fully tested |
 | M1 Data | E2 | `regimekit fetch` produces a `PreparedDataset` + quality report for `^GDAXI` with VIX/T10Y2Y covariates; offline replay from snapshot |
 | M2 Core engine | E3, E4-T01…T05 | GBM + geometric/NB + jump matrix + covariates + order 2 all pass golden tests vs. reference; forward-backward ≤ 100 ms |
-| M3 Estimation + explicit engine | E5, E4-T06 | Recovery suite passes for all six scenarios; explicit engine agrees with expanded engine on NB |
+| M3 Estimation + explicit engine | E5, E4-T06 | Recovery suite passes for all six scenarios (6.4.4 criterion, weekly full run); explicit engine agrees with expanded engine on NB |
 | M4 Inference & forecasting | E6 | `decode` and `forecast` CLI on real data; four covariate forecasters; simulation round-trip tests |
 | M5 Evaluation | E7 | Walk-forward backtest with metrics and reference strategies; `compare` table |
 | M6 Release 0.1.0 | E8, E9 spikes | Bundle round-trip, docs, tutorial, ADRs, extension spikes with ADR-0008 |
@@ -883,7 +884,7 @@ Sizes: S ≤ 1 d, M 1–3 d, L 3–5 d. Every ticket includes its tests and docs
 |---|---|---|---|---|---|
 | E0-T01 | Repository skeleton: uv project, src layout, `pyproject.toml` with extras/groups (6.1), `uv.lock`, package `__init__` with version | S | — | D11, NFR-06 | `uv sync --all-groups` succeeds on Linux/WSL2; `python -c "import regimekit"` works; `uv sync --extra gpu` resolves (install not required in CI) |
 | E0-T02 | Quality tooling: ruff config, mypy strict, coverage `fail_under=90`, pytest markers (`slow`, `live`, `benchmark`, `gpu`), pre-commit, nox sessions | S | E0-T01 | NFR-04, NFR-05 | `nox -s lint types tests` green; a deliberately failing type annotation is caught in CI |
-| E0-T03 | CI workflows: lint/test/docs on PR; nightly recovery + benchmark; artifact upload of coverage and benchmark JSON | S | E0-T02 | NFR-04, NFR-02 | PR pipeline < 10 min; nightly job scheduled; benchmark baseline file committed |
+| E0-T03 | CI workflows: lint/test/docs on PR; nightly recovery smoke + benchmark; weekly full recovery; artifact upload of coverage, benchmark and recovery JSON | S | E0-T02 | NFR-04, NFR-02 | PR pipeline < 10 min; nightly and weekly jobs scheduled; benchmark baseline file committed |
 | E0-T04 | Docs skeleton (mkdocs, guide/math/api/adr), ADR-0001…0010 drafted with Status "accepted", CONTRIBUTING with ticket template and DoD | M | E0-T01 | NFR-07 | `mkdocs build --strict` passes; all ADRs present |
 | E0-T05 | JAX runtime bootstrap: x64 enabling, device selection (`cpu|gpu|auto`), PRNG utilities (`key_for(seed, *ids)`), error hierarchy, structlog setup | S | E0-T01 | NFR-01, NFR-03, NFR-09 | importing after x64-disabled init raises `NumericalError`; keys are deterministic; logs are JSON in CI |
 
@@ -942,7 +943,7 @@ Sizes: S ≤ 1 d, M 1–3 d, L 3–5 d. Every ticket includes its tests and docs
 | E5-T02 | Optimizers: `optax.lbfgs` (zoom line search) and `adam`; convergence criteria; per-restart result record | M | E5-T01 | D3 | converges on a 2-state synthetic problem within 200 iterations; non-finite step aborts restart only |
 | E5-T03 | Initialization strategies (`rollvol_kmeans`, `lattice_jitter`, `random`) + multi-start orchestration with per-restart keys | M | E5-T02 | NFR-03 | strategies produce valid `u`; best-of-restarts selection; determinism test 6.4.6 |
 | E5-T04 | Fit report and diagnostics (4.10): occupancy warning, restart dispersion, ordering check, optional Hessian std errors, PIT/Ljung-Box hooks | M | E5-T03, E4-T05 | FR-I03 | each diagnostic has a triggering synthetic case; std errors within 20 % of simulation-based SE on a large synthetic sample |
-| E5-T05 | Parameter-recovery suite (6.4.4) + `regimekit selftest` | L | E5-T03, E6-T01 | NFR-04, §1.4 criterion 1 | six scenarios pass ≥ 4/5 seeds nightly; `selftest` runs a 1-scenario smoke version in < 2 min |
+| E5-T05 | Parameter-recovery suite (6.4.4) + `regimekit selftest` | L | E5-T03, E6-T01 | NFR-04, §1.4 criterion 1 | six scenarios meet the 6.4.4 criterion (every tolerance category in ≥ 4/5 seeds) in the weekly full run; nightly smoke run; `selftest` runs a 1-scenario smoke version in < 2 min |
 | E5-T06 | (v1.x) EM for GBM without covariates using `sufficient_stats` | M | E5-T03 | D3 | monotone log-likelihood; agrees with MAP (no priors) within 1e-4 relative |
 
 #### E6 — Inference, simulation, forecasting
@@ -1219,7 +1220,7 @@ reverse scan over t = T−1..1:
 | Gradient vs central finite differences (step 1e-6) | relative ≤ 1e-5 |
 | Bijector log-det-Jacobian vs autodiff | ≤ 1e-8 |
 | Distribution log-pdf/pmf vs scipy | ≤ 1e-10 |
-| Parameter recovery (`T=5000`, `N=3`, GBM, NB `r=3`, 5 seeds, ≥ 4 pass) | σ: ≤ 10 % rel; μ: ≤ 2 SE; mean sojourn: ≤ 25 % rel; π: ≤ 0.15 abs; coefficients: sign-correct, ≤ 2 SE |
+| Parameter recovery (`T=20000`, `order 2`: `T=50000`; `N=3`, GBM, NB `r=3`, 5 seeds, each tolerance category in ≥ 4 seeds; explicit-gamma mean sojourn reported only) | σ: ≤ 10 % rel; μ: ≤ 2 SE; mean sojourn: ≤ 25 % rel; π: ≤ 0.15 abs; coefficients: sign-correct, ≤ 2 SE |
 | Simulation moments vs analytic | within 3 SE |
 | Determinism (same config/snapshot/seed/backend) | bitwise |
 | Bundle round-trip | bitwise `u`, `loglik` |

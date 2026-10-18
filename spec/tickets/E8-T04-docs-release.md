@@ -12,7 +12,7 @@ Finish the user guide, math pages, config reference and provider ToS page; cut a
 - `docs/math`: one page per component (time conventions, emissions, durations, transitions, higher order, parameters, engine expanded, engine explicit, estimation, forecasting, model selection) — complete the stubs created by earlier tickets, formulas rendered with MathJax, symbol ↔ code name table on each page.
 - `docs/api`: mkdocstrings nav for every public module.
 - Changelog via `towncrier` fragments (`changelog.d/`), `python-semantic-release` config (conventional commits, `0.y.z`), release workflow `.github/workflows/release.yml` (on tag: `uv build`, publish artifacts to GitHub Release; PyPI publish optional/manual).
-- Release checklist: §1.4 criteria (recovery suite green, e2e CLI flow reproducible, coverage ≥ 90 %, CI green, Appendix D checks green) recorded in `docs/releases/0.1.0.md`.
+- Release checklist: §1.4 criteria (recovery suite green -- the latest weekly full run, with its date/commit and the per-category outcomes from `runs/recovery/*.json` recorded; e2e CLI flow reproducible, coverage ≥ 90 %, CI green, Appendix D checks green) recorded in `docs/releases/0.1.0.md`.
 
 ## Creates
 - Docs pages above, `scripts/gen_config_reference.py`, `changelog.d/`, `towncrier.toml`, semantic-release config, release workflow, `docs/releases/0.1.0.md`, tag `v0.1.0`
