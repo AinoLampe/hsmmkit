@@ -189,7 +189,8 @@ def test_e8_t02_selftest_parity(monkeypatch: pytest.MonkeyPatch) -> None:
     result = _runner.invoke(app, ["--seed", str(SEED), "selftest"])
     assert result.exit_code == 0, result.output
     expected = _selftest_lines(Project.selftest(seed=SEED))
-    assert [line for line in result.output.splitlines() if not line.startswith("20")] == expected
+    lines = result.output.splitlines()  # log lines (console or, with CI set, JSON) precede the report
+    assert lines[lines.index(expected[0]) :] == expected
 
 
 def test_e8_t02_methods_write_nothing_without_write(world: SimpleNamespace, tmp_path: Path) -> None:

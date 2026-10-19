@@ -14,7 +14,7 @@ from __future__ import annotations
 import sys
 import types
 import typing
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 from pydantic import BaseModel
@@ -78,6 +78,8 @@ def _default(field: Any) -> str:  # noqa: ANN401
         return "required"
     if value is None:
         return "`None`"
+    if isinstance(value, PurePath):
+        return f"`'{value.as_posix()}'`"  # the same text on every platform
     return f"`{value!s}`" if not isinstance(value, str) else f"`'{value}'`"
 
 

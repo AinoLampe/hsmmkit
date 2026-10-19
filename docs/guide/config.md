@@ -135,7 +135,7 @@ The whole resolved regimekit configuration.
 
 | Field | Type | Default |
 |---|---|---|
-| `dir` | `Path` | `~\.cache\regimekit` |
+| `dir` | `Path` | `'~/.cache/regimekit'` |
 | `snapshot` | `str` | `'latest'` |
 | `max_age_days` | `int` | `1` |
 
