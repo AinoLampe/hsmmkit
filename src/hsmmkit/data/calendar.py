@@ -41,7 +41,8 @@ class Grid:
 
     Attributes:
         times: `(T+1,)` `datetime64[ns]` grid end times `τ_0 … τ_T`.
-        prices: `(T+1, M)` float64 primary prices on the grid (no NaN).
+        prices: `(T+1, M)` float64 prices on the grid; column 0 (the primary) has no NaN, the other
+            series may (a missing print masks that series' returns, E9-T01).
         dt: `(T,)` float64 `Δ_t` in clock units (years for `trading`/`calendar`, 1 for `steps`).
         nominal_dt: `median(Δ_t)`.
         irregular: `max Δ_t / min Δ_t > 1.5` (always `False` under `steps`).
@@ -109,9 +110,10 @@ def build_grid(
     """Build the master grid from the primary instrument's observations.
 
     Args:
-        obs: primary prices `(T0, M)` on strictly increasing `times`.
-        missing_returns: `"drop"` removes every row where any series has a missing (NaN) price;
-            `"error"` raises on the first such row.
+        obs: prices `(T0, M)` on strictly increasing `times`; series 0 is the primary and defines the grid.
+        missing_returns: `"drop"` removes every row where the primary has a missing (NaN) price (the other
+            series keep their NaN and are masked by `Preparer`); `"error"` raises on the first row where
+            any series is missing.
         clock: `trading` (`Δ = 1/(252·bars_per_day)` years), `calendar` (`Δ_t = (τ_t - τ_{t-1})`
             in days / 365.25) or `steps` (`Δ_t ≡ 1`, ADR-0013).
         bars_per_day: intraday bars per trading day `H` (trading clock only; 1 = daily).
@@ -136,14 +138,19 @@ def build_grid(
     if times.shape[0] > 1 and not bool(np.all(np.diff(times) > np.timedelta64(0, "ns"))):
         raise DataError("primary times must be strictly increasing", path="times")
 
-    missing = np.isnan(prices).any(axis=1)
-    if missing.any():
-        if missing_returns == "error":
-            first = np.datetime_as_string(times[np.flatnonzero(missing)[0]], unit="s")
+    if missing_returns == "error":
+        gaps = np.argwhere(np.isnan(prices))
+        if gaps.size:
+            row, col = gaps[np.argmin(gaps[:, 0])]
+            first = np.datetime_as_string(times[row], unit="s")
+            symbol = obs.symbols[col] if col < len(obs.symbols) else str(col)
+            what = "primary price" if col == 0 and len(obs.symbols) == 1 else f"price of {symbol!r}"
             raise DataError(
-                f"missing primary price at {first} (missing_returns='error')",
+                f"missing {what} at {first} (missing_returns='error')",
                 path="data.preparation.missing_returns",
             )
+    missing = np.isnan(prices[:, 0])
+    if missing.any():
         times, prices = times[~missing], prices[~missing]
     if times.shape[0] < 2:
         raise DataError("the master grid needs at least two rows with a price", path="prices")

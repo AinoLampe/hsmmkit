@@ -142,6 +142,8 @@ class EmissionCfg(_Base):
     family: EmissionFamily
     params: dict[str, ParamCfg]
     covariates: EmissionCovariates = Field(default_factory=EmissionCovariates)
+    per_series: bool = True
+    """`True`: own `mu`/`sigma` (`m`/`s`) per series, `(N, M)`; `False`: one per regime, shared."""
 
 
 class DurationCfg(_Base):

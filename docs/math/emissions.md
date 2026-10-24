@@ -53,6 +53,23 @@ tends to GBM with `\mu - \sigma^2/2 = m`, `\sigma = s`. Parameters: `emission.{m
 `emission.nu` has shape `(N,)` on the `nu_gt_2` domain, and mode `tied` shares one value (tie group `"nu"`),
 i.e. one free coordinate.
 
+## Several series (`ProductEmission`, E9-T01)
+
+With `M > 1` series sharing one regime process, the emissions are independent given the regime,
+
+$$
+\log f_i(y_t) = \sum_{m=1}^{M} o_{t,m}\,\log f_i^{(m)}(y_{t,m}), \qquad o_{t,m} \in \{0, 1\}
+$$
+
+where `o_{t,m} = 0` marks an unobserved print (`PreparedDataset.mask[t, m]` false): that series adds nothing
+at step `t` while the other series keep their density (a step where all series are unobserved adds `0`, as
+for `M = 1`). `model.emission.per_series: true` (default) gives every series its own `\mu_{i,m}, \sigma_{i,m}`
+(`emission.mu`/`emission.sigma` of shape `(N, M)`); `false` shares one `\mu_i, \sigma_i` per regime across the
+series (shape `(N,)`, which also allows `constraint: increasing`). `model/build.py` wraps the family in a
+`ProductEmission` only when `M > 1`; single-series models keep the bare family and their results are unchanged.
+The master grid is the first (primary) series' timestamps: a missing primary price drops the row, a missing
+price of another series masks the returns that need it. Correlated emissions are out of scope.
+
 ## Later families
 
 !!! note
@@ -68,3 +85,4 @@ i.e. one free coordinate.
 | `\Delta_t` | `PreparedDataset.dt` |
 | `z^e_t` | `PreparedDataset.cov_emission` |
 | families | `GBMFamily`, `StudentTFamily` (`EMISSION_FAMILIES` registry in `model/build.py`) |
+| `o_{t,m}` | `PreparedDataset.mask` (`ProductEmission.log_prob_masked`) |

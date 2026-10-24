@@ -25,6 +25,7 @@ from regimekit.model.duration.nonparametric import NonparametricDuration
 from regimekit.model.duration.poisson import PoissonDuration
 from regimekit.model.duration.weibull import WeibullDuration
 from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.product import ProductEmission
 from regimekit.model.emission.student_t import StudentTFamily
 from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition
@@ -116,6 +117,8 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
         raise ConfigError(f"unknown emission family {m.emission.family!r}", path="model.emission.family")
     emission_cov_names = inputs.cov_names.get("emission", ())
     emission, emission_specs = emis_cls.from_config(m.emission, n, n_series, emission_cov_names)
+    if n_series > 1:  # per-series masks and shared parameters (E9-T01); M = 1 keeps the bare family
+        emission = ProductEmission.of(emission, n_series)
 
     dur_cls = DURATION_FAMILIES.get(m.duration.family)
     if dur_cls is None:

@@ -26,8 +26,10 @@ Only `regimekit.data.contracts` may be imported from `model`, `statespace`, `eng
 `regimekit.data.calendar` turns raw provider data into the time axis of a `PreparedDataset`:
 
 - **Master grid.** `build_grid(obs, missing_returns, clock=..., bars_per_day=...)` takes the primary
-  instrument's timestamps `τ_0 < … < τ_T`. Under `missing_returns: drop`, every row where any series
-  has a missing price is removed. Under `error`, the first such row raises a `DataError`. Observation
+  instrument's timestamps `τ_0 < … < τ_T`. Under `missing_returns: drop`, every row where the primary
+  (first) series has a missing price is removed; with several series, a missing price in another series
+  keeps the row and masks that series' returns (`PreparedDataset.mask`, per series, E9-T01). Under
+  `error`, the first row with a missing price in any series raises a `DataError`. Observation
   `t` covers `(τ_{t-1}, τ_t]`, so a grid of `T + 1` times yields `T` observations.
 - **`Δ_t` per clock.** `trading`: `1 / (252 · bars_per_day)` years, constant (holidays and weekends
   do not lengthen a step). `calendar`: elapsed days / 365.25, so a Thursday → Monday holiday gap

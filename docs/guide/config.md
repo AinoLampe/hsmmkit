@@ -173,6 +173,7 @@ The whole resolved regimekit configuration.
 | `family` | `'gbm' \| 'student_t'` | required |
 | `params` | `dict[str, ParamCfg]` | required |
 | `covariates` | `EmissionCovariates` | section defaults |
+| `per_series` | `bool` | `True` |
 
 ## `model.duration`
 

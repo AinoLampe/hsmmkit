@@ -129,10 +129,10 @@ def test_e2_t06_grid_drops_rows_with_missing_price() -> None:
     assert grid.dt.shape == (2,)
 
 
-def test_e2_t06_grid_drops_row_if_any_series_missing() -> None:
-    """With M > 1 a row is dropped if any series is missing."""
+def test_e2_t06_grid_drops_row_if_primary_series_missing() -> None:
+    """With M > 1 the primary (first) series defines the grid (E9-T01 supersedes "any series")."""
     times = _ns(["2024-01-02", "2024-01-03", "2024-01-04"])
-    prices = np.array([[1.0, 10.0], [2.0, np.nan], [3.0, 30.0]])
+    prices = np.array([[1.0, 10.0], [np.nan, 20.0], [3.0, 30.0]])
     grid = build_grid(_obs(times, prices), "drop", clock="trading")
     np.testing.assert_array_equal(grid.times, times[[0, 2]])
     assert grid.prices.shape == (2, 2)

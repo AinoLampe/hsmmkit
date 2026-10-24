@@ -20,6 +20,7 @@ import jax
 import jax.numpy as jnp
 
 from regimekit.engine.base import Posterior
+from regimekit.model.emission.product import ProductEmission
 from regimekit.statespace.builders import initial_log_rho
 from regimekit.utils.errors import NumericalError
 from regimekit.utils.typing import Array
@@ -57,6 +58,9 @@ _Xs = tuple[Array, Array, Array, Array]
 def _regime_log_emis(theta: Params, spec: ModelSpec, data: PreparedDataset, dt: Array | None = None) -> Array:
     """`(T, N)` per-regime emission log-densities; masked steps contribute 0 (shared with E4-T06a).
 
+    With a `ProductEmission` (`M > 1`) the mask acts per series: an unobserved series contributes 0 and the
+    observed ones keep their density. Single-series (bare family) models drop the step as before.
+
     `dt` overrides `data.dt` (the explicit-duration engine uses `nominal_dt` everywhere).
     """
     y, mask = data.observations, data.mask
@@ -64,8 +68,11 @@ def _regime_log_emis(theta: Params, spec: ModelSpec, data: PreparedDataset, dt: 
     z_e = _block(data.cov_emission, y.shape[0])
     # Masked observations contribute zero log-density; sanitize `y` too so a NaN print cannot
     # leak NaN gradients through the untaken branch (double `where`).
-    observed = jnp.all(mask, axis=-1)  # (T,)
     y_safe = jnp.where(mask, y, 0.0)
+    if isinstance(spec.emission, ProductEmission):
+        # Multi-series model (E9-T01): each series is masked on its own, the others keep their density.
+        return spec.emission.log_prob_masked(y_safe, mask, dt, theta, z_e)
+    observed = jnp.all(mask, axis=-1)  # (T,)
     log_emis = spec.emission.log_prob(y_safe, dt, theta, z_e)  # (T, N)
     return jnp.where(observed[:, None], log_emis, 0.0)
 

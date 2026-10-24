@@ -13,7 +13,7 @@ code here branches on the clock name.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import jax.numpy as jnp
 import jax.scipy.stats
@@ -67,14 +67,16 @@ def _spec_from_paramcfg(
     # ordering across a per-series `(N, M)` grid has no clean semantics, so `constraint="increasing"`
     # collapses the spec to `(N,)` (matches Appendix A: single-series, M=1) and is rejected for M>1,
     # rather than silently sharing one ordered value across every series.
-    # `flat=True` forces an `(N,)` spec regardless (per-state parameters such as Student-t `nu`).
+    # `flat=True` forces an `(N,)` spec regardless (per-state parameters such as Student-t `nu`, or one
+    # value shared by all series under `model.emission.per_series: false`, which also allows `increasing`).
     increasing = cfg.constraint == "increasing"
-    flat = flat or increasing
-    if increasing and n_series != 1:
+    if increasing and n_series != 1 and not flat:
         raise ConfigError(
-            f"constraint='increasing' is only supported for a single series (n_series={n_series})",
+            f"constraint='increasing' is only supported for a single series (n_series={n_series}); "
+            "set model.emission.per_series: false to share one ordered value across the series",
             path=name,
         )
+    flat = flat or increasing
     shape: tuple[int, ...] = (n_states,) if flat else (n_states, n_series)
     value = _broadcast_per_state(cfg.values, n_states, n_series, flat=flat)
     init = _broadcast_per_state(cfg.init, n_states, n_series, flat=flat)
@@ -124,6 +126,9 @@ class GBMFamily:
     scale_by_dt: bool = True
     drift_idx: tuple[int, ...] = ()
     logvol_idx: tuple[int, ...] = ()
+
+    # Parameters that carry a series axis `(N, M)`, or `(N,)` when shared across series (`ProductEmission`).
+    series_param_names: ClassVar[tuple[str, ...]] = ("emission.mu", "emission.sigma")
 
     # --- protocol: parameter layout ---------------------------------------------------------
 
@@ -179,6 +184,7 @@ class GBMFamily:
                 n_series=n_series,
                 domain="real",
                 default_init=0.0,
+                flat=not cfg.per_series,
             ),
             _spec_from_paramcfg(
                 "emission.sigma",
@@ -187,6 +193,7 @@ class GBMFamily:
                 n_series=n_series,
                 domain="positive",
                 default_init=0.1,
+                flat=not cfg.per_series,
             ),
         ]
         if drift_idx:
@@ -249,11 +256,14 @@ class GBMFamily:
         del n_series
         return mean_t, sd_t
 
+    def log_prob_series(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
+        """`(T, N, M)` per-regime, per-series log-density (E9-T01: `ProductEmission` masks per series)."""
+        mean_t, sd_t = self._mean_sd(dt, theta, z)
+        return normal_logpdf(y[:, None, :], mean_t, sd_t)
+
     def log_prob(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
         """`(T, N)` log-density, summed over the `M` series."""
-        mean_t, sd_t = self._mean_sd(dt, theta, z)
-        logdens = normal_logpdf(y[:, None, :], mean_t, sd_t)  # (T, N, M)
-        return jnp.sum(logdens, axis=-1)
+        return jnp.sum(self.log_prob_series(y, dt, theta, z), axis=-1)
 
     def cdf(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
         """`(T, N, M)` per-regime, per-series predictive CDF at `y` (E5-T04's PIT diagnostic)."""

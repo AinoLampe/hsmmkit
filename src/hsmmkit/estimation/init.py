@@ -83,6 +83,15 @@ def _kmeans_1d(
     return labels, centers
 
 
+def _series_values(per_series: np.ndarray, pooled: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
+    """`per_series (N, M)` if the spec has a series axis (`shape == (N, M)`), else `pooled (N,)`."""
+    return per_series if len(shape) == 2 else pooled
+
+
+def _spec_shape(spec: ModelSpec, name: str) -> tuple[int, ...]:
+    return next(ps.shape for ps in spec.param_specs if ps.name == name)
+
+
 def _mean_run_length_steps(labels: np.ndarray, n_clusters: int) -> np.ndarray:
     """`(n_clusters,)`: mean run length (in grid steps) of each label, via run-length encoding."""
     change = np.flatnonzero(np.diff(labels)) + 1
@@ -166,7 +175,10 @@ def rollvol_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params
     """
     theta = _baseline_theta(spec)
     n = spec.n_states
-    y = np.asarray(data.observations)[:, 0]
+    y_all = np.asarray(data.observations)
+    multi = y_all.shape[1] > 1
+    # Several series share one regime process: cluster the pooled (root-mean-square) volatility.
+    y = np.sqrt(np.mean(y_all**2, axis=1)) if multi else y_all[:, 0]
     if y.shape[0] <= _ROLL_WINDOW:
         return theta
 
@@ -180,13 +192,43 @@ def rollvol_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params
 
     scale_name = next((s.name for s in spec.param_specs if s.name in _SCALE_NAMES), None)
     if scale_name is not None:
-        theta[scale_name] = jnp.asarray(sigma)
+        if multi:
+            rv_m = np.stack(
+                [_rolling_realized_vol(y_all[:, m], data.nominal_dt) for m in range(y_all.shape[1])], axis=1
+            )  # (W, M)
+            sigma_nm = np.array(
+                [
+                    [
+                        rv_m[labels == k, m].mean() if np.any(labels == k) else sigma[k]
+                        for m in range(rv_m.shape[1])
+                    ]
+                    for k in range(n)
+                ]
+            )
+            theta[scale_name] = jnp.asarray(_series_values(sigma_nm, sigma, _spec_shape(spec, scale_name)))
+        else:
+            theta[scale_name] = jnp.asarray(sigma)
 
     loc_name = next((s.name for s in spec.param_specs if s.name in _LOCATION_NAMES), None)
     if loc_name is not None:
-        y_win = y[_ROLL_WINDOW - 1 :] / data.nominal_dt
-        mu = np.array([y_win[labels == k].mean() if np.any(labels == k) else 0.0 for k in range(n)])
-        theta[loc_name] = jnp.asarray(mu)
+        if multi:
+            y_win_m = y_all[_ROLL_WINDOW - 1 :] / data.nominal_dt  # (W, M)
+            mu_nm = np.array(
+                [
+                    [
+                        y_win_m[labels == k, m].mean() if np.any(labels == k) else 0.0
+                        for m in range(y_all.shape[1])
+                    ]
+                    for k in range(n)
+                ]
+            )
+            theta[loc_name] = jnp.asarray(
+                _series_values(mu_nm, mu_nm.mean(axis=1), _spec_shape(spec, loc_name))
+            )
+        else:
+            y_win = y[_ROLL_WINDOW - 1 :] / data.nominal_dt
+            mu = np.array([y_win[labels == k].mean() if np.any(labels == k) else 0.0 for k in range(n)])
+            theta[loc_name] = jnp.asarray(mu)
 
     if _duration_primary_names(spec):
         mean_steps = jnp.asarray(_mean_run_length_steps(labels, n))
@@ -248,18 +290,27 @@ def random(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
     """
     theta = _baseline_theta(spec)
     n = spec.n_states
-    y = np.asarray(data.observations)[:, 0]
-    s = float(np.std(y)) / np.sqrt(data.nominal_dt)
+    y_all = np.asarray(data.observations)
+    multi = y_all.shape[1] > 1
+    s_m = np.std(y_all, axis=0) / np.sqrt(data.nominal_dt)  # (M,) per-series scale
+    s = float(np.std(y_all[:, 0])) / np.sqrt(data.nominal_dt) if not multi else float(s_m.mean())
     keys = iter(jax.random.split(key, max(len(spec.param_specs), 1) * 2 + 4))
 
     scale_name = next((sp.name for sp in spec.param_specs if sp.name in _SCALE_NAMES), None)
     if scale_name is not None:
         u01 = jax.random.uniform(next(keys), (n,), minval=0.25, maxval=4.0)
-        theta[scale_name] = jnp.sort(u01 * s)
+        if multi and len(_spec_shape(spec, scale_name)) == 2:
+            theta[scale_name] = jnp.sort(u01)[:, None] * jnp.asarray(s_m)[None, :]
+        else:
+            theta[scale_name] = jnp.sort(u01 * s)
 
     loc_name = next((sp.name for sp in spec.param_specs if sp.name in _LOCATION_NAMES), None)
     if loc_name is not None:
-        theta[loc_name] = jax.random.uniform(next(keys), (n,), minval=-1.0, maxval=1.0) * s
+        if multi and len(_spec_shape(spec, loc_name)) == 2:
+            u = jax.random.uniform(next(keys), (n, y_all.shape[1]), minval=-1.0, maxval=1.0)
+            theta[loc_name] = u * jnp.asarray(s_m)[None, :]
+        else:
+            theta[loc_name] = jax.random.uniform(next(keys), (n,), minval=-1.0, maxval=1.0) * s
 
     if _duration_primary_names(spec):
         log_m = jax.random.uniform(next(keys), (n,), minval=jnp.log(5.0), maxval=jnp.log(250.0))

@@ -13,7 +13,7 @@ Parameters are in clock units (CLAUDE.md §3.1); no code here branches on the cl
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import jax.numpy as jnp
 import jax.scipy.stats
@@ -47,6 +47,9 @@ class StudentTFamily:
     scale_by_dt: bool = True
     loc_idx: tuple[int, ...] = ()
     logscale_idx: tuple[int, ...] = ()
+
+    # Parameters that carry a series axis `(N, M)`, or `(N,)` when shared across series (`ProductEmission`).
+    series_param_names: ClassVar[tuple[str, ...]] = ("emission.m", "emission.s")
 
     # --- protocol: parameter layout ---------------------------------------------------------
 
@@ -122,6 +125,7 @@ class StudentTFamily:
                 n_series=n_series,
                 domain="real",
                 default_init=0.0,
+                flat=not cfg.per_series,
             ),
             _spec_from_paramcfg(
                 "emission.s",
@@ -130,6 +134,7 @@ class StudentTFamily:
                 n_series=n_series,
                 domain="positive",
                 default_init=0.1,
+                flat=not cfg.per_series,
             ),
             nu_spec,
         ]
@@ -177,11 +182,14 @@ class StudentTFamily:
         scale_t = jnp.exp(jnp.log(s2)[None, :, :] + logscale_adj[:, :, None]) * jnp.sqrt(dt_)
         return loc_t, scale_t, theta["emission.nu"]
 
+    def log_prob_series(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
+        """`(T, N, M)` per-regime, per-series log-density (E9-T01: `ProductEmission` masks per series)."""
+        loc_t, scale_t, nu = self._loc_scale_nu(dt, theta, z)
+        return student_t_logpdf(y[:, None, :], loc_t, scale_t, nu[None, :, None])
+
     def log_prob(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
         """`(T, N)` log-density, summed over the `M` series."""
-        loc_t, scale_t, nu = self._loc_scale_nu(dt, theta, z)
-        logdens = student_t_logpdf(y[:, None, :], loc_t, scale_t, nu[None, :, None])  # (T, N, M)
-        return jnp.sum(logdens, axis=-1)
+        return jnp.sum(self.log_prob_series(y, dt, theta, z), axis=-1)
 
     def cdf(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
         """`(T, N, M)` per-regime, per-series predictive CDF at `y` (E5-T04's PIT diagnostic)."""
