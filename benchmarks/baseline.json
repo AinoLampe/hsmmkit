@@ -1,42 +1,42 @@
 [
   {
     "name": "test_e4_t03a_forward_time_budget",
-    "mean": 0.017322
+    "mean": 0.014179
   },
   {
     "name": "test_e4_t03b_forward_backward_time_budget",
-    "mean": 0.031438
+    "mean": 0.032408
   },
   {
     "name": "test_e4_t06a_forward_backward_time_budget",
-    "mean": 1.41131
+    "mean": 1.415887
   },
   {
     "name": "test_e4_t06a_loglik_time_budget",
-    "mean": 0.050646
+    "mean": 0.046845
   },
   {
     "name": "test_e4_t07_expanded_forward_backward_budget",
-    "mean": 0.032412
+    "mean": 0.030714
   },
   {
     "name": "test_e4_t07_expanded_viterbi_time",
-    "mean": 0.01308
+    "mean": 0.012805
   },
   {
     "name": "test_e4_t07_explicit_forward_backward_budget",
-    "mean": 1.447163
+    "mean": 1.454095
   },
   {
     "name": "test_e4_t07_explicit_viterbi_time",
-    "mean": 0.01884
+    "mean": 0.017012
   },
   {
     "name": "test_e4_t07_parallel_scan_forward_backward_time",
-    "mean": 0.049568
+    "mean": 0.072979
   },
   {
     "name": "test_e5_t02_lbfgs_fit_completes_within_budget",
-    "mean": 6.34542
+    "mean": 5.946142
   }
 ]
