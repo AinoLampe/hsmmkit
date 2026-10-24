@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tomllib
 from pathlib import Path
@@ -59,24 +60,35 @@ def test_e8_t04_semantic_release_is_configured_for_zero_ver_conventional_commits
     assert cfg["version_toml"] == ["pyproject.toml:project.version"]
 
 
-def test_e8_t04_towncrier_collects_the_fragments() -> None:
-    """A draft build renders every fragment type's section with ticket ids and writes nothing."""
-    env = dict(os.environ, PYTHONUTF8="1")
-    before = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+def test_e8_t04_towncrier_collects_the_fragments(tmp_path: Path) -> None:
+    """A draft build in a scratch copy renders a fragment of each kind under its section, writing nothing.
+
+    (The real fragments are consumed by `towncrier build` when a release is cut, so the test brings its own.)
+    """
+    shutil.copy(ROOT / "towncrier.toml", tmp_path / "towncrier.toml")
+    (tmp_path / "changelog.d").mkdir()
+    shutil.copy(ROOT / "changelog.d" / "_template.md.j2", tmp_path / "changelog.d" / "_template.md.j2")
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n<!-- towncrier release notes start -->\n", encoding="utf-8"
+    )
+    (tmp_path / "changelog.d" / "E0-T01.feature.md").write_text("Add a thing.\n", encoding="utf-8")
+    (tmp_path / "changelog.d" / "E0-T02.bugfix.md").write_text("Fix a thing.\n", encoding="utf-8")
+    before = (tmp_path / "CHANGELOG.md").read_text(encoding="utf-8")
     done = subprocess.run(
-        ["towncrier", "build", "--draft", "--version", "0.1.0"],
-        cwd=ROOT,
+        ["towncrier", "build", "--draft", "--version", "9.9.9"],
+        cwd=tmp_path,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        env=env,
+        env=dict(os.environ, PYTHONUTF8="1"),
         check=False,
     )
     assert done.returncode == 0, done.stderr
-    assert "## 0.1.0" in done.stdout
+    assert "## 9.9.9" in done.stdout
     assert "### Features" in done.stdout
-    assert "- E8-T04" in done.stdout or "- E8-T03" in done.stdout
-    assert (ROOT / "CHANGELOG.md").read_text(encoding="utf-8") == before
+    assert "### Bug fixes" in done.stdout
+    assert "- E0-T01: Add a thing." in done.stdout
+    assert (tmp_path / "CHANGELOG.md").read_text(encoding="utf-8") == before
 
 
 def test_e8_t04_release_checklist_lists_the_four_success_criteria() -> None:
