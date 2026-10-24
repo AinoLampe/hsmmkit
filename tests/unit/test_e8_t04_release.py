@@ -85,5 +85,6 @@ def test_e8_t04_release_checklist_lists_the_four_success_criteria() -> None:
     for number in ("| 1 |", "| 2 |", "| 3 |", "| 4 |"):
         assert number in text
     assert "not released" in text
-    assert "weekly full run" in text
-    assert "pending" in text
+    assert "weekly full run" in text.lower()
+    assert text.count("actions/runs/") >= 4  # the CI runs that prove the criteria
+    assert "pending" not in text.lower()
