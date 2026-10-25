@@ -115,6 +115,24 @@ sign flip); `Cov_u = inv(H)`; the delta method (`Cov_theta = J Cov_u J^T`, `J = 
 gives one SE array per `theta` key, shaped like that parameter. Returns `None` (not an exception) when
 `H`'s smallest eigenvalue is non-positive or non-finite.
 
+## EM cross-check (`estimation/em.py`, E5-T06)
+
+For the covariate-free GBM model with geometric or negative-binomial durations, `em_fit` runs Baum-Welch as an
+independent check on MAP (it ignores priors, so compare with `use_priors: false`). With smoothed weights
+$w_{t,i}$ and expected transition counts $\Xi = \sum_t \xi_t$:
+
+$$
+\hat m_i = \frac{\sum_t w_{t,i} y_t}{\sum_t w_{t,i}\Delta_t}, \quad
+\hat\sigma_i^2 = \frac{\sum_t w_{t,i}(y_t - \hat m_i\Delta_t)^2/\Delta_t}{\sum_t w_{t,i}}, \quad
+\hat\mu_i = \hat m_i + \tfrac12\hat\sigma_i^2,
+$$
+
+$\hat a_i = \text{leave}_i / (\text{leave}_i + \text{stay}_i)$ from the expected advance-or-exit and stay counts
+of the regime's phase states, $\hat\lambda_i = -\log(1-\hat a_i)/\Delta$, and each jump row is the normalised
+expected exit counts. The pair $(m, \sigma)$ is a bijective reparameterization of $(\mu, \sigma)$, so the
+emission update is exact in one step. The log-likelihood is non-decreasing; covariates, Student-t, the explicit
+engine, order above 1 and irregular grids raise `ConfigError`.
+
 ## Symbols and code names
 
 | Math | Code |
@@ -124,3 +142,4 @@ gives one SE array per `theta` key, shaped like that parameter. Returns `None` (
 | fit | `regimekit.estimation.fit(spec, data, cfg, seed)` |
 | restarts | `FitResult.restarts` (one row per start) |
 | standard errors | `estimation.report.std_errors` |
+| EM | `estimation.em.em_fit`, `GBMFamily.sufficient_stats` |

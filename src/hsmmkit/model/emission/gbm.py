@@ -288,7 +288,22 @@ class GBMFamily:
         del y_t, theta
         return carry
 
-    def sufficient_stats(self, y: Array, dt: Array, gamma: Array) -> object | None:
-        """No EM sufficient statistics in v1 (hook for E5-T06)."""
-        del y, dt, gamma
-        return None
+    def sufficient_stats(self, y: Array, dt: Array, gamma: Array) -> dict[str, Array]:
+        """Weighted sums for the closed-form M-step (E5-T06), covariate-free, single series.
+
+        `y (T, 1)` (or `(T,)`), `dt (T,)`, `gamma (T, N)` regime weights (zero at unobserved steps).
+        With `m_i = mu_i - sigma_i**2 / 2` the maximum-likelihood estimates are
+        `m_i = w_y / w_dt` and `sigma_i**2 = (w_y2_dt - 2 m_i w_y + m_i**2 w_dt) / w`, then `mu_i = m_i +
+        sigma_i**2 / 2` (the pair `(m, sigma)` is a bijective reparameterization of `(mu, sigma)`).
+
+        Returns:
+            `(N,)` arrays `w = sum w_t`, `w_dt = sum w_t dt_t`, `w_y = sum w_t y_t`,
+            `w_y2_dt = sum w_t y_t**2 / dt_t`.
+        """
+        y1 = y[:, 0] if y.ndim == 2 else y
+        return {
+            "w": jnp.sum(gamma, axis=0),
+            "w_dt": jnp.sum(gamma * dt[:, None], axis=0),
+            "w_y": jnp.sum(gamma * y1[:, None], axis=0),
+            "w_y2_dt": jnp.sum(gamma * (y1**2 / dt)[:, None], axis=0),
+        }

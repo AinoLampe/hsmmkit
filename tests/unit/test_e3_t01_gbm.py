@@ -190,10 +190,12 @@ def test_e3_t01_steps_clock_matches_scipy_no_dt_scaling() -> None:
 
 
 def test_e3_t01_carry_and_sufficient_stats_are_noops() -> None:
-    """GBM has no path-dependent state: `init_carry`/`step_carry` are identity, no EM stats in v1."""
+    """GBM has no path-dependent state: carry hooks are identity; zero weights give zero stats."""
     assert FAMILY.init_carry() is None
     assert FAMILY.step_carry("carry", jnp.zeros((1,)), {}) == "carry"
-    assert FAMILY.sufficient_stats(jnp.zeros((1, 1)), jnp.ones((1,)), jnp.zeros((1, 1))) is None
+    stats = FAMILY.sufficient_stats(jnp.zeros((1, 1)), jnp.ones((1,)), jnp.zeros((1, 1)))  # E5-T06
+    assert set(stats) == {"w", "w_dt", "w_y", "w_y2_dt"}  # type: ignore[arg-type]
+    assert all(float(v[0]) == 0.0 for v in stats.values())  # type: ignore[attr-defined]
 
 
 # --- param_specs (config-free default) ----------------------------------------------------------
