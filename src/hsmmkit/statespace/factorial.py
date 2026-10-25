@@ -117,6 +117,10 @@ class JointEmission:
             total = total + lp.reshape(shape)
         return total.reshape(y.shape[0], -1)
 
+    def init_carry(self) -> object:
+        """No recurrent state (the spike chains use memoryless families)."""
+        return None
+
 
 def _joint_log_transition(
     spaces: tuple[StateSpace, ...],

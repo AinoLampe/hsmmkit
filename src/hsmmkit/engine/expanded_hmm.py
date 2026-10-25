@@ -73,7 +73,11 @@ def _regime_log_emis(theta: Params, spec: ModelSpec, data: PreparedDataset, dt: 
         # Multi-series model (E9-T01): each series is masked on its own, the others keep their density.
         return spec.emission.log_prob_masked(y_safe, mask, dt, theta, z_e)
     observed = jnp.all(mask, axis=-1)  # (T,)
-    log_emis = spec.emission.log_prob(y_safe, dt, theta, z_e)  # (T, N)
+    if spec.emission.init_carry() is not None:
+        # Recurrent emission state (E9-T03, ADR-0022): the family threads its carry through a scan.
+        log_emis = spec.emission.log_prob_scan(y_safe, mask, dt, theta, z_e)  # type: ignore[attr-defined]
+    else:
+        log_emis = spec.emission.log_prob(y_safe, dt, theta, z_e)  # (T, N)
     return jnp.where(observed[:, None], log_emis, 0.0)
 
 
