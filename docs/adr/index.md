@@ -14,7 +14,7 @@ Part II, or raised during implementation) are added by the tickets that need the
 | [0005](0005-map-lbfgs-primary-estimator.md) | MAP via L-BFGS is the primary estimator |
 | [0006](0006-shifted-negbin-phase-expansion.md) | Shifted negative-binomial phase expansion |
 | [0007](0007-explicit-duration-regular-grid.md) | Explicit-duration engine requires a regular grid |
-| [0008](0008-approx-inference-plugin.md) | Approximate-inference plug-in interface (factorial models) |
+| [0008](0008-approx-inference-plugin.md) | Approximate-inference plug-in interface; structured mean-field for factorial models |
 | [0009](0009-pydantic-v2-yaml-config.md) | pydantic v2 + YAML configuration |
 | [0010](0010-typer-cli-pandas-pyarrow.md) | typer CLI; pandas in the data layer; pyarrow parquet |
 | [0011](0011-safetensors.md) | safetensors for the model bundle (new runtime dependency) |
