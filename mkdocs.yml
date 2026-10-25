@@ -99,3 +99,4 @@ nav:
       - "0012 Core/profile split": adr/0012-core-profile-split.md
       - "0013 Three clocks including steps": adr/0013-three-clocks.md
       - "0022 Recurrent emissions and the annualization exception": adr/0022-in-scan-emissions.md
+      - "0023 Endogenous covariates as emission channels": adr/0023-endogenous-covariates.md
