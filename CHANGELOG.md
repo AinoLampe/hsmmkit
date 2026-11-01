@@ -5,6 +5,15 @@ Release notes are collected from `changelog.d/` fragments by [towncrier](https:/
 
 <!-- towncrier release notes start -->
 
+## 0.2.0 (2026-11-01)
+
+### Features
+
+- E9-T01: Models with several price series (`data.primary.symbols` with more than one symbol) now treat each series
+  independently given the regime (`ProductEmission`): a missing print masks only that series, the primary series
+  defines the time grid, and `model.emission.per_series: false` shares `mu`/`sigma` across the series.
+- E5-T06: Add `regimekit.estimation.em.em_fit`, an EM (Baum-Welch) estimator for the covariate-free GBM model with geometric or negative-binomial durations, as a cross-check for MAP fits.
+
 ## 0.1.0 (2026-10-24)
 
 ### Features
