@@ -92,11 +92,12 @@ def test_e8_t04_towncrier_collects_the_fragments(tmp_path: Path) -> None:
 
 
 def test_e8_t04_release_checklist_lists_the_four_success_criteria() -> None:
-    """AC3: `docs/releases/0.1.0.md` has one row per section-1.4 criterion and says nothing is tagged yet."""
+    """AC3: `docs/releases/0.1.0.md` has one row per section-1.4 criterion and records the v0.1.0 tag."""
     text = (ROOT / "docs" / "releases" / "0.1.0.md").read_text(encoding="utf-8")
     for number in ("| 1 |", "| 2 |", "| 3 |", "| 4 |"):
         assert number in text
-    assert "not released" in text
+    assert "**released.**" in text
+    assert "`v0.1.0`" in text
     assert "weekly full run" in text.lower()
     assert text.count("actions/runs/") >= 4  # the CI runs that prove the criteria
     assert "pending" not in text.lower()
