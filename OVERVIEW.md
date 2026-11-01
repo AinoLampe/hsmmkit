@@ -173,6 +173,7 @@ the same with `write=True`. In Python nothing is written unless you ask.
 
 ```python
 from regimekit import Project
+
 p = Project.from_yaml("examples/configs/dax_3state_gbm_nb.yaml", overrides={"project.seed": 7})
 ```
 
@@ -229,7 +230,7 @@ The cache lives in `~/.cache/regimekit` by default.
 - `data.cache.snapshot: <id>` pins an exact data generation. It cannot be combined with covariates in 0.1.0.
 
 ```python
-data = p.fetch()                  # PreparedDataset; quality report on p.last_quality
+data = p.fetch()  # PreparedDataset; quality report on p.last_quality
 ```
 
 ### 2.3 Train a model, with different features
@@ -239,20 +240,27 @@ regimekit fit config.yaml         # fetch + fit -> <name>.rkmodel/, fit_report.j
 ```
 
 ```python
-fit = p.fit(data)                 # FitResult: params, loglik, converged, restarts table, diagnostics
-fit.params; fit.loglik; fit.restarts
+fit = p.fit(data)  # FitResult: params, loglik, converged, restarts table, diagnostics
+fit.params
+fit.loglik
+fit.restarts
 ```
 
 Different features are different YAML. The easiest way to try variants is `overrides`, with no file edits:
 
 ```python
 # plain 3-state GBM + geometric durations, no covariates
-base = {"model.duration.family": "geometric", "model.transition.covariates": [], "model.duration.covariates": []}
+base = {
+    "model.duration.family": "geometric",
+    "model.transition.covariates": [],
+    "model.duration.covariates": [],
+}
 # fat tails
 p_t = Project.from_yaml(cfg, overrides={"model.emission.family": "student_t"})
 # explicit-duration engine with gamma durations
-p_g = Project.from_yaml(cfg, overrides={"model.engine": "explicit", "model.duration.family": "gamma",
-                                        "model.d_max": 400})
+p_g = Project.from_yaml(
+    cfg, overrides={"model.engine": "explicit", "model.duration.family": "gamma", "model.d_max": 400}
+)
 # second-order memory
 p_o2 = Project.from_yaml(cfg, overrides={"model.transition.order": 2})
 ```
@@ -277,7 +285,7 @@ regimekit backtest config.yaml    # -> backtest_metrics/folds/summary.parquet, s
 ```
 
 ```python
-bt = p.backtest()                 # fetches raw inputs itself; the preparer is refit per fold
+bt = p.backtest()  # fetches raw inputs itself; the preparer is refit per fold
 ```
 
 Walk-forward scheme (`evaluation.backtest`): fit on an expanding (or rolling) window, forecast from every
@@ -306,7 +314,7 @@ regimekit compare a.yaml b.yaml --metric crps --metric bic --reuse     # reuse s
 `fit` already writes the bundle when run from the CLI. From Python:
 
 ```python
-p.save(fit, "runs/my_run/my_run.rkmodel")      # needs the dataset it was fitted on (defaults to the last one)
+p.save(fit, "runs/my_run/my_run.rkmodel")  # needs the dataset it was fitted on (defaults to the last one)
 ```
 
 A bundle is a directory:
@@ -330,22 +338,22 @@ regimekit --offline forecast config.yaml --model runs/my_run/my_run.rkmodel --ho
 ```python
 from regimekit import Project
 
-fit = Project.load("runs/my_run/my_run.rkmodel")       # FitResult, no data needed
-p = Project.from_yaml("runs/my_run/my_run.rkmodel/config.resolved.yaml")   # same config the model was fit with
-data = p.fetch(offline=True)                           # prepared data from the cached snapshot
+fit = Project.load("runs/my_run/my_run.rkmodel")  # FitResult, no data needed
+p = Project.from_yaml("runs/my_run/my_run.rkmodel/config.resolved.yaml")  # same config the model was fit with
+data = p.fetch(offline=True)  # prepared data from the cached snapshot
 
 post = p.decode(fit, data)
-post.filtered      # (T, N) P(regime_t | y_1..t)   causal, usable live
-post.smoothed      # (T, N) P(regime_t | y_1..T)   retrospective
-post.viterbi       # (T,)   most likely regime path
-post.segments      # [(start, end_inclusive, regime), ...]
+post.filtered  # (T, N) P(regime_t | y_1..t)   causal, usable live
+post.smoothed  # (T, N) P(regime_t | y_1..T)   retrospective
+post.viterbi  # (T,)   most likely regime path
+post.segments  # [(start, end_inclusive, regime), ...]
 post.loglik, post.aic, post.bic, post.icl
 
 fc = p.forecast(fit, data, horizon=20, n_sim=10000)
-fc.regime_probs    # (h, N)      regime probabilities at each step ahead
-fc.cum_quantiles   # (h, Q, M)   quantiles of the cumulative log-return
-fc.mean, fc.var    # (h, M)
-fc.samples         # (n_sim, h, M) per-step simulated returns
+fc.regime_probs  # (h, N)      regime probabilities at each step ahead
+fc.cum_quantiles  # (h, Q, M)   quantiles of the cumulative log-return
+fc.mean, fc.var  # (h, M)
+fc.samples  # (n_sim, h, M) per-step simulated returns
 ```
 
 Notes:
