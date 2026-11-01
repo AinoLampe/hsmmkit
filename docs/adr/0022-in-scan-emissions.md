@@ -45,4 +45,4 @@ the engine can use them.
 
 ## Status
 
-proposed (experimental; the owner decides whether to graduate the carry branch)
+accepted

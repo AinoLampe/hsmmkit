@@ -105,4 +105,4 @@ It should not start before the owner has reviewed the channel-dominance risk on 
 
 ## Status
 
-proposed
+accepted
