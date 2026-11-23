@@ -69,6 +69,77 @@ u`, `	op`, `	o` had been corrupted into control characters). New dev deps `townc
 | E9-T03 | MS-GARCH emission spike | M | 7 | E3-T01, E4-T03b | done | 89dd781 | AC1 `tests/spikes/test_e9_t03_msgarch.py::test_e9_t03_carry_scan_is_differentiable_through_the_engine` (finite, non-zero grads for m/omega/alpha/beta via `ExpandedHMMEngine.loglik`) + `..._gbm_keeps_the_non_carry_path` (`init_carry() is None`, emission table byte-equal to the old `log_prob` path) + the E9-T01 golden test (GBM/Student-t loglik and posteriors bitwise-equal, unchanged); AC2 `..._one_state_garch_matches_the_reference_loglik` (two identical regimes, vs the NumPy reference `tests/reference/ref_garch.py`, abs <= 1e-6; `arch` is not installed) + per-regime check at 1e-9; AC3 `..._two_state_msgarch_fits_without_numerical_failure` (restarts=2, warnings as errors). Decisions: ADR-0022 (CLAUDE.md 3.6, status `proposed`); the variance recursion runs in its own `lax.scan` BEFORE the forward scan (Haas variances depend on y only, not on the regime path, so the `(T, N)` table is identical to in-scan threading and backward/Viterbi/parallel/explicit engines reuse it) -- deviation from the ticket sketch, limits documented in the ADR; the engine branch is `if spec.emission.init_carry() is not None` in `_regime_log_emis`, GBM/Student-t/Product return `None`; `JointEmission` (E9-T02) gained `init_carry`; masked steps feed `eps^2 -> h`; `omega` has `constraint=increasing` as the labelling guard; not in `EMISSION_FAMILIES`, no config name, `sample`/`cdf` raise. Known limits: single-step `log_prob` restarts the recursion (wrong for one-step scoring), carry under `ProductEmission` unsupported. Independent review: no bug; made `log_prob_scan` call `step_carry` so the protocol hook is exercised, documented the limits. Full gate 1318 passed, 96.7 % coverage, packages >= 95.9 %. No changelog fragment (experimental) |
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | done | 2aac0fa | AC1: `docs/adr/0023-endogenous-covariates.md` (status `proposed`; ADR number per CLAUDE.md 3.6, the ticket says 0013) covers motivation, data-contract impact (none: channels are extra `observations`/`mask` columns, `channel_kind` lives in `BuildInputs`/bundle because the `PreparedDataset` field set is frozen), emission interface diff (heterogeneous `ProductEmission`, channel-prefixed params), forecasting impact, identifiability caveats, migration path and a scheduling recommendation. AC2 (owner review, accepted/rejected) is open. No code. Docs build green |
 
+## Tickets — Part II
+<!-- Status: todo | in-progress | done | blocked | needs-owner | other-repo -->
+| ID | Title | Size | Phase | Deps | Status | Commit | Notes |
+|---|---|---|---|---|---|---|---|
+| E10-T01 | Split guardrails: neutral-name scanner, `core-only` job, v0.2.0 golden values, ADR-0014 | S | 8 | Part I complete (E8-T04, E9-T01…T04) | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T02a | Component registries | M | 8 | E10-T01 | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T02b | Config extension, `FinanceConfig`, schema v2 migration, ADR-0016 | M | 8 | E10-T02a | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T03 | Clock registry; `trading` to finance; ADR-0015 | M | 8 | E10-T02b | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T04a | Generic `ObservationSet`, `Source` protocol, numpy/pandas/csv/parquet sources, `source_contract` | M | 8 | E10-T02b | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T04b | xarray source; providers as source kind `provider`; cache moved to finance | M | 8 | E10-T04a | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T05 | Generic `Preparer`, observation transforms, supports, quality split | M | 8 | E10-T03, E10-T04a | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T06 | Core `gaussian` (diag) emission; `gbm` alias | M | 8 | E10-T02b | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T07a | Neutral init, walk-forward origin hooks, strategies to finance, bundle v2 | M | 8 | E10-T02b, E10-T03 | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T07b | CLI app factory, `Project`/`FinanceProject`; allow-list empty | M | 8 | E10-T07a, E10-T04b, E10-T05, E10-T06 | todo |  | RegimeDetectionAndForecast*; milestone M7a |
+| E10-T08 | Extract `hsmmkit` repository; release 0.1.0 | M | 9 | E10-T07b | other-repo |  | hsmmkit; milestone M7b |
+| E10-T09 | `regimekit` on top of `hsmmkit`; release 0.2.0 | M | 9 | E10-T08 | todo |  | RegimeDetectionAndForecast; milestone M7b |
+| E10-T10 | Complete schema with feature gates; JSON Schema; presets registry | M | 10 | E10-T08 | other-repo |  | hsmmkit; milestone M8 |
+| E10-T11 | Lazy optional imports, extras, import-time test | S | 10 | E10-T08 | other-repo |  | hsmmkit; milestone M8 |
+| E11-T01 | `family_contract` suite | M | 10 | E10-T08 | other-repo |  | hsmmkit; milestone M8 |
+| E11-T02 | Gaussian full covariance | M | 10 | E11-T01 | other-repo |  | hsmmkit; milestone M8 |
+| E11-T03 | Multivariate Student-t | S | 10 | E11-T02 | other-repo |  | hsmmkit; milestone M8 |
+| E11-T04 | Poisson, Bernoulli, Categorical | M | 10 | E11-T01 | other-repo |  | hsmmkit; milestone M8 |
+| E11-T05 | MS-AR(p) | M | 10 | E11-T02, E10-T05 | other-repo |  | hsmmkit; milestone M8 |
+| E11-T06 | Per-state finite mixture | M | 10 | E11-T02 | other-repo |  | hsmmkit; milestone M8 |
+| E11-T07 | OU and Merton jump-diffusion | M | 10 | E11-T06, E10-T09 | todo |  | RegimeDetectionAndForecast; milestone M8 |
+| E11-T08 | Joint/product emission composition | M | 10 | E11-T02, E11-T04 | other-repo |  | hsmmkit; milestone M8 |
+| E11-T09 | Correlated multi-primary finance configuration | S | 10 | E11-T08, E10-T09 | todo |  | RegimeDetectionAndForecast; milestone M8 |
+| E12-T01a | `SequenceBatch`, padding, buckets; ADR-0021 | M | 11 | E10-T10 | other-repo |  | hsmmkit; milestone M9 |
+| E12-T01b | Batched engines and unpadding | M | 11 | E12-T01a | other-repo |  | hsmmkit; milestone M9 |
+| E12-T02 | Batch MAP, per-group initial distributions, batched simulate | M | 11 | E12-T01b | other-repo |  | hsmmkit; milestone M9 |
+| E12-T03 | Transition topology and absorbing states | M | 11 | E10-T10 | other-repo |  | hsmmkit; milestone M9 |
+| E12-T04 | Left-censoring in the explicit engine | S | 11 | E10-T10 | other-repo |  | hsmmkit; milestone M9 |
+| E12-T05 | Per-state durations, duration-dependent jumps | M | 11 | E12-T03 | other-repo |  | hsmmkit; milestone M9 |
+| E12-T06 | Label/boundary constraints, label init; ADR-0019 | M | 11 | E12-T01b | other-repo |  | hsmmkit; milestone M9 |
+| E13-T01a | Expanded-engine E-step accumulators | M | 12 | E12-T01b | other-repo |  | hsmmkit; milestone M10 |
+| E13-T01b | Explicit-engine segment posteriors `η` | M | 12 | E12-T01b | other-repo |  | hsmmkit; milestone M10 |
+| E13-T02a | `EMEstimator`: closed-form M-steps; ADR-0018 | M | 12 | E13-T01a, E11-T04 | other-repo |  | hsmmkit; milestone M10 |
+| E13-T02b | ECM, tempering, restarts, parity | M | 12 | E13-T02a | other-repo |  | hsmmkit; milestone M10 |
+| E13-T03a | GEM: jumps, nonparametric durations, censoring | M | 12 | E13-T01b, E12-T04 | other-repo |  | hsmmkit; milestone M10 |
+| E13-T03b | GEM: parametric durations, emissions, parity | M | 12 | E13-T03a, E13-T02a, E12-T05 | other-repo |  | hsmmkit; milestone M10 |
+| E13-T04 | FFBS (both engines) | M | 12 | E12-T01b | other-repo |  | hsmmkit; milestone M10 |
+| E13-T05a | VB: conjugate updates, structured `q(s)`, ELBO | M | 12 | E13-T01a, E11-T04 | other-repo |  | hsmmkit; milestone M10 |
+| E13-T05b | VB: pruning, VB-EM hybrid, parity | M | 12 | E13-T05a, E13-T02b | other-repo |  | hsmmkit; milestone M10 |
+| E13-T06a | MCMC: NUTS, `bayes` extra, ArviZ; ADR-0024 | M | 12 | E12-T02, E10-T11 | other-repo |  | hsmmkit; milestone M10 |
+| E13-T06b | MCMC: blocked Gibbs, relabelling, agreement | M | 12 | E13-T06a, E13-T04, E13-T05a | other-repo |  | hsmmkit; milestone M10 |
+| E13-T07 | Estimator parity suite, docs, `compare --estimators` | M | 12 | E13-T02b, E13-T03b, E13-T05b, E13-T06b | other-repo |  | hsmmkit; milestone M10 |
+| E13-T08 | Online EM spike; ADR-0026 | S | 14 | E13-T02b, E15-T01 | other-repo |  | hsmmkit; milestone M12 |
+| E13-T09 | HDP-HSMM spike; ADR-0027 | S | 12 | E13-T06b | other-repo |  | hsmmkit; milestone M10 |
+| E14-T01 | `Splitter` interface, `SequenceKFold`, walk-forward re-base | M | 13 | E12-T02 | other-repo |  | hsmmkit; milestone M11 |
+| E14-T02 | Grid model selection | M | 13 | E14-T01, E13-T07 | other-repo |  | hsmmkit; milestone M11 |
+| E14-T03 | Segmentation and clustering metrics; ADR-0020 | M | 13 | E10-T08 | other-repo |  | hsmmkit; milestone M11 |
+| E14-T04 | Parametric bootstrap | M | 13 | E12-T02 | other-repo |  | hsmmkit; milestone M11 |
+| E14-T05 | Pseudo-residuals, posterior predictive checks | M | 13 | E13-T04, E11-T04 | other-repo |  | hsmmkit; milestone M11 |
+| E14-T06 | Extended recovery scenarios, `hsmmkit selftest` | M | 13 | E13-T02b, E13-T03b, E13-T05b, E12-T06, E11-T05 | other-repo |  | hsmmkit; milestone M11 |
+| E15-T01 | `OnlineFilter` | M | 14 | E10-T08 | other-repo |  | hsmmkit; milestone M12 |
+| E15-T02 | Fixed-lag smoothing | M | 14 | E15-T01 | other-repo |  | hsmmkit; milestone M12 |
+| E15-T03 | Alerts and online forecast | S | 14 | E15-T02 | other-repo |  | hsmmkit; milestone M12 |
+| E15-T04 | `hsmmkit stream` CLI, `Project.online()` | S | 14 | E15-T03 | other-repo |  | hsmmkit; milestone M12 |
+| E15-T05 | (v1.x) Online EM | M | 14 | E13-T08 | other-repo |  | hsmmkit; v1.x, lands after 0.5.0 release prep |
+| E16-T01 | scikit-learn wrapper | M | 14 | E12-T02, E12-T06, E10-T11 | other-repo |  | hsmmkit; milestone M12 |
+| E16-T02 | pandas/xarray conversion, `hmmlearn` import | M | 14 | E11-T02, E11-T04, E10-T11 | other-repo |  | hsmmkit; milestone M12 |
+| E16-T03 | Plotting | M | 14 | E16-T02 | other-repo |  | hsmmkit; milestone M12 |
+| E16-T04 | Entry points, scaffold, `plugin` CI; ADR-0017 | M | 14 | E11-T01 | other-repo |  | hsmmkit; milestone M12 |
+| E16-T05 | Presets completion, core tutorials | M | 14 | E10-T10, E11-T05, E12-T05, E12-T06, E13-T03b, E13-T04, E14-T01, E14-T03, E14-T04, E14-T05, E15-T03, E16-T03 | other-repo |  | hsmmkit; milestone M12 |
+| E16-T06 | `regimekit` as entry-point plug-in, finance presets | S | 14 | E16-T04, E11-T07 | todo |  | RegimeDetectionAndForecast; milestone M12 |
+| E17-T01 | Documentation restructure | M | 15 | E16-T05, E13-T07 | other-repo |  | hsmmkit; milestone M13 |
+| E17-T02 | PyPI + conda-forge distribution | S | 15 | E10-T11 | other-repo |  | hsmmkit; milestone M13 |
+| E17-T03 | ADRs accepted, deprecation policy, benchmarks; ADR-0025 | S | 15 | E13-T07, E13-T09, E14-T02, E14-T04, E14-T05, E14-T06, E15-T04, E16-T01, E16-T03, E16-T04, E16-T05 | other-repo |  | hsmmkit; milestone M13 |
+| E17-T04 | Release `hsmmkit` 0.5.0 | S | 15 | E17-T01, E17-T02, E17-T03 | other-repo |  | hsmmkit; milestone M13 |
+| E17-T05 | Finance docs and release `regimekit` 0.5.0 | S | 15 | E17-T04, E16-T06, E11-T09 | todo |  | RegimeDetectionAndForecast; milestone M13 |
+
 ## Handoff
 No ticket in progress; `main` is clean. Gate: `nox -s lint types docs` green; the test session needs
 `pytest -n 6` on this machine (`-n auto` = 16 JAX workers runs out of memory, see Findings): 1243 passed,
