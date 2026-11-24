@@ -66,6 +66,13 @@ def _check_name(kind: Kind, name: str, path: str, *, needs: str | None = None) -
     return name
 
 
+def _validate_source_options(kind: str, options: dict[str, Any], path: str) -> None:
+    """Validate a core source's options with its `options_model` (lazy: the sources import this module)."""
+    from regimekit.data.sources.base import validate_options
+
+    validate_options(kind, options, path)
+
+
 # --- project / data -------------------------------------------------------------------------
 
 
@@ -146,7 +153,20 @@ class DataSection(_Base):
     @classmethod
     def _known_source(cls, value: SourceCfg) -> SourceCfg:
         _check_name("source", value.kind, "data.source.kind")
+        _validate_source_options(
+            value.kind, value.options(), "data.source"
+        )  # core sources: ConfigError per key
         return value
+
+    @model_validator(mode="after")
+    def _valid_covariate_sources(self) -> DataSection:
+        for i, cov in enumerate(self.covariates):
+            if cov.source is not None:
+                _check_name("source", cov.source.kind, f"data.covariates[{i}].source.kind")
+                _validate_source_options(
+                    cov.source.kind, cov.source.options(), f"data.covariates[{i}].source"
+                )
+        return self
 
     @field_validator("clock")
     @classmethod

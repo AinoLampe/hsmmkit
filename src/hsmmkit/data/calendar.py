@@ -40,7 +40,7 @@ class Grid:
     """The master observation grid.
 
     Attributes:
-        times: `(T+1,)` `datetime64[ns]` grid end times `τ_0 … τ_T`.
+        times: `(T+1,)` `datetime64[ns]` grid end times `τ_0 … τ_T` (`int64` step index if time-less).
         prices: `(T+1, M)` float64 prices on the grid; column 0 (the primary) has no NaN, the other
             series may (a missing print masks that series' returns, E9-T01).
         dt: `(T,)` float64 `Δ_t` in clock units (years for `trading`/`calendar`, 1 for `steps`).
@@ -121,18 +121,27 @@ def build_grid(
     clk = get_clock(clock)
     opts = parse_clock_options(clock, clock_options)
 
-    times = _as_ns(obs.times)
-    prices = np.asarray(obs.prices, dtype=np.float64)
-    if times.shape[0] > 1 and not bool(np.all(np.diff(times) > np.timedelta64(0, "ns"))):
-        raise DataError("primary times must be strictly increasing", path="times")
+    prices = np.asarray(obs.values, dtype=np.float64)
+    times: np.ndarray
+    if obs.times is None:
+        if clk.unit != "step":
+            raise ConfigError(
+                f"observations without a time column need a step clock (data.clock: steps), not {clock!r}",
+                path="data.clock",
+            )
+        times = np.arange(prices.shape[0], dtype=np.int64)  # the step index is the time axis
+    else:
+        times = _as_ns(obs.times)
+        if times.shape[0] > 1 and not bool(np.all(np.diff(times) > np.timedelta64(0, "ns"))):
+            raise DataError("primary times must be strictly increasing", path="times")
 
     if missing_returns == "error":
         gaps = np.argwhere(np.isnan(prices))
         if gaps.size:
             row, col = gaps[np.argmin(gaps[:, 0])]
-            first = np.datetime_as_string(times[row], unit="s")
-            symbol = obs.symbols[col] if col < len(obs.symbols) else str(col)
-            what = "primary price" if col == 0 and len(obs.symbols) == 1 else f"price of {symbol!r}"
+            first = str(times[row]) if obs.times is None else np.datetime_as_string(times[row], unit="s")
+            symbol = obs.series_names[col] if col < len(obs.series_names) else str(col)
+            what = "primary price" if col == 0 and len(obs.series_names) == 1 else f"price of {symbol!r}"
             raise DataError(
                 f"missing {what} at {first} (missing_returns='error')",
                 path="data.preparation.missing_returns",
@@ -167,6 +176,36 @@ def _visible_at(grid_times: np.ndarray, pub_times: np.ndarray) -> np.ndarray:
         age_ns = (grid_times[0] - pub_times[before]).astype(np.int64)
         visible[before] = (-age_ns) // spacing  # = -ceil(age / spacing)
     return visible
+
+
+def _align_by_row(
+    grid: Grid, series: CovariateSeries, raw_values: np.ndarray, lag: int, max_staleness: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Row-index alignment for time-less grids: print `j` is dated at grid row `j`.
+
+    Same semantics as the timestamp path with `τ_j = j`: row `t` takes the last non-NaN print at index
+    `<= t + 1 - lag`, carried at most `max_staleness` steps.
+    """
+    n_grid = grid.times.shape[0]
+    if raw_values.shape[0] != n_grid:
+        raise DataError(
+            f"covariate {series.name!r}: a series without timestamps needs exactly {n_grid} values "
+            f"(the grid length), got {raw_values.shape[0]}",
+            path="data.covariates",
+        )
+    j = np.arange(n_grid)
+    last_pub = np.maximum.accumulate(np.where(np.isnan(raw_values), -1, j))  # last non-NaN print <= j
+    has_pub = last_pub >= 0
+    pick = np.maximum(last_pub, 0)
+    asof_values = np.where(has_pub, raw_values[pick], np.nan)
+    asof_stale = np.where(has_pub, j - last_pub, _NEVER)
+    source = np.arange(grid.n_steps) + 1 - lag
+    in_range = source >= 0
+    safe = np.maximum(source, 0)
+    values = np.where(in_range, asof_values[safe], np.nan)
+    staleness = np.where(in_range, asof_stale[safe], _NEVER).astype(np.int64)
+    values = np.where(staleness > max_staleness, np.nan, values)
+    return values.astype(np.float64), staleness
 
 
 def align_covariate(
@@ -208,6 +247,21 @@ def align_covariate(
         )
 
     raw_values = np.asarray(series.values, dtype=np.float64)
+    grid_by_row = np.issubdtype(np.asarray(grid.times).dtype, np.integer)
+    if (
+        grid_by_row
+        and series.times is not None
+        and not np.issubdtype(np.asarray(series.times).dtype, np.integer)
+    ):
+        raise DataError(
+            f"covariate {series.name!r} has timestamps but the grid is a step index", path="data.covariates"
+        )
+    if series.times is None or grid_by_row:
+        return _align_by_row(grid, series, raw_values, lag, max_staleness)
+    if np.issubdtype(np.asarray(series.times).dtype, np.integer):
+        raise DataError(
+            f"covariate {series.name!r} has a step index but the grid has timestamps", path="data.covariates"
+        )
     keep = ~np.isnan(raw_values)
     pub_times = _as_ns(series.times)[keep]
     pub_values = raw_values[keep]

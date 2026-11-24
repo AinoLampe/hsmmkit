@@ -8,9 +8,6 @@ data/calendar.py:price  # E10-T05
 data/calendar.py:returns  # E10-T05
 data/calendar.py:symbol  # E10-T05
 data/calendar.py:trading  # E10-T05
-data/contracts.py:price  # E10-T04a
-data/contracts.py:provider  # E10-T04a
-data/contracts.py:symbol  # E10-T04a
 data/prepare.py:log_return  # E10-T05
 data/prepare.py:price  # E10-T05
 data/prepare.py:returns  # E10-T05

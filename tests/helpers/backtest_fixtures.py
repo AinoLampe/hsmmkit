@@ -48,14 +48,12 @@ def observations(returns: np.ndarray) -> ObservationSet:
     times = pd.bdate_range("2020-01-01", periods=returns.shape[0] + 1).to_numpy().astype("datetime64[ns]")
     prices = 100.0 * np.exp(np.concatenate([[0.0], np.cumsum(returns)]))
     return ObservationSet(
-        symbols=("SYN",),
+        series_names=("SYN",),
         times=times,
-        prices=prices[:, None],
-        interval="1d",
-        adjusted=False,
-        provider="csv",
+        values=prices[:, None],
+        source="csv",
         snapshot_id="synthetic",
-        meta={},
+        meta={"interval": "1d", "adjusted": False},
     )
 
 
@@ -66,7 +64,7 @@ def covariate(obs: ObservationSet, values: np.ndarray, *, stamp_shift: int = 0) 
         name=COV_NAME,
         times=times,
         values=np.asarray(values, dtype=np.float64),
-        provider="csv",
+        source="csv",
         series_id=COV_SERIES,
         snapshot_id="synthetic",
         frequency="d",

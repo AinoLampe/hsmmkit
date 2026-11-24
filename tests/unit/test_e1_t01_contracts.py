@@ -97,17 +97,16 @@ def test_e1_t01_prep_stats_hash_consistent_with_eq() -> None:
 def test_e1_t01_observation_set_equality_and_unhashable() -> None:
     """`ObservationSet` has safe structural equality and is intentionally unhashable."""
     o1 = ObservationSet(
-        symbols=("A",),
+        series_names=("A",),
         times=_times(3),
-        prices=np.zeros((3, 1)),
-        interval="1d",
-        adjusted=True,
-        provider="x",
+        values=np.zeros((3, 1)),
+        source="x",
         snapshot_id="s",
+        meta={"interval": "1d", "adjusted": True},
     )
     o2 = dataclasses.replace(o1)
     assert o1 == o2
-    assert o1 != dataclasses.replace(o1, provider="y")
+    assert o1 != dataclasses.replace(o1, source="y")
     assert o1 != object()
     with pytest.raises(TypeError):
         hash(o1)
@@ -119,7 +118,7 @@ def test_e1_t01_covariate_series_equality_and_unhashable() -> None:
         name="log_vix",
         times=_times(3),
         values=np.zeros(3),
-        provider="fred",
+        source="fred",
         series_id="VIXCLS",
         snapshot_id="s",
         frequency="1d",

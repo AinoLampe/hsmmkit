@@ -57,6 +57,11 @@ def _utc_ns(t: str | np.datetime64 | pd.Timestamp) -> np.datetime64:
 
 def _canonical(series: CovariateSeries) -> CovariateSeries:
     """Sort prints by time (stable) and keep the last of duplicated timestamps (a revised print)."""
+    if series.times is None:
+        raise DataError(
+            f"covariate {series.name!r} has no timestamps; the generic preparer comes with E10-T05",
+            path="data.covariates",
+        )
     times = np.asarray(series.times).astype("datetime64[ns]")
     order = np.argsort(times, kind="stable")
     times, values = times[order], np.asarray(series.values, dtype=np.float64)[order]
@@ -236,6 +241,10 @@ class Preparer:
 
     def _frame(self, obs: ObservationSet, covs: Sequence[CovariateSeries]) -> _Frame:
         cfg = self.cfg
+        if obs.times is None:
+            raise DataError(
+                "time-less observations need the generic preparer (E10-T05)", path="data.source.time_column"
+            )
         self._check_covariates(covs)
         grid = build_grid(
             obs,
@@ -258,7 +267,7 @@ class Preparer:
                 grid, replace(s, values=values), c.lag, c.max_staleness, index=i
             )
         x[~np.isfinite(x)] = np.nan  # defensive: nothing non-finite may reach the dataset
-        missing_price_rows = int(obs.times.shape[0] - grid.times.shape[0])
+        missing_price_rows = int(obs.values.shape[0] - grid.times.shape[0])
         # Recorded before the policies run, so a report can still show staleness if `error` raises.
         self.diagnostics = PrepDiagnostics(missing_price_rows, 0, {}, staleness)
 

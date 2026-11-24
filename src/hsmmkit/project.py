@@ -155,12 +155,13 @@ def _train_end(obs: ObservationSet, backtest: BacktestCfg) -> np.datetime64:
 
     First timestamp + `initial_train` years (or the row given by `initial_train_steps`), capped at the last.
     """
-    last: np.datetime64 = obs.times[-1]
+    times = obs.require_times()
+    last: np.datetime64 = times[-1]
     if backtest.initial_train_steps is not None:
-        return cast(np.datetime64, obs.times[min(backtest.initial_train_steps, obs.times.shape[0]) - 1])
+        return cast(np.datetime64, times[min(backtest.initial_train_steps, times.shape[0]) - 1])
     assert backtest.initial_train is not None
     seconds = round(backtest.initial_train * CALENDAR_DAYS_PER_YEAR * 86_400)
-    end: np.datetime64 = obs.times[0] + np.timedelta64(seconds, "s")
+    end: np.datetime64 = times[0] + np.timedelta64(seconds, "s")
     return min(end, last)
 
 
@@ -362,8 +363,8 @@ class Project:
         primary = cached(p.provider)
         obs = primary.fetch_prices(list(p.symbols), p.start, p.end, p.interval, p.adjusted)
         covs = [cached(c.provider).fetch_series(c.series, p.start, p.end) for c in data.covariates]
-        if obs.times.shape[0] < 2:
-            raise DataError(f"the primary request returned {obs.times.shape[0]} rows", path="data.primary")
+        if obs.values.shape[0] < 2:
+            raise DataError(f"the primary request returned {obs.values.shape[0]} rows", path="data.primary")
         self.last_fetched = FetchedInputs(obs, covs, cache, primary.name)
         return self.last_fetched
 
@@ -672,7 +673,7 @@ class Project:
         """Run the walk-forward backtest; returns `(result, meta, report markdown)`."""
         config = self.config
         obs, covs = fetched.obs, fetched.covs
-        grid = Preparer(config.data).fit(obs, covs, train_end=obs.times[-1]).transform(obs, covs)
+        grid = Preparer(config.data).fit(obs, covs, train_end=obs.require_times()[-1]).transform(obs, covs)
         spec = build_model_spec(config, grid)
         n_free = ParamManager(spec.param_specs).n_free
         cfg_strategy = config.evaluation.strategy

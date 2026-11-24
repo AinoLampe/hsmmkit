@@ -3,7 +3,9 @@
 `regimekit.data.contracts` defines the frozen dataclasses that are the only shared types between
 the data layer and the model layer (FR-D07):
 
-- `ObservationSet`, `CovariateSeries` — raw, per-provider data before alignment.
+- `ObservationSet`, `CovariateSeries` — raw data of a source before alignment. `ObservationSet` is
+  domain-neutral: `series_names`, `times` (`None` for time-less data), `values`, `source`, `snapshot_id`, `meta`,
+  `sequence_ids`; see [Data sources](data_sources.md).
 - `PrepStats` — preparation statistics (covariate mean/std, transforms, lags) fitted on the
   training window only.
 - `BoundaryConstraints` — a Part II supervision hook; always `None` in 0.1.0.

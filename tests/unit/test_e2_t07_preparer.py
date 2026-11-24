@@ -34,13 +34,12 @@ def _obs(
 ) -> ObservationSet:
     p = _prices() if prices is None else prices
     return ObservationSet(
-        symbols=("X",),
+        series_names=("X",),
         times=times,
-        prices=np.asarray(p, dtype=np.float64).reshape(len(times), -1),
-        interval="1d",
-        adjusted=True,
-        provider="csv",
+        values=np.asarray(p, dtype=np.float64).reshape(len(times), -1),
+        source="csv",
         snapshot_id=snapshot_id,
+        meta={"interval": "1d", "adjusted": True},
     )
 
 
@@ -49,7 +48,7 @@ def _cov(series_id: str, values: np.ndarray, times: np.ndarray = TIMES) -> Covar
         name=series_id,
         times=times,
         values=np.asarray(values, dtype=np.float64),
-        provider="csv",
+        source="csv",
         series_id=series_id,
         snapshot_id=f"{series_id}-snap",
         frequency="d",

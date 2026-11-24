@@ -97,8 +97,8 @@ def test_e2_t09_adjusted_selects_adjclose_else_close(tmp_path: Path) -> None:
     p = _provider(tmp_path)
     adj = p.fetch_prices(["SPY"], "2024-02-01", "2024-04-30", "1d", True)
     raw = p.fetch_prices(["SPY"], "2024-02-01", "2024-04-30", "1d", False)
-    np.testing.assert_array_equal(adj.prices[:, 0], rows["adjClose"].to_numpy(dtype="float64"))
-    np.testing.assert_array_equal(raw.prices[:, 0], rows["close"].to_numpy(dtype="float64"))
+    np.testing.assert_array_equal(adj.values[:, 0], rows["adjClose"].to_numpy(dtype="float64"))
+    np.testing.assert_array_equal(raw.values[:, 0], rows["close"].to_numpy(dtype="float64"))
     np.testing.assert_array_equal(adj.times, rows.index.to_numpy(dtype="datetime64[ns]"))
 
 
@@ -108,7 +108,7 @@ def test_e2_t09_weekly_is_last_close_of_each_week(tmp_path: Path) -> None:
     daily = _rows()["adjClose"]
     expected = daily.groupby(daily.index.to_period("W-SUN")).tail(1)
     np.testing.assert_array_equal(obs.times, expected.index.to_numpy(dtype="datetime64[ns]"))
-    np.testing.assert_array_equal(obs.prices[:, 0], expected.to_numpy(dtype="float64"))
+    np.testing.assert_array_equal(obs.values[:, 0], expected.to_numpy(dtype="float64"))
     assert obs.meta["resampled_from"].startswith("1d")
 
 
@@ -119,7 +119,7 @@ def test_e2_t09_monthly_is_last_close_of_each_month(tmp_path: Path) -> None:
     expected = daily.groupby(daily.index.to_period("M")).tail(1)
     assert len(expected) == 6
     np.testing.assert_array_equal(obs.times, expected.index.to_numpy(dtype="datetime64[ns]"))
-    np.testing.assert_array_equal(obs.prices[:, 0], expected.to_numpy(dtype="float64"))
+    np.testing.assert_array_equal(obs.values[:, 0], expected.to_numpy(dtype="float64"))
 
 
 def test_e2_t09_intraday_and_series_are_refused(tmp_path: Path) -> None:
@@ -258,7 +258,7 @@ def test_e2_t09_transient_failures_are_retried(tmp_path: Path) -> None:
     dl = CassetteDownloader(fail_first=2)
     obs = _provider(tmp_path, dl).fetch_prices(["SPY"], "2024-02-01", "2024-04-30", "1d", True)
     assert len(dl.calls) == 3
-    assert obs.prices.shape[0] > 0
+    assert obs.values.shape[0] > 0
 
 
 def test_e2_t09_empty_symbols_and_window_raise(tmp_path: Path) -> None:

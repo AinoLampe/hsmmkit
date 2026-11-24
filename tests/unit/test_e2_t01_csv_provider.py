@@ -53,8 +53,8 @@ def test_e2_t01_csv_sorts_dedups_keep_last_and_uses_requested_column(provider: C
     raw = provider.fetch_prices(["DEMO"], "2020-01-01", None, "1d", False)
     adj = provider.fetch_prices(["DEMO"], "2020-01-01", None, "1d", True)
     assert len(raw.times) == 7  # 8 rows, one duplicate timestamp dropped
-    assert raw.prices[:, 0].tolist() == [100.5, 101.5, 102.0, 102.5, 103.75, 104.0, 105.0]
-    assert adj.prices[-1, 0] == 52.5
+    assert raw.values[:, 0].tolist() == [100.5, 101.5, 102.0, 102.5, 103.75, 104.0, 105.0]
+    assert adj.values[-1, 0] == 52.5
 
 
 def test_e2_t01_csv_series_dot_and_empty_become_nan(provider: CsvProvider) -> None:
@@ -69,8 +69,8 @@ def test_e2_t01_csv_multi_symbol_outer_join_pads_nan(tmp_path: Path) -> None:
     (tmp_path / "A.csv").write_text("time,close,adj_close\n2020-01-01,1,1\n2020-01-02,2,2\n")
     (tmp_path / "B.csv").write_text("time,close,adj_close\n2020-01-02T00:00:00+01:00,5,5\n2020-01-03,6,6\n")
     obs = CsvProvider(tmp_path).fetch_prices(["A", "B"], "2019-12-01", "2020-01-31", "1d", False)
-    assert obs.prices.shape == (4, 2)  # tz-aware B timestamp is converted to UTC (2020-01-01T23:00)
-    assert np.isnan(obs.prices).sum() == 4
+    assert obs.values.shape == (4, 2)  # tz-aware B timestamp is converted to UTC (2020-01-01T23:00)
+    assert np.isnan(obs.values).sum() == 4
 
 
 def test_e2_t01_csv_errors(provider: CsvProvider, tmp_path: Path) -> None:
@@ -82,7 +82,7 @@ def test_e2_t01_csv_errors(provider: CsvProvider, tmp_path: Path) -> None:
     (tmp_path / "X.csv").write_text("time,close\n2020-01-01,1\n")
     with pytest.raises(ProviderError, match="adj_close"):
         CsvProvider(tmp_path).fetch_prices(["X"], "2020-01-01", None, "1d", True)
-    assert CsvProvider(tmp_path).fetch_prices(["X"], "2020-01-01", None, "1d", False).prices.shape == (1, 1)
+    assert CsvProvider(tmp_path).fetch_prices(["X"], "2020-01-01", None, "1d", False).values.shape == (1, 1)
 
 
 def test_e2_t01_registry_resolves_csv() -> None:

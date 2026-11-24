@@ -33,16 +33,26 @@ def _array_equal(a: np.ndarray | jax.Array | None, b: np.ndarray | jax.Array | N
 
 @dataclass(frozen=True, eq=False)
 class ObservationSet:
-    """Raw, per-provider observations before alignment (data layer only)."""
+    """Raw observations of a source before alignment (data layer only).
 
-    symbols: tuple[str, ...]
-    times: np.ndarray  # (T0,) datetime64[ns], strictly increasing
-    prices: np.ndarray  # (T0, M) float64
-    interval: Literal["1h", "1d", "1wk", "1mo"]
-    adjusted: bool
-    provider: str
+    Attributes:
+        series_names: `(M,)` names of the observed series (columns of `values`).
+        times: `(T0,)` `datetime64[ns]` UTC, strictly increasing; `None` only for time-less data, which
+            is valid under a `step` clock (`PreparedDataset.times` is then an `int64` step index).
+        values: `(T0, M)` `float64` or `int64`.
+        source: name of the source that produced the data.
+        snapshot_id: sha256 of the source bytes / array buffers; `""` if not computed.
+        meta: source-specific extras (an application puts its own descriptors here).
+        sequence_ids: `(T0,)` group ids when present; consumed from E12-T01a on, ignored before.
+    """
+
+    series_names: tuple[str, ...]
+    times: np.ndarray | None
+    values: np.ndarray
+    source: str
     snapshot_id: str
     meta: dict[str, Any] = field(default_factory=dict)
+    sequence_ids: np.ndarray | None = None
 
     __hash__ = None  # type: ignore[assignment]
 
@@ -51,15 +61,42 @@ class ObservationSet:
         if not isinstance(other, ObservationSet):
             return NotImplemented
         return (
-            self.symbols == other.symbols
+            self.series_names == other.series_names
             and _array_equal(self.times, other.times)
-            and _array_equal(self.prices, other.prices)
-            and self.interval == other.interval
-            and self.adjusted == other.adjusted
-            and self.provider == other.provider
+            and _array_equal(self.values, other.values)
+            and self.source == other.source
             and self.snapshot_id == other.snapshot_id
             and self.meta == other.meta
+            and _array_equal(self.sequence_ids, other.sequence_ids)
         )
+
+    def require_times(self) -> np.ndarray:
+        """The timestamps; `DataError` for time-less data (callers that cannot work without them)."""
+        if self.times is None:
+            raise DataError("this operation needs observations with timestamps", path="times")
+        return self.times
+
+    def validate(self) -> None:
+        """Raise `DataError(path=<field>)` on any contract violation."""
+        values = np.asarray(self.values)
+        if values.ndim != 2:
+            raise DataError("values must be 2-D (T0, M)", path="values")
+        t0, m = values.shape
+        if len(self.series_names) != m:
+            raise DataError(
+                f"series_names has {len(self.series_names)} entries but values has {m} columns",
+                path="series_names",
+            )
+        if not (np.issubdtype(values.dtype, np.floating) or np.issubdtype(values.dtype, np.integer)):
+            raise DataError(f"values must be float64 or int64, got {values.dtype}", path="values")
+        if self.times is not None:
+            times = np.asarray(self.times)
+            if times.ndim != 1 or times.shape[0] != t0:
+                raise DataError(f"times must have shape (T0={t0},)", path="times")
+            if t0 > 1 and not bool(np.all(np.diff(times) > np.timedelta64(0, "ns"))):
+                raise DataError("times must be strictly increasing", path="times")
+        if self.sequence_ids is not None and np.asarray(self.sequence_ids).shape != (t0,):
+            raise DataError(f"sequence_ids must have shape (T0={t0},)", path="sequence_ids")
 
 
 @dataclass(frozen=True, eq=False)
@@ -67,9 +104,9 @@ class CovariateSeries:
     """A single raw covariate series before alignment (data layer only)."""
 
     name: str
-    times: np.ndarray  # (T1,)
+    times: np.ndarray | None  # (T1,); None = one value per grid row (aligned by row index)
     values: np.ndarray  # (T1,), NaN allowed
-    provider: str
+    source: str
     series_id: str
     snapshot_id: str
     frequency: str
@@ -84,7 +121,7 @@ class CovariateSeries:
             self.name == other.name
             and _array_equal(self.times, other.times)
             and _array_equal(self.values, other.values)
-            and self.provider == other.provider
+            and self.source == other.source
             and self.series_id == other.series_id
             and self.snapshot_id == other.snapshot_id
             and self.frequency == other.frequency
@@ -149,7 +186,7 @@ class BoundaryConstraints:
 class PreparedDataset:
     """The only object the model layer consumes."""
 
-    times: np.ndarray  # (T,) grid end times; metadata only, never a jit leaf
+    times: np.ndarray  # (T,) grid end times (datetime64[ns]) or an int64 step index; never a jit leaf
     observations: Array  # (T, M) float64
     dt: Array  # (T,) clock units, > 0
     mask: Array  # (T, M) bool, True = observed
@@ -237,7 +274,12 @@ class PreparedDataset:
         if times.ndim != 1:
             raise DataError("times must be 1-D", path="times")
         t = times.shape[0]
-        if t > 1 and not np.all(np.diff(times) > np.timedelta64(0, "ns")):
+        step_index = np.issubdtype(times.dtype, np.integer)
+        if step_index and get_clock(self.clock).unit != "step":
+            raise DataError(
+                f"an integer step index is only valid under a step clock, not {self.clock!r}", path="times"
+            )
+        if t > 1 and not np.all(np.diff(times) > (0 if step_index else np.timedelta64(0, "ns"))):
             raise DataError("times must be strictly increasing", path="times")
 
         if observations.ndim != 2 or observations.shape[0] != t:

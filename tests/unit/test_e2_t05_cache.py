@@ -55,14 +55,12 @@ class FakeInner:
             100.0 + i + np.arange(len(symbols))[None, :] + 0.5 * self.version + (0.25 if adjusted else 0.0)
         )
         return ObservationSet(
-            symbols=tuple(symbols),
+            series_names=tuple(symbols),
             times=times,
-            prices=prices,
-            interval=interval,  # type: ignore[arg-type]
-            adjusted=adjusted,
-            provider=self.name,
+            values=prices,
+            source=self.name,
             snapshot_id="",
-            meta={"note": "fake", "version": self.version},
+            meta={"interval": interval, "adjusted": adjusted, **{"note": "fake", "version": self.version}},
         )
 
     def fetch_series(self, series_id: str, start: str, end: str | None) -> CovariateSeries:
@@ -75,7 +73,7 @@ class FakeInner:
             name=series_id,
             times=times,
             values=values,
-            provider=self.name,
+            source=self.name,
             series_id=series_id,
             snapshot_id="",
             frequency="d",
@@ -107,11 +105,11 @@ def _cached(
 def _bitwise_equal(a: ObservationSet, b: ObservationSet) -> bool:
     # Field-wise, not `a == b`: the contracts' `__eq__` uses `np.array_equal` without `equal_nan`.
     return (
-        (a.symbols, a.interval, a.adjusted, a.provider, a.snapshot_id, a.meta)
-        == (b.symbols, b.interval, b.adjusted, b.provider, b.snapshot_id, b.meta)
+        (a.series_names, a.meta["interval"], a.meta["adjusted"], a.source, a.snapshot_id, a.meta)
+        == (b.series_names, b.meta["interval"], b.meta["adjusted"], b.source, b.snapshot_id, b.meta)
         and a.times.tobytes() == b.times.tobytes()
-        and a.prices.tobytes() == b.prices.tobytes()
-        and a.prices.dtype == b.prices.dtype
+        and a.values.tobytes() == b.values.tobytes()
+        and a.values.dtype == b.values.dtype
         and a.times.dtype == b.times.dtype
     )
 
@@ -119,8 +117,8 @@ def _bitwise_equal(a: ObservationSet, b: ObservationSet) -> bool:
 def _series_bitwise_equal(a: CovariateSeries, b: CovariateSeries) -> bool:
     # `CovariateSeries.__eq__` compares values without `equal_nan`, so it is False whenever a value is NaN.
     return (
-        (a.name, a.provider, a.series_id, a.snapshot_id, a.frequency)
-        == (b.name, b.provider, b.series_id, b.snapshot_id, b.frequency)
+        (a.name, a.source, a.series_id, a.snapshot_id, a.frequency)
+        == (b.name, b.source, b.series_id, b.snapshot_id, b.frequency)
         and a.times.tobytes() == b.times.tobytes()
         and a.values.tobytes() == b.values.tobytes()
         and a.values.dtype == b.values.dtype == np.float64
@@ -151,7 +149,7 @@ def test_e2_t05_series_second_fetch_hits_cache(tmp_path: Path) -> None:
     assert _series_bitwise_equal(first, second)
     assert np.isnan(second.values[3])
     assert len(first.snapshot_id) == 64
-    assert (second.name, second.frequency, second.provider) == ("VIXCLS", "d", "fake")
+    assert (second.name, second.frequency, second.source) == ("VIXCLS", "d", "fake")
 
 
 def test_e2_t05_distinct_requests_are_distinct_entries(tmp_path: Path) -> None:
@@ -175,7 +173,7 @@ def test_e2_t05_narrower_window_is_served_and_clipped(tmp_path: Path) -> None:
     assert part.times[0] == np.datetime64("2024-02-01", "ns")
     assert part.times[-1] == np.datetime64("2024-02-29", "ns")
     mask = (full.times >= part.times[0]) & (full.times <= part.times[-1])
-    np.testing.assert_array_equal(part.prices, full.prices[mask])
+    np.testing.assert_array_equal(part.values, full.values[mask])
     assert part.snapshot_id == full.snapshot_id
 
 
@@ -276,7 +274,7 @@ def test_e2_t05_offline_replay_is_bitwise_identical(tmp_path: Path) -> None:
     offline, _ = _cached(tmp_path, inner=NoNetwork(), clock=stale, offline=True)
     replay = offline.fetch_prices(["^GDAXI", "^GSPC"], START, END, "1d", True)
     assert _bitwise_equal(original, replay)
-    assert replay.meta == {"note": "fake", "version": 0}
+    assert replay.meta == {"interval": "1d", "adjusted": True, "note": "fake", "version": 0}
 
 
 def test_e2_t05_offline_series_replay(tmp_path: Path) -> None:
@@ -420,11 +418,11 @@ def test_e2_t05_mislabelled_provider_output_raises(tmp_path: Path) -> None:
             self, symbols: list[str], start: str, end: str | None, interval: str, adjusted: bool
         ) -> ObservationSet:
             return dataclasses.replace(
-                super().fetch_prices(symbols, start, end, interval, adjusted), provider="x"
+                super().fetch_prices(symbols, start, end, interval, adjusted), source="x"
             )
 
         def fetch_series(self, series_id: str, start: str, end: str | None) -> CovariateSeries:
-            return dataclasses.replace(super().fetch_series(series_id, start, end), provider="x")
+            return dataclasses.replace(super().fetch_series(series_id, start, end), source="x")
 
     provider, _ = _cached(tmp_path, inner=Mislabelled())
     with pytest.raises(DataError, match="provider='x'"):
@@ -476,9 +474,9 @@ class NaNInner(FakeInner):
     ) -> ObservationSet:
         """Like `FakeInner`, with one NaN and distinct per-column scales."""
         obs = super().fetch_prices(symbols, start, end, interval, adjusted)
-        prices = obs.prices * np.array([1.0, 1000.0 / 3.0])[: len(symbols)]
+        prices = obs.values * np.array([1.0, 1000.0 / 3.0])[: len(symbols)]
         prices[5, -1] = np.nan
-        return dataclasses.replace(obs, prices=prices)
+        return dataclasses.replace(obs, values=prices)
 
 
 def test_e2_t05_cached_result_equals_provider_output(tmp_path: Path) -> None:
@@ -487,10 +485,10 @@ def test_e2_t05_cached_result_equals_provider_output(tmp_path: Path) -> None:
     provider, _ = _cached(tmp_path, inner=NaNInner())
     cached = provider.fetch_prices(["^GDAXI", "^GSPC"], START, END, "1d", True)
     replay = provider.fetch_prices(["^GDAXI", "^GSPC"], START, END, "1d", True)
-    assert cached.symbols == direct.symbols
+    assert cached.series_names == direct.series_names
     assert cached.times.tobytes() == direct.times.tobytes()
-    assert cached.prices.tobytes() == direct.prices.tobytes()
-    assert np.isnan(cached.prices[5, 1])
+    assert cached.values.tobytes() == direct.values.tobytes()
+    assert np.isnan(cached.values[5, 1])
     assert cached.meta == direct.meta
     assert _bitwise_equal(cached, replay)
     ser_direct = FakeInner().fetch_series("VIXCLS", START, END)
@@ -525,7 +523,7 @@ def test_e2_t05_colliding_file_names_do_not_share_data(tmp_path: Path) -> None:
     assert (first.series_id, second.series_id) == ("a/b", "a_b")
     prices = [provider.fetch_prices(s, START, END, "1d", True) for s in (["A+B"], ["A", "B"])]
     assert inner.price_calls == 2
-    assert [p.symbols for p in prices] == [("A+B",), ("A", "B")]
+    assert [p.series_names for p in prices] == [("A+B",), ("A", "B")]
     again = provider.fetch_series("a_b", START, END)
     assert again.series_id == "a_b"
     assert inner.series_calls == 2
@@ -539,7 +537,7 @@ def test_e2_t05_relabelled_symbols_or_interval_raise(tmp_path: Path) -> None:
             self, symbols: list[str], start: str, end: str | None, interval: str, adjusted: bool
         ) -> ObservationSet:
             obs = super().fetch_prices(symbols, start, end, interval, adjusted)
-            return dataclasses.replace(obs, symbols=tuple(s + ".DE" for s in symbols))
+            return dataclasses.replace(obs, series_names=tuple(s + ".DE" for s in symbols))
 
     provider, _ = _cached(tmp_path, inner=Relabel())
     with pytest.raises(DataError, match="symbols="):

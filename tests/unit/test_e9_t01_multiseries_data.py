@@ -27,13 +27,12 @@ _YAML = YAML(typ="safe")
 
 def _obs(prices: np.ndarray) -> ObservationSet:
     return ObservationSet(
-        symbols=("A", "B")[: prices.shape[1]],
+        series_names=("A", "B")[: prices.shape[1]],
         times=TIMES,
-        prices=prices,
-        interval="1d",
-        adjusted=True,
-        provider="csv",
+        values=prices,
+        source="csv",
         snapshot_id="snap",
+        meta={"interval": "1d", "adjusted": True},
     )
 
 

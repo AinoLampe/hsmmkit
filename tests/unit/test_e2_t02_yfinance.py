@@ -74,7 +74,7 @@ def test_e2_t02_adjusted_flag_selects_recorded_frame_and_reaches_downloader() ->
     dl = CassetteDownloader()
     raw = _provider(dl).fetch_prices([SYMBOL], "2024-06-03", "2024-06-28", "1d", False)
     adj = _provider(dl).fetch_prices([SYMBOL], "2024-06-03", "2024-06-28", "1d", True)
-    np.testing.assert_allclose(adj.prices, raw.prices * 0.97, rtol=1e-12)
+    np.testing.assert_allclose(adj.values, raw.values * 0.97, rtol=1e-12)
     assert [c[4] for c in dl.calls] == [False, True]
 
 
@@ -125,9 +125,9 @@ def test_e2_t02_multi_symbol_union_alignment_pads_nan() -> None:
 
     p = YFinanceProvider(downloader=dl, min_interval_s=0.0, sleep=lambda s: None)
     obs = p.fetch_prices(["A", "B"], "2024-06-01", "2024-06-30", "1d", False)
-    assert obs.prices.shape == (8, 2)
-    assert np.isnan(obs.prices[:2, 1]).all()
-    assert np.isnan(obs.prices[5:, 0]).all()
+    assert obs.values.shape == (8, 2)
+    assert np.isnan(obs.values[:2, 1]).all()
+    assert np.isnan(obs.values[5:, 0]).all()
 
 
 def test_e2_t02_unknown_symbol_and_empty_results_raise_provider_error() -> None:

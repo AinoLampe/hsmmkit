@@ -47,6 +47,7 @@ nav:
       - Install: guide/install.md
       - Quickstart: guide/quickstart.md
       - Data contracts: guide/contracts.md
+      - Data sources: guide/data_sources.md
       - Configuration reference: guide/config.md
       - Data providers & ToS: guide/providers.md
       - Forecasting: guide/forecasting.md

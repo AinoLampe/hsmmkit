@@ -30,7 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 import numpy as np
 import pandas as pd
@@ -311,25 +311,32 @@ class Cache:
 
     def store_prices(self, obs: ObservationSet, request: dict[str, Any]) -> str:
         """Write `obs` as the current generation of its key; return its snapshot id."""
-        key = self.price_key(obs.provider, obs.symbols, obs.interval, obs.adjusted)
+        if obs.times is None:
+            raise DataError("only observations with timestamps can be cached", path="times")
+        if "interval" not in obs.meta or "adjusted" not in obs.meta:
+            raise DataError("only provider observations (meta interval/adjusted) can be cached", path="meta")
+        interval, adjusted = str(obs.meta["interval"]), bool(obs.meta["adjusted"])
+        key = self.price_key(obs.source, obs.series_names, interval, adjusted)
         arrays = [pa.array(obs.times, type=pa.timestamp("ns"))]
         arrays += [
-            pa.array(np.ascontiguousarray(obs.prices[:, j]), type=pa.float64())
-            for j in range(len(obs.symbols))
+            pa.array(np.ascontiguousarray(obs.values[:, j]), type=pa.float64())
+            for j in range(len(obs.series_names))
         ]
-        table = pa.Table.from_arrays(arrays, names=["time", *obs.symbols])
+        table = pa.Table.from_arrays(arrays, names=["time", *obs.series_names])
         payload = {
-            "symbols": list(obs.symbols),
-            "interval": obs.interval,
-            "adjusted": obs.adjusted,
-            "provider": obs.provider,
-            "meta": obs.meta,
+            "symbols": list(obs.series_names),
+            "interval": interval,
+            "adjusted": adjusted,
+            "provider": obs.source,
+            "meta": {k: v for k, v in obs.meta.items() if k not in ("interval", "adjusted")},
         }
         return self._store(key, table, request, payload)
 
     def store_series(self, ser: CovariateSeries, request: dict[str, Any]) -> str:
         """Write `ser` as the current generation of its key; return its snapshot id."""
-        key = self.series_key(ser.provider, ser.series_id)
+        key = self.series_key(ser.source, ser.series_id)
+        if ser.times is None:
+            raise DataError("only series with timestamps can be cached", path="times")
         table = pa.Table.from_arrays(
             [pa.array(ser.times, type=pa.timestamp("ns")), pa.array(ser.values, type=pa.float64())],
             names=["time", "value"],
@@ -338,7 +345,7 @@ class Cache:
             "name": ser.name,
             "series_id": ser.series_id,
             "frequency": ser.frequency,
-            "provider": ser.provider,
+            "provider": ser.source,
         }
         return self._store(key, table, request, payload)
 
@@ -363,7 +370,7 @@ class Cache:
             return None
         table, meta = loaded
         payload = meta["payload"]
-        prices = (
+        values = (
             np.column_stack(
                 [table.column(j + 1).to_numpy().astype("float64") for j in range(table.num_columns - 1)]
             )
@@ -371,14 +378,16 @@ class Cache:
             else np.empty((table.num_rows, 0))
         )
         return ObservationSet(
-            symbols=tuple(payload["symbols"]),
+            series_names=tuple(payload["symbols"]),
             times=table.column(0).to_numpy().astype("datetime64[ns]"),
-            prices=prices,
-            interval=cast(Literal["1h", "1d", "1wk", "1mo"], payload["interval"]),
-            adjusted=bool(payload["adjusted"]),
-            provider=payload["provider"],
+            values=values,
+            source=payload["provider"],
             snapshot_id=meta["snapshot_id"],
-            meta=dict(payload.get("meta") or {}),
+            meta={
+                **dict(payload.get("meta") or {}),
+                "interval": payload["interval"],
+                "adjusted": bool(payload["adjusted"]),
+            },
         )
 
     def load_series(self, key: CacheKey, snapshot_id: str | None = None) -> CovariateSeries | None:
@@ -392,7 +401,7 @@ class Cache:
             name=payload["name"],
             times=table.column(0).to_numpy().astype("datetime64[ns]"),
             values=table.column(1).to_numpy().astype("float64"),
-            provider=payload["provider"],
+            source=payload["provider"],
             series_id=payload["series_id"],
             snapshot_id=meta["snapshot_id"],
             frequency=payload["frequency"],
@@ -408,26 +417,26 @@ class Cache:
 
 
 def _clip_obs(obs: ObservationSet, start: str, end: str | None) -> ObservationSet:
+    assert obs.times is not None
     mask = _window_mask(obs.times, start, end)
     return ObservationSet(
-        symbols=obs.symbols,
+        series_names=obs.series_names,
         times=obs.times[mask],
-        prices=obs.prices[mask],
-        interval=obs.interval,
-        adjusted=obs.adjusted,
-        provider=obs.provider,
+        values=obs.values[mask],
+        source=obs.source,
         snapshot_id=obs.snapshot_id,
         meta=obs.meta,
     )
 
 
 def _clip_series(ser: CovariateSeries, start: str, end: str | None) -> CovariateSeries:
+    assert ser.times is not None
     mask = _window_mask(ser.times, start, end)
     return CovariateSeries(
         name=ser.name,
         times=ser.times[mask],
         values=ser.values[mask],
-        provider=ser.provider,
+        source=ser.source,
         series_id=ser.series_id,
         snapshot_id=ser.snapshot_id,
         frequency=ser.frequency,
@@ -538,10 +547,10 @@ class CachedProvider:
             obs = self.inner.fetch_prices(symbols, start, end, interval, adjusted)
             _check_labels(
                 {
-                    "provider": obs.provider,
-                    "symbols": obs.symbols,
-                    "interval": obs.interval,
-                    "adjusted": obs.adjusted,
+                    "provider": obs.source,
+                    "symbols": obs.series_names,
+                    "interval": obs.meta.get("interval"),
+                    "adjusted": obs.meta.get("adjusted"),
                 },
                 {
                     "provider": self.inner.name,
@@ -565,7 +574,7 @@ class CachedProvider:
         def fetch_and_store() -> str:
             ser = self.inner.fetch_series(series_id, start, end)
             _check_labels(
-                {"provider": ser.provider, "series_id": ser.series_id},
+                {"provider": ser.source, "series_id": ser.series_id},
                 {"provider": self.inner.name, "series_id": series_id},
             )
             return self.cache.store_series(ser, request)

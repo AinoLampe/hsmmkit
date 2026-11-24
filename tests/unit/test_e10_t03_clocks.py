@@ -91,7 +91,7 @@ def test_e10_t03_unknown_clock_lists_the_registered_names() -> None:
 def test_e10_t03_build_grid_is_clock_agnostic() -> None:
     """Build grid is clock agnostic."""
     times = np.array(["2024-01-01", "2024-01-02", "2024-01-05"], dtype="datetime64[ns]")
-    obs = ObservationSet(("X",), times, np.array([[1.0], [2.0], [3.0]]), "1d", True, "t", "s")
+    obs = ObservationSet(("X",), times, np.array([[1.0], [2.0], [3.0]]), "t", "s")
     assert build_grid(obs, "drop", clock="steps").dt.tolist() == [1.0, 1.0]
     assert build_grid(obs, "drop", clock="calendar").irregular is True
     with pytest.raises(ConfigError) as err:

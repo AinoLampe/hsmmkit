@@ -126,22 +126,27 @@ def _duplicates(times: np.ndarray) -> list[str]:
     return [_iso(t) for t in index[index.duplicated(keep="first")].unique()]
 
 
+def _times(obs: ObservationSet) -> np.ndarray:
+    return np.asarray(obs.require_times())
+
+
 def _non_positive(obs: ObservationSet) -> list[dict[str, Any]]:
     found = []
-    rows, cols = np.nonzero(np.asarray(obs.prices) <= 0)
-    for r, c in sorted(
-        zip(rows.tolist(), cols.tolist(), strict=True), key=lambda rc: (obs.times[rc[0]], rc[1])
-    ):
-        found.append({"time": _iso(obs.times[r]), "symbol": obs.symbols[c], "price": float(obs.prices[r, c])})
+    times = _times(obs)
+    rows, cols = np.nonzero(np.asarray(obs.values) <= 0)
+    for r, c in sorted(zip(rows.tolist(), cols.tolist(), strict=True), key=lambda rc: (times[rc[0]], rc[1])):
+        found.append(
+            {"time": _iso(times[r]), "symbol": obs.series_names[c], "price": float(obs.values[r, c])}
+        )
     return found
 
 
 def _outliers(obs: ObservationSet) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
-    frame = pd.DataFrame(np.asarray(obs.prices, dtype=np.float64), index=pd.DatetimeIndex(obs.times))
+    frame = pd.DataFrame(np.asarray(obs.values, dtype=np.float64), index=pd.DatetimeIndex(_times(obs)))
     frame = frame.sort_index(kind="stable")
     frame = frame[~frame.index.duplicated(keep="last")]
-    for c, symbol in enumerate(obs.symbols):
+    for c, symbol in enumerate(obs.series_names):
         series = frame.iloc[:, c]
         series = series[np.isfinite(series) & (series > 0)]
         returns = np.log(series).diff().dropna()
@@ -159,8 +164,10 @@ def _outliers(obs: ObservationSet) -> list[dict[str, Any]]:
 
 
 def _adjustment(latest: ObservationSet, previous: ObservationSet) -> dict[str, Any]:
-    new = pd.DataFrame(np.asarray(latest.prices, dtype=np.float64), index=pd.DatetimeIndex(latest.times))
-    old = pd.DataFrame(np.asarray(previous.prices, dtype=np.float64), index=pd.DatetimeIndex(previous.times))
+    new = pd.DataFrame(np.asarray(latest.values, dtype=np.float64), index=pd.DatetimeIndex(_times(latest)))
+    old = pd.DataFrame(
+        np.asarray(previous.values, dtype=np.float64), index=pd.DatetimeIndex(_times(previous))
+    )
     new = new[~new.index.duplicated(keep="last")]
     old = old[~old.index.duplicated(keep="last")]
     common = new.index.intersection(old.index)
@@ -211,10 +218,10 @@ def build_quality_report(
         The report; empty lists mean "no finding".
     """
     return DataQualityReport(
-        symbols=list(obs.symbols),
-        n_rows=int(obs.times.shape[0]),
-        gaps=_gaps(np.asarray(obs.times), obs.interval),
-        duplicates=_duplicates(np.asarray(obs.times)),
+        symbols=list(obs.series_names),
+        n_rows=int(obs.values.shape[0]),
+        gaps=_gaps(_times(obs), str(obs.meta.get("interval", "1d"))),
+        duplicates=_duplicates(_times(obs)),
         non_positive_prices=_non_positive(obs),
         outliers=_outliers(obs),
         adjustment=None if generations is None else _adjustment(*generations),

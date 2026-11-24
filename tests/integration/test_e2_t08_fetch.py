@@ -31,13 +31,12 @@ def _raw_obs(path: Path) -> ObservationSet:
     """Read a price CSV verbatim (duplicates kept), as a provider that does not clean would return it."""
     frame = pd.read_csv(path)
     return ObservationSet(
-        symbols=(path.stem,),
+        series_names=(path.stem,),
         times=pd.to_datetime(frame["time"]).to_numpy(dtype="datetime64[ns]"),
-        prices=frame[["close"]].to_numpy(dtype=np.float64),
-        interval="1d",
-        adjusted=False,
-        provider="csv",
+        values=frame[["close"]].to_numpy(dtype=np.float64),
+        source="csv",
         snapshot_id="",
+        meta={"interval": "1d", "adjusted": False},
     )
 
 
@@ -65,13 +64,12 @@ def test_e2_t08_clean_series_has_no_findings() -> None:
     dates = pd.bdate_range("2023-01-02", periods=80)
     prices = 100 * np.exp(np.cumsum(np.random.default_rng(1).normal(0, 0.01, 80)))
     obs = ObservationSet(
-        symbols=("C",),
+        series_names=("C",),
         times=dates.to_numpy(dtype="datetime64[ns]"),
-        prices=prices[:, None],
-        interval="1d",
-        adjusted=True,
-        provider="csv",
+        values=prices[:, None],
+        source="csv",
         snapshot_id="",
+        meta={"interval": "1d", "adjusted": True},
     )
     report = build_quality_report(obs)
     assert report.gaps == []
@@ -88,7 +86,7 @@ def test_e2_t08_adjustment_discontinuity_between_generations() -> None:
     assert same.adjustment is not None
     assert same.adjustment["discontinuous"] is False
     assert same.adjustment["max_rel_diff"] == 0.0
-    earlier = dataclasses.replace(obs, snapshot_id="old", times=obs.times[:30], prices=obs.prices[:30] * 1.02)
+    earlier = dataclasses.replace(obs, snapshot_id="old", times=obs.times[:30], values=obs.values[:30] * 1.02)
     moved = build_quality_report(obs, generations=(obs, earlier))
     assert moved.adjustment is not None
     assert moved.adjustment["discontinuous"] is True
@@ -308,13 +306,12 @@ def _prepared(clock: str = "trading") -> PreparedDataset:
     times = dates.to_numpy(dtype="datetime64[ns]")
     rng = np.random.default_rng(3)
     obs = ObservationSet(
-        symbols=("X",),
+        series_names=("X",),
         times=times,
-        prices=(100 * np.exp(np.cumsum(rng.normal(0, 0.01, 120))))[:, None],
-        interval="1d",
-        adjusted=True,
-        provider="csv",
+        values=(100 * np.exp(np.cumsum(rng.normal(0, 0.01, 120))))[:, None],
+        source="csv",
         snapshot_id="p" * 64,
+        meta={"interval": "1d", "adjusted": True},
     )
     covs = [
         CovariateSeries("VIXCLS", times, 20 + rng.random(120), "csv", "VIXCLS", "v" * 64, "d"),
@@ -408,13 +405,18 @@ def test_e2_t08_quota_providers_keep_quota_in_cache_dir(tmp_path: Path) -> None:
 def test_e2_t08_report_edge_cases() -> None:
     """Weekly data has no weekday-gap check; too-short or constant series flag no outliers."""
     dates = pd.date_range("2023-01-06", periods=10, freq="W-FRI").to_numpy(dtype="datetime64[ns]")
-    weekly = ObservationSet(("W",), dates, np.linspace(1, 2, 10)[:, None], "1wk", True, "csv", "")
+    weekly = ObservationSet(
+        ("W",), dates, np.linspace(1, 2, 10)[:, None], "csv", "", {"interval": "1wk", "adjusted": True}
+    )
     assert build_quality_report(weekly).gaps == []
     short = dataclasses.replace(
-        weekly, times=dates[:3], prices=np.array([[1.0], [2.0], [3.0]]), interval="1d"
+        weekly,
+        times=dates[:3],
+        values=np.array([[1.0], [2.0], [3.0]]),
+        meta={"interval": "1d", "adjusted": True},
     )
     assert build_quality_report(short).outliers == []
-    flat = dataclasses.replace(weekly, prices=np.ones((10, 1)))
+    flat = dataclasses.replace(weekly, values=np.ones((10, 1)))
     assert build_quality_report(flat).outliers == []
 
 

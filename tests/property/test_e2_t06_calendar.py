@@ -20,7 +20,7 @@ def _series(offsets_h: list[int], values: list[float]) -> CovariateSeries:
         name="z",
         times=times.astype("datetime64[ns]"),
         values=np.asarray(values, dtype=np.float64)[order],
-        provider="test",
+        source="test",
         series_id="z",
         snapshot_id="snap",
         frequency="d",
@@ -57,13 +57,12 @@ def test_e2_t06_no_lookahead_after_grid_start_of_step(
     times = (ORIGIN + np.asarray(grid_h, dtype=np.int64) * HOUR_NS).astype("datetime64[ns]")
     grid = build_grid(
         ObservationSet(
-            symbols=("P",),
+            series_names=("P",),
             times=times,
-            prices=np.linspace(1.0, 2.0, len(times))[:, None],
-            interval="1h",
-            adjusted=True,
-            provider="test",
+            values=np.linspace(1.0, 2.0, len(times))[:, None],
+            source="test",
             snapshot_id="snap",
+            meta={"interval": "1h", "adjusted": True},
         ),
         "drop",
         clock="calendar",

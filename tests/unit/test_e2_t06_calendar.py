@@ -27,13 +27,12 @@ def _obs(times: np.ndarray, prices: np.ndarray) -> ObservationSet:
     if prices.ndim == 1:
         prices = prices[:, None]
     return ObservationSet(
-        symbols=tuple(f"S{i}" for i in range(prices.shape[1])),
+        series_names=tuple(f"S{i}" for i in range(prices.shape[1])),
         times=times,
-        prices=prices,
-        interval="1d",
-        adjusted=True,
-        provider="test",
+        values=prices,
+        source="test",
         snapshot_id="snap",
+        meta={"interval": "1d", "adjusted": True},
     )
 
 
@@ -42,7 +41,7 @@ def _series(times: np.ndarray, values: list[float] | np.ndarray, name: str = "co
         name=name,
         times=times,
         values=np.asarray(values, dtype=np.float64),
-        provider="test",
+        source="test",
         series_id=name,
         snapshot_id="snap",
         frequency="m",

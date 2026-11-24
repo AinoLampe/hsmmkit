@@ -80,8 +80,8 @@ def test_e2_t03_symbol_mapping_and_passthrough(tmp_path: Path) -> None:
     dl = CassetteDownloader()
     obs = _provider(tmp_path, dl).fetch_prices(["^GDAXI"], "2024-06-03", "2024-06-28", "1d", True)
     assert dl.calls[0][0] == "^dax"
-    assert obs.symbols == ("^GDAXI",)
-    assert obs.prices.shape == (20, 1)
+    assert obs.series_names == ("^GDAXI",)
+    assert obs.values.shape == (20, 1)
 
 
 def test_e2_t03_weekly_and_monthly_are_last_close_of_period(tmp_path: Path) -> None:
@@ -92,10 +92,10 @@ def test_e2_t03_weekly_and_monthly_are_last_close_of_period(tmp_path: Path) -> N
         obs = p.fetch_prices(["^GDAXI"], "2024-01-01", "2024-06-30", interval, False)
         expected = close.groupby(close.index.to_period(freq)).tail(1)
         assert obs.times.tolist() == expected.index.to_numpy(dtype="datetime64[ns]").tolist()
-        np.testing.assert_array_equal(obs.prices[:, 0], expected.to_numpy())
+        np.testing.assert_array_equal(obs.values[:, 0], expected.to_numpy())
         assert "resampled_from" in obs.meta
     daily = p.fetch_prices(["^GDAXI"], "2024-01-01", "2024-06-30", "1d", False)
-    assert daily.meta == {}
+    assert daily.meta == {"interval": "1d", "adjusted": False}
     assert len(daily.times) == len(close)
 
 
@@ -206,7 +206,7 @@ def test_e2_t03_multi_symbol_union_alignment_pads_nan_and_charges_per_symbol(tmp
 
     p = StooqProvider(downloader=downloader, api_key=KEY, quota_dir=tmp_path, today=lambda: date(2024, 7, 1))
     obs = p.fetch_prices(["^GDAXI", "sap.de"], "2024-01-01", "2024-06-30", "1d", False)
-    assert obs.prices.shape == (len(base), 2)
-    assert np.isnan(obs.prices[:3, 1]).all()
-    assert not np.isnan(obs.prices[:, 0]).any()
+    assert obs.values.shape == (len(base), 2)
+    assert np.isnan(obs.values[:3, 1]).all()
+    assert not np.isnan(obs.values[:, 0]).any()
     assert json.loads((tmp_path / "stooq_quota.json").read_text())["calls"] == 2
