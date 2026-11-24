@@ -10,11 +10,13 @@ import pandas as pd
 import pytest
 from ruamel.yaml import YAML
 
-from regimekit.config.schema import DataSection, EmissionCfg, ProjectConfig
+from regimekit.config.migrate import migrate
+from regimekit.config.schema import EmissionCfg, ProjectConfig
 from regimekit.config.yaml_io import dump_resolved, export_json_schema, load_config
 from regimekit.data.calendar import build_grid
 from regimekit.data.contracts import ObservationSet
 from regimekit.data.prepare import Preparer
+from regimekit.finance import FinanceConfig, FinanceDataSection
 from regimekit.utils.errors import DataError
 from tests.helpers.two_series import APPENDIX_A
 
@@ -40,12 +42,12 @@ def _prices() -> np.ndarray:
     return 100.0 * np.exp(np.cumsum(rng.normal(0.0, 0.01, (N_DAYS, 2)), axis=0))
 
 
-def _data_cfg(missing: str = "drop") -> DataSection:
+def _data_cfg(missing: str = "drop") -> FinanceDataSection:
     raw = _YAML.load(APPENDIX_A.read_text(encoding="utf-8"))
     raw["data"]["primary"]["symbols"] = ["A", "B"]
     raw["data"]["covariates"] = []
     raw["data"]["preparation"]["missing_returns"] = missing
-    return DataSection.model_validate(raw["data"])
+    return FinanceDataSection.model_validate(migrate(raw, FinanceConfig)["data"])
 
 
 # --- master grid ----------------------------------------------------------------------------------
@@ -110,17 +112,17 @@ def test_e9_t01_per_series_defaults_to_true_and_keeps_appendix_a_valid() -> None
     """Default `True` (separate parameters per series, the pre-E9-T01 behaviour)."""
     assert EmissionCfg(family="gbm", params={}).per_series is True
     assert EmissionCfg(family="gbm", params={}, per_series=False).per_series is False
-    assert isinstance(load_config(APPENDIX_A), ProjectConfig)
+    assert isinstance(load_config(APPENDIX_A, FinanceConfig), ProjectConfig)
 
 
 def test_e9_t01_per_series_in_json_schema_and_resolved_dump(tmp_path: Path) -> None:
     """The JSON Schema lists `per_series` and the resolved dump writes the defaulted value."""
     schema_path = tmp_path / "schema.json"
-    export_json_schema(schema_path)
-    props = json.loads(schema_path.read_text(encoding="utf-8"))["$defs"]["EmissionCfg"]["properties"]
+    export_json_schema(schema_path, FinanceConfig)
+    props = json.loads(schema_path.read_text(encoding="utf-8"))["$defs"]["FinanceEmissionCfg"]["properties"]
     assert props["per_series"]["type"] == "boolean"
     assert props["per_series"]["default"] is True
 
     resolved = tmp_path / "config.resolved.yaml"
-    dump_resolved(load_config(APPENDIX_A), resolved)
+    dump_resolved(load_config(APPENDIX_A, FinanceConfig), resolved)
     assert _YAML.load(resolved)["model"]["emission"]["per_series"] is True

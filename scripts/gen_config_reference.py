@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
-from regimekit.config.schema import ProjectConfig
+from regimekit.finance import FinanceConfig
 
 TOP = "(top level)"
 TARGET = Path(__file__).resolve().parents[1] / "docs" / "guide" / "config.md"
@@ -102,7 +102,7 @@ def render() -> str:
     """The full Markdown page."""
     out = [INTRO]
     seen: set[type[BaseModel]] = set()
-    queue: list[tuple[str, type[BaseModel]]] = [(TOP, ProjectConfig)]
+    queue: list[tuple[str, type[BaseModel]]] = [(TOP, FinanceConfig)]
     while queue:
         path, model = queue.pop(0)
         if model in seen:

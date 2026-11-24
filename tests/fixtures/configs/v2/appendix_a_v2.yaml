@@ -1,0 +1,209 @@
+schema_version: 2
+project:
+  name: dax_3state_gbm_nb
+  seed: 42
+  output_dir: runs/dax_3state_gbm_nb
+  log_level: INFO
+data:
+  source:
+    kind: provider
+    provider: yfinance
+    symbols:
+    - ^GDAXI
+    interval: 1d
+    start: '2000-01-03'
+    end:
+    adjusted: true
+    field: close
+  clock: trading
+  clock_options:
+    bars_per_day: 1
+  covariates:
+  - name: log_vix
+    source:
+      kind: provider
+      provider: fred
+      series: VIXCLS
+    column:
+    transform:
+    - log
+    lag: 1
+    missing: ffill
+    max_staleness: 5
+    use_in:
+    - transition
+    - duration
+  - name: term_spread
+    source:
+      kind: provider
+      provider: fred
+      series: T10Y2Y
+    column:
+    transform: []
+    lag: 1
+    missing: ffill
+    max_staleness: 5
+    use_in:
+    - transition
+  preparation:
+    observation_transform: log_returns
+    standardize_observations: false
+    standardize_covariates: true
+    missing_observations: drop
+  cache:
+    dir: ~/.cache/regimekit
+    snapshot: latest
+    max_age_days: 1
+model:
+  n_states: 3
+  engine: expanded
+  d_max: 500
+  initial_state: uniform
+  emission:
+    family: gbm
+    params:
+      mu:
+        mode: fixed
+        values:
+        - -0.3
+        - 0.0
+        - 0.2
+        init:
+        init_mean_sojourn_steps:
+        bounds:
+        constraint: none
+        prior:
+        tie:
+        init_mean_sojourn_days:
+      sigma:
+        mode: free
+        values:
+        init:
+        - 0.12
+        - 0.18
+        - 0.35
+        init_mean_sojourn_steps:
+        bounds:
+        constraint: increasing
+        prior:
+          type: lognormal
+          sd: 1.0
+          alpha:
+        tie:
+        init_mean_sojourn_days:
+    covariates:
+      drift: []
+      log_vol: []
+    scale_by_dt:
+    per_series: true
+  duration:
+    family: negbin
+    r:
+    - 3
+    - 3
+    - 2
+    params:
+      rate:
+        mode: free
+        values:
+        init:
+        init_mean_sojourn_steps:
+        bounds:
+        constraint: none
+        prior:
+          type: lognormal
+          sd: 1.0
+          alpha:
+        tie:
+        init_mean_sojourn_days:
+        - 60.0
+        - 120.0
+        - 30.0
+    covariates:
+    - log_vix
+    duration_covariates_at_entry: false
+  transition:
+    mode: jump
+    order: 1
+    duration_conditioning: current
+    covariates:
+    - log_vix
+    - term_spread
+    prior:
+      type: dirichlet
+      sd:
+      alpha: 1.0
+    coef_prior_sd: 1.0
+  lattice:
+estimation:
+  optimizer: lbfgs
+  max_iter: 1000
+  tol_f: 1e-09
+  tol_g: 1e-06
+  restarts: 8
+  init:
+  - rollvol_kmeans
+  - lattice_jitter
+  - random
+  use_priors: true
+  std_errors: true
+  device: auto
+  chunk_size:
+  parallel_scan: false
+forecast:
+  horizon: 20
+  n_sim: 10000
+  covariate_forecaster:
+    type: bootstrap
+    mean_block_length: 10
+    diagonal:
+    path:
+  quantiles:
+  - 0.05
+  - 0.25
+  - 0.5
+  - 0.75
+  - 0.95
+evaluation:
+  metrics:
+  - log_score
+  - crps
+  - pit_coverage
+  - bic
+  - icl
+  - regime_occupancy
+  - regime_persistence
+  - sharpe
+  - max_drawdown
+  backtest:
+    scheme: expanding
+    initial_train: 8.0
+    initial_train_steps:
+    rolling_window:
+    rolling_window_steps:
+    refit_every_steps: 63
+    horizons:
+    - 1
+    - 5
+    - 20
+    embargo_steps: 0
+    n_sim:
+  labels:
+  strategy:
+    type: regime_long_flat
+    flat_if:
+      regime: 0
+      prob_above: 0.6
+      use: filtered
+    target_vol:
+    cost_bps: 5.0
+    cap: 1.0
+    allow_short: false
+output:
+  write:
+  - posterior
+  - forecast
+  - backtest
+  - strategy
+  - report
+warnings: []

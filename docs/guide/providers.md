@@ -142,7 +142,7 @@ fetched as parquet under `data.cache.dir` (default `~/.cache/regimekit`, `~` exp
    file's directory (`symbols: [DEMO]` reads `DEMO.csv`, `series: VIXCLS` reads `VIXCLS.csv`).
    stooq/tiingo keep their client-side quota files in `data.cache.dir`.
 2. The `Preparer` is fitted on the initial training window: the first
-   `evaluation.backtest.initial_train_years` years, capped at the full span. The data is then
+   `evaluation.backtest.initial_train` years, capped at the full span. The data is then
    transformed (see [Data contracts](contracts.md)).
 3. Outputs go to `--out`, or to `project.output_dir` when `--out` is not given:
    - `prepared.parquet`: the `PreparedDataset`, bit-exact (`regimekit.persistence.results.read_prepared`

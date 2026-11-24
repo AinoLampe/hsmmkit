@@ -21,7 +21,7 @@ def cfg(**kw: object) -> BacktestCfg:
     """Backtest config for the ticket's example (T=1000, 2 years, refit 63, embargo 5, horizons 1/5/20)."""
     base: dict[str, object] = {
         "scheme": "expanding",
-        "initial_train_years": 2.0,
+        "initial_train": 2.0,
         "refit_every_steps": 63,
         "horizons": [1, 5, 20],
         "embargo_steps": 5,
@@ -50,7 +50,7 @@ def test_e7_t02a_hand_checked_boundaries() -> None:
 def test_e7_t02a_no_overlap_and_contiguous_disjoint_tests(scheme: str, embargo: int) -> None:
     """AC2: test rows start after the training rows; consecutive tests touch and never overlap."""
     times, dt = grid()
-    folds = schedule_folds(times, dt, cfg(scheme=scheme, rolling_years=1.0, embargo_steps=embargo), 20)
+    folds = schedule_folds(times, dt, cfg(scheme=scheme, rolling_window=1.0, embargo_steps=embargo), 20)
     for f in folds:
         assert f.train_end <= f.test_start
         assert f.test_start - f.train_end == embargo
@@ -69,9 +69,9 @@ def test_e7_t02a_every_origin_has_max_horizon_realized_steps() -> None:
 
 
 def test_e7_t02a_rolling_window_has_constant_length() -> None:
-    """AC3: rolling keeps the training length constant (+- 1 step) and equal to rolling_years of steps."""
+    """AC3: rolling keeps the training length constant (+- 1 step) and equal to rolling_window of steps."""
     times, dt = grid()
-    folds = schedule_folds(times, dt, cfg(scheme="rolling", rolling_years=1.0), 20)
+    folds = schedule_folds(times, dt, cfg(scheme="rolling", rolling_window=1.0), 20)
     lengths = [f.train_end - f.train_start for f in folds]
     assert max(lengths) - min(lengths) <= 1
     assert all(abs(n - TRADING_DAYS_PER_YEAR) <= 1 for n in lengths)
@@ -80,11 +80,11 @@ def test_e7_t02a_rolling_window_has_constant_length() -> None:
 
 
 def test_e7_t02a_rolling_window_over_irregular_time_spans_the_requested_years() -> None:
-    """With an irregular `dt` the window spans `rolling_years` of elapsed time, not a row count."""
+    """With an irregular `dt` the window spans `rolling_window` of elapsed time, not a row count."""
     rng = np.random.default_rng(0)
     dt = rng.choice([1.0, 1.0, 3.0], size=T) / CALENDAR_DAYS_PER_YEAR
     times = pd.date_range("2015-01-01", periods=T, freq="D").to_numpy().astype("datetime64[ns]")
-    folds = schedule_folds(times, dt, cfg(scheme="rolling", rolling_years=1.0, initial_train_years=2.0), 20)
+    folds = schedule_folds(times, dt, cfg(scheme="rolling", rolling_window=1.0, initial_train=2.0), 20)
     cum = np.concatenate([[0.0], np.cumsum(dt)])
     for f in folds:
         span = cum[f.train_end] - cum[f.train_start]
@@ -105,11 +105,11 @@ def test_e7_t02a_trailing_fold_without_origins_is_dropped_and_empty_schedules_ra
 
 
 def test_e7_t02a_initial_window_longer_than_the_data_is_a_config_error() -> None:
-    """AC4: `initial_train_years` beyond the span raises with the config path."""
+    """AC4: `initial_train` beyond the span raises with the config path."""
     times, dt = grid(300)
     with pytest.raises(ConfigError) as err:
-        schedule_folds(times, dt, cfg(initial_train_years=2.0), 20)
-    assert err.value.path == "evaluation.backtest.initial_train_years"
+        schedule_folds(times, dt, cfg(initial_train=2.0), 20)
+    assert err.value.path == "evaluation.backtest.initial_train"
 
 
 def test_e7_t02a_invalid_settings_are_rejected() -> None:
@@ -118,7 +118,7 @@ def test_e7_t02a_invalid_settings_are_rejected() -> None:
     with pytest.raises(ConfigError):
         schedule_folds(times, dt, cfg(scheme="rolling"), 20)
     with pytest.raises(ConfigError):
-        schedule_folds(times, dt, cfg(scheme="rolling", rolling_years=3.0), 20)
+        schedule_folds(times, dt, cfg(scheme="rolling", rolling_window=3.0), 20)
     with pytest.raises(ConfigError):
         schedule_folds(times, dt, cfg(refit_every_steps=0), 20)
     with pytest.raises(ConfigError):
@@ -130,11 +130,9 @@ def test_e7_t02a_invalid_settings_are_rejected() -> None:
 
 
 def test_e7_t02a_steps_clock_counts_steps_as_years() -> None:
-    """Under `clock: steps` (`dt == 1`) the initial window is `initial_train_years` rows."""
+    """Under `clock: steps` (`dt == 1`) the initial window is `initial_train` rows."""
     times = np.arange(300).astype("datetime64[D]").astype("datetime64[ns]")
-    folds = schedule_folds(
-        times, np.ones(300), cfg(initial_train_years=100.0, embargo_steps=0, horizons=[1, 5]), 5
-    )
+    folds = schedule_folds(times, np.ones(300), cfg(initial_train=100.0, embargo_steps=0, horizons=[1, 5]), 5)
     assert folds[0].train_end == 100
 
 

@@ -25,6 +25,7 @@ from regimekit.cli import app as app_module
 from regimekit.cli.app import _selftest_lines, app
 from regimekit.config.yaml_io import load_config
 from regimekit.estimation import selftest as selftest_mod
+from regimekit.finance import FinanceConfig
 from regimekit.persistence.store import ModelStore
 from regimekit.utils.errors import ConfigError, ProviderError
 from tests.integration.test_e7_t04_cli import _project
@@ -98,8 +99,8 @@ def test_e8_t02_fetch_parity(world: SimpleNamespace) -> None:
 def test_e8_t02_fit_parity_is_bitwise(world: SimpleNamespace) -> None:
     """`fit`: the bundle the CLI wrote and the `FitResult` of `Project.fit` agree bit for bit."""
     name = world.project.config.project.name
-    from_cli = ModelStore.load(world.cli / f"{name}.rkmodel")
-    from_py = ModelStore.load(world.py / f"{name}.rkmodel")
+    from_cli = ModelStore.load(world.cli / f"{name}.rkmodel", FinanceConfig)
+    from_py = ModelStore.load(world.py / f"{name}.rkmodel", FinanceConfig)
     assert np.array_equal(np.asarray(from_cli.uparams), np.asarray(world.fit.uparams))
     assert np.array_equal(np.asarray(from_cli.uparams), np.asarray(from_py.uparams))
     assert from_cli.loglik == world.fit.loglik == from_py.loglik
@@ -213,7 +214,7 @@ def test_e8_t02_global_options_are_reflected_in_the_resolved_config_and_the_logs
     world: SimpleNamespace, tmp_path: Path
 ) -> None:
     """`--seed` / `--device` / `--log-level` land in `config.resolved.yaml`; the level filters the logs."""
-    resolved = load_config(world.cli / "config.resolved.yaml")
+    resolved = load_config(world.cli / "config.resolved.yaml", FinanceConfig)
     assert resolved.project.seed == SEED
     assert resolved.estimation.device == "cpu"
     assert resolved.project.log_level == "WARNING"

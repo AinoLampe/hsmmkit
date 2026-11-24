@@ -8,11 +8,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regimekit.config.schema import StrategyCfg
 from regimekit.data.prepare import Preparer
 from regimekit.evaluation.backtest import run_backtest, schedule_folds
 from regimekit.evaluation.metrics.registry import resolve
 from regimekit.evaluation.strategies import make_strategy
+from regimekit.finance.config import StrategyCfg
 from tests.helpers import backtest_fixtures as bf
 
 SHORT = {"initial_train": 100, "refit_every": 30, "horizons": (1,), "restarts": 1, "n_sim": 50}

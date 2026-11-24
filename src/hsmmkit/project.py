@@ -1,6 +1,6 @@
 """`Project`: the Python entry point that mirrors every CLI command (E8-T02).
 
-A `Project` holds a resolved `ProjectConfig` and the directory its relative paths (csv files) resolve
+A `Project` holds a resolved `FinanceConfig` and the directory its relative paths (csv files) resolve
 against. Every method returns its result object and writes nothing unless called with `write=True`;
 the CLI (`cli/app.py`) is a thin wrapper that passes `write=True`. Importing this module triggers no
 network access and no file writes.
@@ -15,7 +15,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, cast
 
 import jax.numpy as jnp
 import numpy as np
@@ -24,7 +24,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pydantic
 
-from regimekit.config.schema import DataSection, PriceSource, ProjectConfig
+from regimekit.config.schema import BacktestCfg
 from regimekit.config.yaml_io import dump_resolved, load_config
 from regimekit.data.cache import Cache, CachedProvider, SnapshotPolicy
 from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
@@ -41,7 +41,7 @@ from regimekit.evaluation.compare import CompareEntry, check_snapshots, comparis
 from regimekit.evaluation.report import build_report, versions
 from regimekit.evaluation.results import BacktestResult
 from regimekit.evaluation.strategies import make_strategy
-from regimekit.finance.providers import get_provider
+from regimekit.finance import FinanceConfig, FinanceDataSection, PriceSource, get_provider
 from regimekit.inference.covariate_forecasters import CovariateForecaster, make_forecaster
 from regimekit.inference.decode import decode as decode_posterior
 from regimekit.inference.forecast import MonteCarloForecaster
@@ -65,7 +65,14 @@ from regimekit.utils.errors import ConfigError, DataError, PersistenceError, Reg
 from regimekit.utils.logging import get_logger
 from regimekit.utils.rng import PURPOSE_SIMULATE, key_for
 
-__all__ = ["FetchedInputs", "Project", "SimulationOutput", "apply_overrides", "check_simulate_args"]
+__all__ = [
+    "FetchedInputs",
+    "FinanceConfig",
+    "Project",
+    "SimulationOutput",
+    "apply_overrides",
+    "check_simulate_args",
+]
 
 
 class FetchedInputs(NamedTuple):
@@ -88,7 +95,7 @@ class SimulationOutput:
     segments: list[list[tuple[int, int, int]]]
 
 
-def apply_overrides(config: ProjectConfig, overrides: Mapping[str, object]) -> None:
+def apply_overrides(config: FinanceConfig, overrides: Mapping[str, object]) -> None:
     """Set dotted config keys (`{"project.seed": 7}`) on `config` in place, with validation.
 
     Raises:
@@ -109,7 +116,7 @@ def apply_overrides(config: ProjectConfig, overrides: Mapping[str, object]) -> N
             raise ConfigError(exc.errors()[0]["msg"], path=key) from exc
 
 
-def summary_lines(config: ProjectConfig) -> list[str]:
+def summary_lines(config: FinanceConfig) -> list[str]:
     """The `validate-config` summary: states, engine, families, covariate entry points, warnings."""
     emission_covariates = config.model.emission.covariates
     entry_points = sorted(
@@ -128,7 +135,7 @@ def summary_lines(config: ProjectConfig) -> list[str]:
     ]
 
 
-def make_provider(name: str, data: DataSection, config_dir: Path) -> object:
+def make_provider(name: str, data: FinanceDataSection, config_dir: Path) -> object:
     """Instantiate a provider adapter for `fetch`.
 
     `csv` files are resolved relative to the config file's directory (the schema has no provider
@@ -143,11 +150,17 @@ def make_provider(name: str, data: DataSection, config_dir: Path) -> object:
     return get_provider(name, **kwargs)
 
 
-def _train_end(obs: ObservationSet, initial_train_years: float) -> np.datetime64:
-    """End of the initial training window: first timestamp + `initial_train_years`, capped at the last."""
-    seconds = round(initial_train_years * CALENDAR_DAYS_PER_YEAR * 86_400)
-    end: np.datetime64 = obs.times[0] + np.timedelta64(seconds, "s")
+def _train_end(obs: ObservationSet, backtest: BacktestCfg) -> np.datetime64:
+    """End of the initial training window.
+
+    First timestamp + `initial_train` years (or the row given by `initial_train_steps`), capped at the last.
+    """
     last: np.datetime64 = obs.times[-1]
+    if backtest.initial_train_steps is not None:
+        return cast(np.datetime64, obs.times[min(backtest.initial_train_steps, obs.times.shape[0]) - 1])
+    assert backtest.initial_train is not None
+    seconds = round(backtest.initial_train * CALENDAR_DAYS_PER_YEAR * 86_400)
+    end: np.datetime64 = obs.times[0] + np.timedelta64(seconds, "s")
     return min(end, last)
 
 
@@ -177,7 +190,7 @@ def _dropped_rows(diagnostics: PrepDiagnostics | None, completed: bool) -> dict[
     }
 
 
-def _check_pinned(config: ProjectConfig, offline: bool) -> None:
+def _check_pinned(config: FinanceConfig, offline: bool) -> None:
     data = config.data
     policy = SnapshotPolicy(data.cache.snapshot, data.cache.max_age_days, offline)
     if policy.pinned is not None and data.covariates:
@@ -188,7 +201,7 @@ def _check_pinned(config: ProjectConfig, offline: bool) -> None:
         )
 
 
-def engine_for(config: ProjectConfig, kind: str) -> ExpandedHMMEngine | ExplicitDurationEngine:
+def engine_for(config: FinanceConfig, kind: str) -> ExpandedHMMEngine | ExplicitDurationEngine:
     """The engine `kind` names, configured from `config.estimation` (`chunk_size`/`parallel_scan`)."""
     if kind == "explicit":
         return ExplicitDurationEngine(chunk_size=config.estimation.chunk_size)
@@ -210,7 +223,7 @@ def _read_scenario(path: Path) -> dict[str, np.ndarray]:
 
 
 def covariate_forecaster(
-    config: ProjectConfig, config_dir: Path, dataset: PreparedDataset, scenario: Path | None
+    config: FinanceConfig, config_dir: Path, dataset: PreparedDataset, scenario: Path | None
 ) -> CovariateForecaster | None:
     """The configured covariate forecaster (`scenario` forces one); `None` without covariates."""
     if not dataset.prep_stats.cov_names:
@@ -276,7 +289,7 @@ class Project:
 
     def __init__(
         self,
-        config: ProjectConfig,
+        config: FinanceConfig,
         *,
         config_dir: Path | str | None = None,
         out_dir: Path | str | None = None,
@@ -302,7 +315,7 @@ class Project:
         offline: bool = False,
     ) -> Project:
         """Load `path`, apply dotted `overrides` (`{"project.seed": 7}`), and wrap the result."""
-        config = load_config(path)
+        config = cast(FinanceConfig, load_config(path, FinanceConfig))
         apply_overrides(config, overrides or {})
         return cls(config, config_dir=Path(path).resolve().parent, out_dir=out_dir, offline=offline)
 
@@ -384,7 +397,7 @@ class Project:
         preparer = Preparer(data_cfg)
         failure: DataError | None = None
         try:
-            train_end = _train_end(obs, config.evaluation.backtest.initial_train_years)
+            train_end = _train_end(obs, config.evaluation.backtest)
             dataset = preparer.fit(obs, covs, train_end).transform(obs, covs)
         except DataError as exc:
             failure = exc
@@ -496,7 +509,7 @@ class Project:
     @staticmethod
     def load(path: Path | str) -> FitResult:
         """Read a model bundle back as a `FitResult`."""
-        return ModelStore.load(path)
+        return ModelStore.load(path, FinanceConfig)
 
     # --- decode / forecast -------------------------------------------------------------------------
 
@@ -593,7 +606,7 @@ class Project:
         if params == "model":
             if model is None:
                 raise ConfigError("--params model requires --model DIR", path="--model")
-            fit = model if isinstance(model, FitResult) else ModelStore.load(model)
+            fit = model if isinstance(model, FitResult) else ModelStore.load(model, FinanceConfig)
             spec, theta = fit.spec, fit.params
         else:
             spec = build_model_spec(self.config, dataset)
@@ -724,7 +737,7 @@ class Project:
     @classmethod
     def compare(
         cls,
-        projects: Sequence[Project | ProjectConfig | Path | str],
+        projects: Sequence[Project | FinanceConfig | Path | str],
         *,
         allow_mixed: bool = False,
         reuse: bool = False,
@@ -748,7 +761,7 @@ class Project:
         for entry in projects:
             if isinstance(entry, Project):
                 items.append((entry.config.project.name, entry))
-            elif isinstance(entry, ProjectConfig):
+            elif isinstance(entry, FinanceConfig):
                 items.append((entry.project.name, cls(entry, offline=offline)))
             else:
                 path = Path(entry)

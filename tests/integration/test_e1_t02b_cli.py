@@ -112,4 +112,4 @@ def test_e1_t02b_config_schema_command_writes_json(tmp_path: Path) -> None:
     result = _runner.invoke(app, ["config-schema", str(out_path)])
     assert result.exit_code == 0, result.output
     schema = json.loads(out_path.read_text())
-    assert "profile" in schema["properties"]
+    assert "profile" not in schema["properties"]

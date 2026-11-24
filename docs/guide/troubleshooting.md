@@ -31,7 +31,7 @@ tells the family:
 - `a pinned snapshot id ... cannot pin covariates`: a pinned `data.cache.snapshot` identifies one cache entry;
   use `snapshot: latest` with `--offline` to replay a run with covariates.
 - `quality.json` / `quality.md` list gaps, duplicates, outliers, staleness and the rows dropped by the
-  preparation policies (`missing`, `max_staleness`, `data.preparation.missing_returns`).
+  preparation policies (`missing`, `max_staleness`, `data.preparation.missing_observations`).
 
 ## Fits that look wrong
 
@@ -46,5 +46,5 @@ tells the family:
 ## Backtests
 
 - A schedule without any fold is a `ConfigError` (`evaluation.backtest`): the sample is too short for
-  `initial_train_years`, `refit_every_steps` and the longest horizon; shorten them.
+  `initial_train`, `refit_every_steps` and the longest horizon; shorten them.
 - A backtest refits the model in every fold; use fewer `estimation.restarts` while exploring.

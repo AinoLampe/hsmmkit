@@ -101,7 +101,7 @@ def _strategy_lines(result: BacktestResult, cfg: ProjectConfig) -> list[str]:
     trace = result.strategy
     if trace is None:
         return ["No strategy was configured."]
-    s = cfg.evaluation.strategy
+    s = getattr(cfg.evaluation, "strategy", None)  # the finance evaluation section adds it
     overall = {
         "total log-return": float(trace["return"].sum()),
         "final equity": float(trace["equity"].iloc[-1]),

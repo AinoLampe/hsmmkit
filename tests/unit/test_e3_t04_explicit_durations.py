@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from regimekit.config.schema import DurationCfg
+from regimekit.finance.config import FinanceDurationCfg as DurationCfg  # finance params allow the `days` key
 from regimekit.model.duration import (
     GammaDuration,
     GeometricDuration,

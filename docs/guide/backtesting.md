@@ -33,14 +33,14 @@ into a fold table (pure index arithmetic; indices are grid rows, ends exclusive,
 `PreparedDataset.window`).
 
 * The initial training window is the shortest prefix whose elapsed time `cumsum(dt)` reaches
-  `initial_train_years` (504 rows for 2 years on the trading clock; under `clock: steps` a "year" is a row).
+  `initial_train` (504 rows for 2 years on the trading clock; under `clock: steps` a "year" is a row).
 * Fold `k` is fitted on rows `[train_start, train_end)` with `train_end = initial_end + k * refit_every_steps`;
   its forecast origins are `[test_start, test_end)` with `test_start = train_end + embargo_steps` and
   `test_end = min(test_start + refit_every_steps, T - max_horizon)`, so every origin has `max_horizon`
   realized future rows. Folds without origins are dropped; a schedule without any fold is a `ConfigError`.
 * `expanding` folds start at row 0. `rolling` folds start at the latest row whose window still spans
-  `rolling_years` of elapsed time (constant length up to one row on a regular grid); `rolling_years` may not
-  exceed `initial_train_years`.
+  `rolling_window` of elapsed time (constant length up to one row on a regular grid); `rolling_window` may not
+  exceed `initial_train`. `initial_train_steps` and `rolling_window_steps` give the same lengths in rows (exactly one of `initial_train` / `initial_train_steps`).
 * For an origin `o` and horizon `h` the realized return is `Y_h = sum(y[o+1 .. o+h])`.
 
 `fold_table(folds, times)` adds the timestamps of the first/last training row and the first/last origin.

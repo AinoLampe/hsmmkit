@@ -68,8 +68,9 @@ def _with_mean_sojourn_steps(
     """
     new_params = {}
     for key, param in cfg.params.items():
-        if param.init_mean_sojourn_days is not None:
-            steps = [days_to_steps(d, clock, nominal_dt, bars_per_day) for d in param.init_mean_sojourn_days]
+        days = getattr(param, "init_mean_sojourn_days", None)
+        if days is not None:
+            steps = [days_to_steps(d, clock, nominal_dt, bars_per_day) for d in days]
             param = param.model_copy(
                 update={"init_mean_sojourn_days": None, "init_mean_sojourn_steps": steps}
             )
@@ -125,6 +126,11 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
         raise ConfigError(f"unknown emission family {m.emission.family!r}", path="model.emission.family")
     emission_cov_names = inputs.cov_names.get("emission", ())
     emission, emission_specs = emis_cls.from_config(m.emission, n, n_series, emission_cov_names)
+    if m.emission.scale_by_dt is not None and m.emission.scale_by_dt != emission.scale_by_dt:
+        raise ConfigError(
+            f"scale_by_dt={m.emission.scale_by_dt} contradicts the family's own ({emission.scale_by_dt})",
+            path="model.emission.scale_by_dt",
+        )
     if n_series > 1:  # per-series masks and shared parameters (E9-T01); M = 1 keeps the bare family
         emission = ProductEmission.of(emission, n_series)
 
@@ -132,7 +138,7 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
     if dur_cls is None:
         raise ConfigError(f"unknown duration family {m.duration.family!r}", path="model.duration.family")
     duration_cfg = _with_mean_sojourn_steps(
-        m.duration, inputs.clock, inputs.nominal_dt, cfg.data.bars_per_day
+        m.duration, inputs.clock, inputs.nominal_dt, int(cfg.data.clock_option("bars_per_day", 1))
     )
     if m.duration.family == "nonparametric":
         duration, duration_specs = dur_cls.from_config(

@@ -10,12 +10,13 @@ they propagate unwrapped).
 
 from __future__ import annotations
 
+import importlib
 import warnings as warnings_module
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import pydantic
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from regimekit.config.defaults import (
     D_MAX_CAP,
@@ -23,7 +24,8 @@ from regimekit.config.defaults import (
     D_MAX_WARN_SOJOURN_MULTIPLIER,
     MAX_ORDER_WARN,
 )
-from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR, TRADING_DAYS_PER_YEAR, Clock, days_to_steps
+from regimekit.plugins import REGISTRY, Kind
+from regimekit.utils.clock import CLOCK_NAMES
 from regimekit.utils.errors import ConfigError
 
 CURRENT_SCHEMA_VERSION = 1
@@ -32,12 +34,36 @@ Transform = Literal["log", "diff", "pct", "zscore"]
 MissingPolicy = Literal["ffill", "drop", "error"]
 EntryPoint = Literal["transition", "duration", "emission"]
 ParamMode = Literal["free", "fixed", "tied", "bounded", "prior"]
-EmissionFamily = Literal["gbm", "student_t"]
-DurationFamily = Literal["geometric", "negbin", "poisson", "gamma", "weibull", "lognormal", "nonparametric"]
+CORE_OUTPUTS = ("posterior", "forecast", "backtest", "cv", "report")
 
 
 class _Base(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+
+def _registered_names(kind: Kind, *, needs: str | None = None) -> list[str]:
+    """Registered names of `kind` (optionally only objects with attribute `needs`); loads the components."""
+    importlib.import_module("regimekit.model.emission")  # the families register on import
+    importlib.import_module("regimekit.model.duration")
+    importlib.import_module("regimekit.inference.covariate_forecasters")
+    importlib.import_module("regimekit.estimation.init")
+    if kind == "metric":
+        from regimekit.evaluation.metrics.registry import available
+
+        return list(available())
+    return [e.name for e in REGISTRY.entries(kind) if needs is None or hasattr(e.obj, needs)]
+
+
+def _check_name(kind: Kind, name: str, path: str, *, needs: str | None = None) -> str:
+    """`name` if it is registered for `kind`, else a `ConfigError(path)` listing the registered names."""
+    names = _registered_names(kind, needs=needs)
+    if name not in names:
+        listing = (
+            ", ".join(f"{e.name} ({e.provenance})" for e in REGISTRY.entries(kind) if e.name in names)
+            or "<none>"
+        )
+        raise ConfigError(f"unknown {kind} '{name}'; registered: {listing}", path=path)
+    return name
 
 
 # --- project / data -------------------------------------------------------------------------
@@ -52,32 +78,34 @@ class ProjectSection(_Base):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
 
-class PriceSource(_Base):
-    """`data.primary:` — the primary price series to fetch."""
+class SourceCfg(_Base):
+    """`data.source:` — where the observations come from.
 
-    provider: str
-    symbols: list[str]
-    interval: Literal["1h", "1d", "1wk", "1mo"]
-    start: str
-    end: str | None = None
-    adjusted: bool = True
-    field: str = "close"
+    `kind` names a registered source (`REGISTRY` kind `source`); the other keys are the options of that
+    source and are validated by the options model it registers (for the finance application:
+    `regimekit.finance.config`).
+    """
 
+    model_config = ConfigDict(extra="allow", validate_assignment=True)
 
-class CacheCfg(_Base):
-    """`data.cache:` — local parquet cache settings."""
+    kind: str
 
-    dir: Path = Path("~/.cache/regimekit")
-    snapshot: str = "latest"
-    max_age_days: int = 1
+    def option(self, name: str, default: Any = None) -> Any:  # noqa: ANN401
+        """The source option `name` (extra keys), or `default`."""
+        extra = self.model_extra or {}
+        return extra.get(name, default)
+
+    def options(self) -> dict[str, Any]:
+        """All options of the source (the extra keys)."""
+        return dict(self.model_extra or {})
 
 
 class CovariateCfg(_Base):
     """`data.covariates[]:` — one covariate series and how it enters the model."""
 
     name: str
-    provider: str
-    series: str
+    source: SourceCfg | None = None
+    column: str | None = None
     transform: list[Transform] = Field(default_factory=list)
     lag: int = Field(ge=1)
     missing: MissingPolicy = "ffill"
@@ -86,22 +114,47 @@ class CovariateCfg(_Base):
 
 
 class PrepCfg(_Base):
-    """`data.preparation:` — return/covariate preparation settings."""
+    """`data.preparation:` — observation and covariate preparation settings."""
 
-    returns: Literal["log"] = "log"
+    observation_transform: str | None = None
+    standardize_observations: bool = False
     standardize_covariates: bool = True
-    missing_returns: Literal["drop", "error"] = "drop"
+    missing_observations: Literal["mask", "drop", "error"] = "mask"
+
+    @field_validator("observation_transform")
+    @classmethod
+    def _known_transform(cls, value: str | None) -> str | None:
+        if value is not None and REGISTRY.names("transform"):  # the registry fills in E10-T05
+            _check_name("transform", value, "data.preparation.observation_transform")
+        return value
 
 
 class DataSection(_Base):
-    """`data:` — provider, clock, cache, covariates, preparation."""
+    """`data:` — source, clock, covariates, preparation."""
 
-    primary: PriceSource
-    clock: Clock = "trading"
-    bars_per_day: int = 1
-    cache: CacheCfg = Field(default_factory=CacheCfg)
+    source: SourceCfg
+    clock: str = "steps"
+    clock_options: dict[str, Any] = Field(default_factory=dict)
     covariates: list[CovariateCfg] = Field(default_factory=list)
     preparation: PrepCfg = Field(default_factory=PrepCfg)
+
+    def clock_option(self, name: str, default: Any = None) -> Any:  # noqa: ANN401
+        """The clock option `name` (`clock_options`), or `default`."""
+        return self.clock_options.get(name, default)
+
+    @field_validator("source")
+    @classmethod
+    def _known_source(cls, value: SourceCfg) -> SourceCfg:
+        _check_name("source", value.kind, "data.source.kind")
+        return value
+
+    @field_validator("clock")
+    @classmethod
+    def _known_clock(cls, value: str) -> str:
+        names = REGISTRY.names("clock") or CLOCK_NAMES  # the registry fills in E10-T03
+        if value not in names:
+            raise ConfigError(f"unknown clock '{value}'; registered: {', '.join(names)}", path="data.clock")
+        return value
 
 
 # --- model: params, priors, emission/duration/transition/lattice -----------------------------
@@ -121,7 +174,6 @@ class ParamCfg(_Base):
     mode: ParamMode
     values: list[float] | None = None
     init: list[float] | None = None
-    init_mean_sojourn_days: list[float] | None = None
     init_mean_sojourn_steps: list[float] | None = None
     bounds: tuple[float, float] | None = None
     constraint: Literal["none", "increasing"] = "none"
@@ -139,21 +191,33 @@ class EmissionCovariates(_Base):
 class EmissionCfg(_Base):
     """`model.emission:` — emission family, per-parameter configs, covariate links."""
 
-    family: EmissionFamily
+    family: str
     params: dict[str, ParamCfg]
     covariates: EmissionCovariates = Field(default_factory=EmissionCovariates)
+    scale_by_dt: bool | None = None
+    """Declared time scaling of the family (`None`: the family's own); a different value is rejected."""
     per_series: bool = True
     """`True`: own `mu`/`sigma` (`m`/`s`) per series, `(N, M)`; `False`: one per regime, shared."""
+
+    @field_validator("family")
+    @classmethod
+    def _known_family(cls, value: str) -> str:
+        return _check_name("emission", value, "model.emission.family", needs="from_config")
 
 
 class DurationCfg(_Base):
     """`model.duration:` — duration family, minimum sojourns, per-parameter configs."""
 
-    family: DurationFamily
+    family: str
     r: list[int] | None = None
     params: dict[str, ParamCfg]
     covariates: list[str] = Field(default_factory=list)
     duration_covariates_at_entry: bool = False
+
+    @field_validator("family")
+    @classmethod
+    def _known_family(cls, value: str) -> str:
+        return _check_name("duration", value, "model.duration.family", needs="from_config")
 
 
 class TransitionCfg(_Base):
@@ -197,12 +261,19 @@ class EstimationSection(_Base):
     tol_f: float = 1.0e-9
     tol_g: float = 1.0e-6
     restarts: int = 8
-    init: list[Literal["rollvol_kmeans", "lattice_jitter", "random"]] = Field(default_factory=list)
+    init: list[str] = Field(default_factory=list)
     use_priors: bool = True
     std_errors: bool = False
     device: Literal["cpu", "gpu", "auto"] = "auto"
     chunk_size: int | None = Field(default=None, ge=1)  # explicit engine: steps per chunk (None = auto)
     parallel_scan: bool = False  # expanded engine: associative-scan smoothing (memory T*S^2)
+
+    @field_validator("init")
+    @classmethod
+    def _known_inits(cls, value: list[str]) -> list[str]:
+        for i, name in enumerate(value):
+            _check_name("init", name, f"estimation.init[{i}]")
+        return value
 
 
 class CovariateForecasterCfg(_Base):
@@ -214,10 +285,15 @@ class CovariateForecasterCfg(_Base):
     by `type`, resolved in `_validate_cross_fields`.
     """
 
-    type: Literal["freeze", "scenario", "bootstrap", "ar"]
+    type: str
     mean_block_length: int | None = None
     diagonal: bool | None = None
     path: str | None = None
+
+    @field_validator("type")
+    @classmethod
+    def _known_type(cls, value: str) -> str:
+        return _check_name("covariate_forecaster", value, "forecast.covariate_forecaster.type")
 
 
 class ForecastSection(_Base):
@@ -239,26 +315,35 @@ class ForecastSection(_Base):
 
 
 class BacktestCfg(_Base):
-    """`evaluation.backtest:` — walk-forward scheme, horizons, embargo."""
+    """`evaluation.backtest:` — walk-forward scheme, horizons, embargo.
+
+    `initial_train` and `rolling_window` are lengths in clock units (years under the calendar-based clocks,
+    steps under `steps`); `initial_train_steps` and `rolling_window_steps` give the same lengths in rows.
+    Exactly one of `initial_train` / `initial_train_steps`; at most one of the rolling pair.
+    """
 
     scheme: Literal["expanding", "rolling"]
-    initial_train_years: float
-    rolling_years: float | None = None
+    initial_train: float | None = None
+    initial_train_steps: int | None = Field(default=None, ge=1)
+    rolling_window: float | None = None
+    rolling_window_steps: int | None = Field(default=None, ge=1)
     refit_every_steps: int
     horizons: list[int]
     embargo_steps: int = 0
     n_sim: int | None = Field(default=None, ge=1)  # simulated paths per origin (None = forecast.n_sim)
 
-
-class StrategyCfg(_Base):
-    """`evaluation.strategy:` — a simple regime-conditioned trading rule."""
-
-    type: Literal["regime_long_flat", "regime_target_vol"]
-    flat_if: dict[str, Any] | None = None
-    target_vol: float | None = None
-    cost_bps: float = Field(default=0.0, ge=0.0)
-    cap: float = 1.0  # regime_target_vol: largest absolute position
-    allow_short: bool = False  # regime_target_vol: short when the predictive mean is negative
+    @model_validator(mode="after")
+    def _one_of_each_pair(self) -> BacktestCfg:
+        if (self.initial_train is None) == (self.initial_train_steps is None):
+            raise ConfigError(
+                "exactly one of initial_train / initial_train_steps", path="evaluation.backtest.initial_train"
+            )
+        if self.rolling_window is not None and self.rolling_window_steps is not None:
+            raise ConfigError(
+                "at most one of rolling_window / rolling_window_steps",
+                path="evaluation.backtest.rolling_window",
+            )
+        return self
 
 
 class LabelSource(_Base):
@@ -268,28 +353,54 @@ class LabelSource(_Base):
 
 
 class EvaluationSection(_Base):
-    """`evaluation:` — metrics, backtest scheme, optional strategy/labels."""
+    """`evaluation:` — metrics, backtest scheme, optional labels."""
 
     metrics: list[str]
     backtest: BacktestCfg
-    strategy: StrategyCfg | None = None
     labels: LabelSource | None = None
+
+    @field_validator("metrics")
+    @classmethod
+    def _known_metrics(cls, value: list[str]) -> list[str]:
+        for i, name in enumerate(value):
+            _check_name("metric", name, f"evaluation.metrics[{i}]")
+        return value
 
 
 class OutputSection(_Base):
     """`output:` — which artifacts to write."""
 
-    write: list[Literal["posterior", "forecast", "backtest", "strategy", "report"]]
+    write: list[str]
+
+    extra_outputs: ClassVar[tuple[str, ...]] = ()
+    """Output names an extension adds (set by the subclass of the extension)."""
+
+    @field_validator("write")
+    @classmethod
+    def _known_outputs(cls, value: list[str]) -> list[str]:
+        allowed = (*CORE_OUTPUTS, *cls.extra_outputs)
+        for i, name in enumerate(value):
+            if name not in allowed:
+                raise ConfigError(
+                    f"unknown output '{name}'; allowed: {', '.join(allowed)}", path=f"output.write[{i}]"
+                )
+        return value
 
 
 # --- top level ---------------------------------------------------------------------------------
 
 
 class ProjectConfig(_Base):
-    """The whole resolved regimekit configuration."""
+    """The whole resolved configuration of the domain-neutral core.
+
+    Applications extend it by subclassing (D24): they replace sections by subclasses, set `SCHEMA_ID` and
+    `SCHEMA_VERSION`, and register their own migrations (`regimekit.config.migrate`).
+    """
+
+    SCHEMA_ID: ClassVar[str] = "core"
+    SCHEMA_VERSION: ClassVar[int] = CURRENT_SCHEMA_VERSION
 
     schema_version: int = CURRENT_SCHEMA_VERSION
-    profile: Literal["core", "finance"] = "finance"
     project: ProjectSection
     data: DataSection
     model: ModelSection
@@ -301,9 +412,7 @@ class ProjectConfig(_Base):
 
     @model_validator(mode="after")
     def _validate_cross_fields(self) -> ProjectConfig:
-        _check_profile(self)
         _check_param_cfg_consistency(self)
-        _check_clock_and_bars_per_day(self)
         _check_per_state_lengths(self)
         _check_covariate_cross_references(self)
         _check_transition_order(self)
@@ -312,6 +421,16 @@ class ProjectConfig(_Base):
         _resolve_d_max(self)
         return self
 
+    def expected_sojourn_steps(self) -> float | None:
+        """Largest initial mean sojourn in steps that the config states (`None` when it states none)."""
+        values: list[float] = []
+        for pc in self.model.duration.params.values():
+            if pc.init_mean_sojourn_steps is not None:
+                values.extend(pc.init_mean_sojourn_steps)
+            elif pc.init is not None and self.data.clock == "steps":
+                values.extend(pc.init)
+        return max(values) if values else None
+
 
 # --- cross-field rule implementations (kept out of the class body for readability) -----------
 
@@ -319,11 +438,6 @@ class ProjectConfig(_Base):
 def _warn(config: ProjectConfig, message: str) -> None:
     config.warnings.append(message)
     warnings_module.warn(message, stacklevel=3)
-
-
-def _check_profile(config: ProjectConfig) -> None:
-    if config.profile == "core":
-        raise ConfigError("profile 'core' is not executable in this release; use 'finance'", path="profile")
 
 
 def _named_param_cfgs(config: ProjectConfig) -> list[tuple[str, ParamCfg]]:
@@ -335,11 +449,6 @@ def _named_param_cfgs(config: ProjectConfig) -> list[tuple[str, ParamCfg]]:
 
 def _check_param_cfg_consistency(config: ProjectConfig) -> None:
     for path, pc in _named_param_cfgs(config):
-        if pc.init_mean_sojourn_days is not None and pc.init_mean_sojourn_steps is not None:
-            raise ConfigError(
-                "at most one of init_mean_sojourn_days/init_mean_sojourn_steps",
-                path=f"{path}.init_mean_sojourn_days",
-            )
         if pc.mode == "fixed" and pc.values is None:
             raise ConfigError("mode='fixed' requires values", path=f"{path}.values")
         if pc.mode == "bounded" and pc.bounds is None:
@@ -350,19 +459,6 @@ def _check_param_cfg_consistency(config: ProjectConfig) -> None:
             raise ConfigError("mode='prior' requires prior", path=f"{path}.prior")
 
 
-def _check_clock_and_bars_per_day(config: ProjectConfig) -> None:
-    if config.data.clock != "steps":
-        return
-    if config.data.bars_per_day != 1:
-        raise ConfigError("bars_per_day must be 1 under clock='steps'", path="data.bars_per_day")
-    for path, pc in _named_param_cfgs(config):
-        if pc.init_mean_sojourn_days is not None:
-            raise ConfigError(
-                "init_mean_sojourn_days is not allowed under clock='steps'; use init_mean_sojourn_steps",
-                path=f"{path}.init_mean_sojourn_days",
-            )
-
-
 def _check_per_state_lengths(config: ProjectConfig) -> None:
     n = config.model.n_states
     duration = config.model.duration
@@ -371,7 +467,7 @@ def _check_per_state_lengths(config: ProjectConfig) -> None:
 
     def _check(section_path: str, params: dict[str, ParamCfg]) -> None:
         for key, pc in params.items():
-            for field_name in ("values", "init", "init_mean_sojourn_days", "init_mean_sojourn_steps"):
+            for field_name in ("values", "init", "init_mean_sojourn_steps"):
                 value = getattr(pc, field_name)
                 if value is not None and len(value) != n:
                     raise ConfigError(
@@ -431,32 +527,8 @@ def _check_engine_duration_covariates_warning(config: ProjectConfig) -> None:
         _warn(config, "explicit engine + negbin duration covariates: switching to entry-time evaluation")
 
 
-def _nominal_dt_estimate(clock: Clock) -> float:
-    if clock == "steps":
-        return 1.0
-    days_per_year = TRADING_DAYS_PER_YEAR if clock == "trading" else CALENDAR_DAYS_PER_YEAR
-    return 1.0 / days_per_year
-
-
-def _expected_sojourn_steps(config: ProjectConfig) -> float | None:
-    clock = config.data.clock
-    nominal_dt = _nominal_dt_estimate(clock)
-    bars_per_day = config.data.bars_per_day
-    values: list[float] = []
-    for pc in config.model.duration.params.values():
-        if pc.init_mean_sojourn_steps is not None:
-            values.extend(pc.init_mean_sojourn_steps)
-        elif pc.init_mean_sojourn_days is not None:
-            values.extend(
-                days_to_steps(d, clock, nominal_dt, bars_per_day) for d in pc.init_mean_sojourn_days
-            )
-        elif pc.init is not None and clock == "steps":
-            values.extend(pc.init)
-    return max(values) if values else None
-
-
 def _resolve_d_max(config: ProjectConfig) -> None:
-    expected = _expected_sojourn_steps(config)
+    expected = config.expected_sojourn_steps()
     if config.model.d_max is None:
         if expected is None:
             config.model.d_max = D_MAX_CAP
@@ -470,10 +542,12 @@ def _resolve_d_max(config: ProjectConfig) -> None:
         )
 
 
-def parse_project_config(data: dict[str, Any]) -> ProjectConfig:
-    """Validate `data` into a `ProjectConfig`, converting pydantic errors into `ConfigError`."""
+def parse_project_config(
+    data: dict[str, Any], config_cls: type[ProjectConfig] = ProjectConfig
+) -> ProjectConfig:
+    """Validate `data` into a `config_cls`, converting pydantic errors into `ConfigError`."""
     try:
-        return ProjectConfig.model_validate(data)
+        return config_cls.model_validate(data)
     except pydantic.ValidationError as exc:
         first = exc.errors()[0]
         path = ".".join(str(part) for part in first["loc"])

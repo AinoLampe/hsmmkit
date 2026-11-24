@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from regimekit.model.spec import ModelSpec
 
 BUNDLE_VERSION = 1
+_PROFILE_OF_SCHEMA = {"regimekit": "finance"}  # E10-T07a replaces the bundle manifest (bundle v2)
 REGISTERED_PROFILES = frozenset({"finance"})  # `core` has no execution path in 0.1.0 (overview section 8)
 U_KEY = "__u__"
 THETA_TOLERANCE = 1e-12
@@ -138,7 +139,7 @@ class ModelStore:
             "devices": [str(d) for d in jax.devices()],
             "created_at": datetime.now(UTC).isoformat(),
             "seed": cfg.project.seed if seed is None else seed,
-            "profile": cfg.profile,
+            "profile": _PROFILE_OF_SCHEMA.get(cfg.SCHEMA_ID, cfg.SCHEMA_ID),
             "schema_version": cfg.schema_version,
         }
         spec_json = {
@@ -168,13 +169,18 @@ class ModelStore:
         snapshots = {
             "snapshot_ids": list(data.snapshot_ids),
             "primary": {
-                "provider": cfg.data.primary.provider,
-                "symbols": list(cfg.data.primary.symbols),
-                "interval": cfg.data.primary.interval,
-                "adjusted": cfg.data.primary.adjusted,
+                "provider": cfg.data.source.option("provider"),
+                "symbols": list(cfg.data.source.option("symbols", [])),
+                "interval": cfg.data.source.option("interval"),
+                "adjusted": cfg.data.source.option("adjusted"),
             },
             "covariates": [
-                {"name": c.name, "provider": c.provider, "series": c.series} for c in cfg.data.covariates
+                {
+                    "name": c.name,
+                    "provider": None if c.source is None else c.source.option("provider"),
+                    "series": None if c.source is None else c.source.option("series"),
+                }
+                for c in cfg.data.covariates
             ],
         }
         report = {
@@ -201,15 +207,15 @@ class ModelStore:
         return out
 
     @staticmethod
-    def load(path: Path | str) -> FitResult:
+    def load(path: Path | str, config_cls: type[ProjectConfig] = ProjectConfig) -> FitResult:
         """Read a bundle back as a `FitResult` (see `_load`); malformed contents are `PersistenceError`s."""
         try:
-            return ModelStore._load(path)
+            return ModelStore._load(path, config_cls)
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise PersistenceError(f"{path} is a malformed model bundle: {exc!r}", path=str(path)) from exc
 
     @staticmethod
-    def _load(path: Path | str) -> FitResult:
+    def _load(path: Path | str, config_cls: type[ProjectConfig] = ProjectConfig) -> FitResult:
         """Read a bundle back as a `FitResult` (no dataset needed; `loglik` is checked by the caller).
 
         Raises:
@@ -243,7 +249,7 @@ class ModelStore:
             )
 
         try:
-            cfg = load_config(src / CONFIG)
+            cfg = load_config(src / CONFIG, config_cls)
         except ConfigError as exc:
             raise PersistenceError(
                 f"the configuration stored in {src} is invalid: {exc}", path=str(src / CONFIG)

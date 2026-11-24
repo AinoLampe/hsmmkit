@@ -19,6 +19,7 @@ from numpy.typing import ArrayLike
 from regimekit.utils.errors import ConfigError, DataError
 
 Clock = Literal["trading", "calendar", "steps"]
+CLOCK_NAMES: tuple[str, ...] = ("trading", "calendar", "steps")  # becomes the clock registry in E10-T03
 
 TRADING_DAYS_PER_YEAR = 252
 CALENDAR_DAYS_PER_YEAR = 365.25

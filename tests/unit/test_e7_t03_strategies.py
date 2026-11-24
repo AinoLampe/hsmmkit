@@ -12,7 +12,6 @@ import pandas as pd
 import pytest
 from ruamel.yaml import YAML
 
-from regimekit.config.schema import StrategyCfg
 from regimekit.config.yaml_io import dump_resolved, export_json_schema, load_config
 from regimekit.evaluation.backtest import run_backtest
 from regimekit.evaluation.metrics.registry import resolve
@@ -25,6 +24,8 @@ from regimekit.evaluation.strategies import (
     strategy_returns,
     strategy_trace,
 )
+from regimekit.finance import FinanceConfig
+from regimekit.finance.config import StrategyCfg
 from regimekit.inference.results import ForecastResult, PosteriorResult
 from regimekit.utils.clock import TRADING_DAYS_PER_YEAR
 from regimekit.utils.errors import ConfigError
@@ -227,12 +228,14 @@ def test_e7_t03_strategy_config_fields_default_validate_and_reach_schema_and_dum
     with pytest.raises(ValueError, match="cost_bps"):
         StrategyCfg(type="regime_target_vol", target_vol=0.1, cost_bps=-1.0)
     schema_path = tmp_path / "schema.json"
-    export_json_schema(schema_path)
+    export_json_schema(schema_path, FinanceConfig)
     props = json.loads(schema_path.read_text(encoding="utf-8"))["$defs"]["StrategyCfg"]["properties"]
     assert props["cap"]["default"] == 1.0
     assert props["allow_short"]["default"] is False
     resolved = tmp_path / "config.resolved.yaml"
-    dump_resolved(load_config(ROOT / "tests" / "fixtures" / "configs" / "appendix_a.yaml"), resolved)
+    dump_resolved(
+        load_config(ROOT / "tests" / "fixtures" / "configs" / "appendix_a.yaml", FinanceConfig), resolved
+    )
     strategy = _YAML.load(resolved)["evaluation"]["strategy"]
     assert (strategy["cap"], strategy["allow_short"]) == (1.0, False)
 

@@ -28,7 +28,7 @@ import json
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Any, get_args
+from typing import Any, cast, get_args
 
 import jax.numpy as jnp
 import numpy as np
@@ -238,7 +238,10 @@ class Preparer:
         cfg = self.cfg
         self._check_covariates(covs)
         grid = build_grid(
-            obs, cfg.preparation.missing_returns, clock=cfg.clock, bars_per_day=cfg.bars_per_day
+            obs,
+            cast(Any, cfg.preparation.missing_observations),  # "mask" arrives with E10-T05
+            clock=cast(Clock, cfg.clock),
+            bars_per_day=int(cfg.clock_option("bars_per_day", 1)),
         )
 
         y = log_returns(grid.prices)
@@ -286,9 +289,10 @@ class Preparer:
                 path="data.covariates",
             )
         for i, (c, s) in enumerate(zip(expected, covs, strict=True)):
-            if s.series_id != c.series:
+            series = None if c.source is None else c.source.option("series")
+            if s.series_id != series:
                 raise DataError(
-                    f"covariate {i} ({c.name!r}) expects series {c.series!r}, got {s.series_id!r}",
+                    f"covariate {i} ({c.name!r}) expects series {series!r}, got {s.series_id!r}",
                     path=f"data.covariates[{i}].series",
                 )
 

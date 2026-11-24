@@ -20,6 +20,7 @@ from regimekit.evaluation.metrics.predictive import (
     one_step_mixture_weights,
 )
 from regimekit.evaluation.metrics.registry import FunctionMetric, available, register, resolve
+from regimekit.finance import FinanceConfig
 from regimekit.inference.decode import decode
 from regimekit.inference.forecast import MonteCarloForecaster
 from regimekit.inference.results import ForecastResult
@@ -154,7 +155,7 @@ def test_e7_t01_unknown_metric_name_is_a_config_error_with_path() -> None:
 
 def test_e7_t01_every_appendix_a_metric_resolves() -> None:
     """AC4: all names in Appendix A's `evaluation.metrics` resolve, in order."""
-    names = load_config(APPENDIX_A).evaluation.metrics
+    names = load_config(APPENDIX_A, FinanceConfig).evaluation.metrics
     assert [m.name for m in resolve(list(names))] == list(names)
     for required in ("log_score", "log_score_mixture", "crps", "pit_coverage", "rmse", "mae", "aic", "bic"):
         assert required in available()

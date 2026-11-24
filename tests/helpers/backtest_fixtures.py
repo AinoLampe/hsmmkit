@@ -8,15 +8,15 @@ windows (260..440 rows) and filter windows (<= 494 rows) all pad to 512 rows.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 from ruamel.yaml import YAML
 
-from regimekit.config.schema import ProjectConfig
 from regimekit.config.yaml_io import load_config
 from regimekit.data.contracts import CovariateSeries, ObservationSet
+from regimekit.finance import FinanceConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 _YAML = YAML(typ="safe")
@@ -85,7 +85,7 @@ def make_config(
     initial_train: int = 260,
     refit_every: int = 60,
     sharp: bool = False,
-) -> ProjectConfig:
+) -> FinanceConfig:
     """The shared 2-regime steps-clock config; `with_covariate` adds `signal` as an emission drift covariate.
 
     `sharp` fixes the drift at the truth and tightens the
@@ -174,4 +174,4 @@ def make_config(
     path = tmp_path / "config.yaml"
     with path.open("w", encoding="utf-8") as fh:
         _YAML.dump(cfg, fh)
-    return load_config(path)
+    return cast(FinanceConfig, load_config(path, FinanceConfig))

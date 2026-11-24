@@ -19,6 +19,7 @@ from regimekit.config.yaml_io import load_config
 from regimekit.data.contracts import BoundaryConstraints, CovariateSeries, ObservationSet, PreparedDataset
 from regimekit.data.prepare import Preparer, prep_stats_from_json
 from regimekit.data.quality import build_quality_report
+from regimekit.finance import FinanceConfig
 from regimekit.persistence.results import read_prepared, write_prepared
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -275,7 +276,7 @@ def test_e2_t08_pinned_snapshot_replays_primary_only_run(tmp_path: Path) -> None
     config = _write_csv_project(
         tmp_path, data__covariates=[], model__transition__covariates=[], model__duration__covariates=[]
     )
-    cfg = load_config(config)
+    cfg = load_config(config, FinanceConfig)
     assert cfg.data.covariates == []
     assert _fetch(config, tmp_path / "a").exit_code == 0
     sid = json.loads((tmp_path / "a" / "snapshots.json").read_text(encoding="utf-8"))["primary"][
@@ -300,7 +301,7 @@ def test_e2_t08_pinned_snapshot_replays_primary_only_run(tmp_path: Path) -> None
 
 
 def _prepared(clock: str = "trading") -> PreparedDataset:
-    cfg = load_config(FIXTURES / "configs" / "appendix_a.yaml").data
+    cfg = load_config(FIXTURES / "configs" / "appendix_a.yaml", FinanceConfig).data
     cfg = cfg.model_copy(update={"clock": clock})
     dates = pd.bdate_range("2021-01-04", periods=120)
     times = dates.to_numpy(dtype="datetime64[ns]")
@@ -395,7 +396,7 @@ def test_e2_t08_quota_providers_keep_quota_in_cache_dir(tmp_path: Path) -> None:
     """stooq/tiingo are built with `quota_dir` = the cache directory (no network at construction)."""
     from regimekit.project import make_provider as _make_provider
 
-    data = load_config(_write_csv_project(tmp_path)).data
+    data = load_config(_write_csv_project(tmp_path), FinanceConfig).data
     cache_dir = Path(data.cache.dir).expanduser()
     stooq = _make_provider("stooq", data, tmp_path)
     assert stooq._quota_file == cache_dir / "stooq_quota.json"  # type: ignore[attr-defined]

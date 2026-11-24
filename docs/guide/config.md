@@ -13,19 +13,18 @@ Types use the schema's own names; `required` marks fields without a default. Glo
 
 ## `(top level)`
 
-The whole resolved regimekit configuration.
+The whole resolved configuration of the finance application (schema version 2).
 
 | Field | Type | Default |
 |---|---|---|
-| `schema_version` | `int` | `1` |
-| `profile` | `'core' \| 'finance'` | `'finance'` |
+| `schema_version` | `int` | `2` |
 | `project` | `ProjectSection` | required |
-| `data` | `DataSection` | required |
-| `model` | `ModelSection` | required |
+| `data` | `FinanceDataSection` | required |
+| `model` | `FinanceModelSection` | required |
 | `estimation` | `EstimationSection` | required |
 | `forecast` | `ForecastSection` | required |
-| `evaluation` | `EvaluationSection` | required |
-| `output` | `OutputSection` | required |
+| `evaluation` | `FinanceEvaluationSection` | required |
+| `output` | `FinanceOutputSection` | required |
 | `warnings` | `list[str]` | `[]` |
 
 ## `project`
@@ -41,20 +40,20 @@ The whole resolved regimekit configuration.
 
 ## `data`
 
-`data:` — provider, clock, cache, covariates, preparation.
+`data:` of the finance application: provider source, trading clock, cache.
 
 | Field | Type | Default |
 |---|---|---|
-| `primary` | `PriceSource` | required |
-| `clock` | `'trading' \| 'calendar' \| 'steps'` | `'trading'` |
-| `bars_per_day` | `int` | `1` |
+| `source` | `SourceCfg` | required |
+| `clock` | `str` | `'trading'` |
+| `clock_options` | `dict[str, Any]` | `{}` |
+| `covariates` | `list[FinanceCovariateCfg]` | `[]` |
+| `preparation` | `FinancePrepCfg` | section defaults |
 | `cache` | `CacheCfg` | section defaults |
-| `covariates` | `list[CovariateCfg]` | `[]` |
-| `preparation` | `PrepCfg` | section defaults |
 
 ## `model`
 
-`model:` — state count, engine, initial-distribution mode, families, lattice.
+`model:` with finance parameter configs.
 
 | Field | Type | Default |
 |---|---|---|
@@ -62,8 +61,8 @@ The whole resolved regimekit configuration.
 | `engine` | `'expanded' \| 'explicit'` | `'expanded'` |
 | `d_max` | `int \| None` | `None` |
 | `initial_state` | `'uniform' \| 'stationary' \| 'free'` | `'uniform'` |
-| `emission` | `EmissionCfg` | required |
-| `duration` | `DurationCfg` | required |
+| `emission` | `FinanceEmissionCfg` | required |
+| `duration` | `FinanceDurationCfg` | required |
 | `transition` | `TransitionCfg` | required |
 | `lattice` | `LatticeCfg \| None` | `None` |
 
@@ -78,7 +77,7 @@ The whole resolved regimekit configuration.
 | `tol_f` | `float` | `1e-09` |
 | `tol_g` | `float` | `1e-06` |
 | `restarts` | `int` | `8` |
-| `init` | `list['rollvol_kmeans' \| 'lattice_jitter' \| 'random']` | `[]` |
+| `init` | `list[str]` | `[]` |
 | `use_priors` | `bool` | `True` |
 | `std_errors` | `bool` | `False` |
 | `device` | `'cpu' \| 'gpu' \| 'auto'` | `'auto'` |
@@ -98,36 +97,56 @@ The whole resolved regimekit configuration.
 
 ## `evaluation`
 
-`evaluation:` — metrics, backtest scheme, optional strategy/labels.
+`evaluation:` plus the optional trading strategy.
 
 | Field | Type | Default |
 |---|---|---|
 | `metrics` | `list[str]` | required |
 | `backtest` | `BacktestCfg` | required |
-| `strategy` | `StrategyCfg \| None` | `None` |
 | `labels` | `LabelSource \| None` | `None` |
+| `strategy` | `StrategyCfg \| None` | `None` |
 
 ## `output`
 
-`output:` — which artifacts to write.
+`output:` plus the `strategy` file.
 
 | Field | Type | Default |
 |---|---|---|
-| `write` | `list['posterior' \| 'forecast' \| 'backtest' \| 'strategy' \| 'report']` | required |
+| `write` | `list[str]` | required |
 
-## `data.primary`
+## `data.source`
 
-`data.primary:` — the primary price series to fetch.
+`data.source:` — where the observations come from.
 
 | Field | Type | Default |
 |---|---|---|
-| `provider` | `str` | required |
-| `symbols` | `list[str]` | required |
-| `interval` | `'1h' \| '1d' \| '1wk' \| '1mo'` | required |
-| `start` | `str` | required |
-| `end` | `str \| None` | `None` |
-| `adjusted` | `bool` | `True` |
-| `field` | `str` | `'close'` |
+| `kind` | `str` | required |
+
+## `data.covariates`
+
+A covariate fetched from a data provider (`source: {kind: provider, provider, series}`).
+
+| Field | Type | Default |
+|---|---|---|
+| `name` | `str` | required |
+| `source` | `SourceCfg \| None` | `None` |
+| `column` | `str \| None` | `None` |
+| `transform` | `list['log' \| 'diff' \| 'pct' \| 'zscore']` | `[]` |
+| `lag` | `int` | required |
+| `missing` | `'ffill' \| 'drop' \| 'error'` | `'ffill'` |
+| `max_staleness` | `int` | `5` |
+| `use_in` | `list['transition' \| 'duration' \| 'emission']` | required |
+
+## `data.preparation`
+
+Finance preparation defaults: log-returns of the prices, rows with a missing price dropped.
+
+| Field | Type | Default |
+|---|---|---|
+| `observation_transform` | `str \| None` | `'log_returns'` |
+| `standardize_observations` | `bool` | `False` |
+| `standardize_covariates` | `bool` | `True` |
+| `missing_observations` | `'mask' \| 'drop' \| 'error'` | `'drop'` |
 
 ## `data.cache`
 
@@ -139,51 +158,27 @@ The whole resolved regimekit configuration.
 | `snapshot` | `str` | `'latest'` |
 | `max_age_days` | `int` | `1` |
 
-## `data.covariates`
-
-`data.covariates[]:` — one covariate series and how it enters the model.
-
-| Field | Type | Default |
-|---|---|---|
-| `name` | `str` | required |
-| `provider` | `str` | required |
-| `series` | `str` | required |
-| `transform` | `list['log' \| 'diff' \| 'pct' \| 'zscore']` | `[]` |
-| `lag` | `int` | required |
-| `missing` | `'ffill' \| 'drop' \| 'error'` | `'ffill'` |
-| `max_staleness` | `int` | `5` |
-| `use_in` | `list['transition' \| 'duration' \| 'emission']` | required |
-
-## `data.preparation`
-
-`data.preparation:` — return/covariate preparation settings.
-
-| Field | Type | Default |
-|---|---|---|
-| `returns` | `'log'` | `'log'` |
-| `standardize_covariates` | `bool` | `True` |
-| `missing_returns` | `'drop' \| 'error'` | `'drop'` |
-
 ## `model.emission`
 
-`model.emission:` — emission family, per-parameter configs, covariate links.
+`model.emission:` with finance parameter configs.
 
 | Field | Type | Default |
 |---|---|---|
-| `family` | `'gbm' \| 'student_t'` | required |
-| `params` | `dict[str, ParamCfg]` | required |
+| `family` | `str` | required |
+| `params` | `dict[str, FinanceParamCfg]` | required |
 | `covariates` | `EmissionCovariates` | section defaults |
+| `scale_by_dt` | `bool \| None` | `None` |
 | `per_series` | `bool` | `True` |
 
 ## `model.duration`
 
-`model.duration:` — duration family, minimum sojourns, per-parameter configs.
+`model.duration:` with finance parameter configs.
 
 | Field | Type | Default |
 |---|---|---|
-| `family` | `'geometric' \| 'negbin' \| 'poisson' \| 'gamma' \| 'weibull' \| 'lognormal' \| 'nonparametric'` | required |
+| `family` | `str` | required |
 | `r` | `list[int] \| None` | `None` |
-| `params` | `dict[str, ParamCfg]` | required |
+| `params` | `dict[str, FinanceParamCfg]` | required |
 | `covariates` | `list[str]` | `[]` |
 | `duration_covariates_at_entry` | `bool` | `False` |
 
@@ -214,7 +209,7 @@ The whole resolved regimekit configuration.
 
 | Field | Type | Default |
 |---|---|---|
-| `type` | `'freeze' \| 'scenario' \| 'bootstrap' \| 'ar'` | required |
+| `type` | `str` | required |
 | `mean_block_length` | `int \| None` | `None` |
 | `diagonal` | `bool \| None` | `None` |
 | `path` | `str \| None` | `None` |
@@ -226,12 +221,22 @@ The whole resolved regimekit configuration.
 | Field | Type | Default |
 |---|---|---|
 | `scheme` | `'expanding' \| 'rolling'` | required |
-| `initial_train_years` | `float` | required |
-| `rolling_years` | `float \| None` | `None` |
+| `initial_train` | `float \| None` | `None` |
+| `initial_train_steps` | `int \| None` | `None` |
+| `rolling_window` | `float \| None` | `None` |
+| `rolling_window_steps` | `int \| None` | `None` |
 | `refit_every_steps` | `int` | required |
 | `horizons` | `list[int]` | required |
 | `embargo_steps` | `int` | `0` |
 | `n_sim` | `int \| None` | `None` |
+
+## `evaluation.labels`
+
+`evaluation.labels:` — an optional external ground-truth regime label source.
+
+| Field | Type | Default |
+|---|---|---|
+| `path` | `str` | required |
 
 ## `evaluation.strategy`
 
@@ -246,29 +251,21 @@ The whole resolved regimekit configuration.
 | `cap` | `float` | `1.0` |
 | `allow_short` | `bool` | `False` |
 
-## `evaluation.labels`
-
-`evaluation.labels:` — an optional external ground-truth regime label source.
-
-| Field | Type | Default |
-|---|---|---|
-| `path` | `str` | required |
-
 ## `model.emission.params`
 
-A single (possibly per-state) parameter's estimation mode and initialization.
+A parameter config that may state its initial mean sojourn in days.
 
 | Field | Type | Default |
 |---|---|---|
 | `mode` | `'free' \| 'fixed' \| 'tied' \| 'bounded' \| 'prior'` | required |
 | `values` | `list[float] \| None` | `None` |
 | `init` | `list[float] \| None` | `None` |
-| `init_mean_sojourn_days` | `list[float] \| None` | `None` |
 | `init_mean_sojourn_steps` | `list[float] \| None` | `None` |
 | `bounds` | `tuple[float, float] \| None` | `None` |
 | `constraint` | `'none' \| 'increasing'` | `'none'` |
 | `prior` | `PriorCfg \| None` | `None` |
 | `tie` | `str \| None` | `None` |
+| `init_mean_sojourn_days` | `list[float] \| None` | `None` |
 
 ## `model.emission.covariates`
 

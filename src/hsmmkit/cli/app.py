@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import typer
 
@@ -15,7 +16,7 @@ from regimekit.config.yaml_io import export_json_schema, load_config
 from regimekit.data.contracts import PreparedDataset
 from regimekit.estimation.selftest import SelftestResult
 from regimekit.persistence.results import read_prepared
-from regimekit.project import Project, apply_overrides, check_simulate_args
+from regimekit.project import FinanceConfig, Project, apply_overrides, check_simulate_args
 from regimekit.utils.errors import EXIT_CODES, DataError, NumericalError, RegimekitError
 from regimekit.utils.jax_setup import setup as jax_setup
 from regimekit.utils.logging import configure_logging, get_logger
@@ -74,7 +75,7 @@ def _exit_on_error() -> Iterator[None]:
 
 def _project(config_path: Path, *, logging: bool = True) -> Project:
     """Load `config_path`, apply the global options, configure logging, and wrap it in a `Project`."""
-    config = load_config(config_path)
+    config = cast(FinanceConfig, load_config(config_path, FinanceConfig))
     apply_overrides(config, _global_overrides(_global_options))
     if logging:
         configure_logging(config.project.log_level)
@@ -108,8 +109,8 @@ def validate_config_cmd(config_path: Path) -> None:
 
 @app.command("config-schema")
 def config_schema_cmd(out_path: Path) -> None:
-    """Write `ProjectConfig`'s JSON-Schema to `out_path`."""
-    export_json_schema(out_path)
+    """Write the JSON-Schema of the configuration to `out_path`."""
+    export_json_schema(out_path, FinanceConfig)
 
 
 @app.command("fetch")

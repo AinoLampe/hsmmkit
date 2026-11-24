@@ -12,6 +12,7 @@ import pytest
 
 from regimekit.config.schema import EmissionCfg, LatticeCfg, ParamCfg
 from regimekit.config.yaml_io import load_config
+from regimekit.finance import FinanceConfig
 from regimekit.model.duration.geometric import GeometricDuration
 from regimekit.model.emission.gbm import GBMFamily
 from regimekit.model.lattice import (
@@ -74,7 +75,7 @@ def test_e3_t06_bad_grids_raise_with_path(grids: dict[str, list[float]], needle:
 
 def test_e3_t06_validate_lattice_checks_n_states_equals_product() -> None:
     """`validate_lattice` passes for a matching product, raises for a mismatch, ignores no-lattice configs."""
-    cfg = load_config(APPENDIX_A)
+    cfg = load_config(APPENDIX_A, FinanceConfig)
     validate_lattice(cfg)  # Appendix A has no lattice
     good = cfg.model_copy(
         update={

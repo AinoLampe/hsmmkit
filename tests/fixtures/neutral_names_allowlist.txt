@@ -1,14 +1,6 @@
 # Neutral-name allow-list (E10-T01). Format: path:term  # ticket that removes the entry.
 # Paths are relative to src/regimekit. The list only shrinks; E10-T07b deletes it.
 cli/app.py:strategy  # E10-T07b
-config/schema.py:bars_per_day  # E10-T02b
-config/schema.py:price  # E10-T02b
-config/schema.py:provider  # E10-T02b
-config/schema.py:returns  # E10-T02b
-config/schema.py:strategy  # E10-T02b
-config/schema.py:symbol  # E10-T02b
-config/schema.py:trading  # E10-T02b
-config/yaml_io.py:provider  # E10-T02b
 data/cache.py:price  # E10-T04b
 data/cache.py:provider  # E10-T04b
 data/cache.py:symbol  # E10-T04b

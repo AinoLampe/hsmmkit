@@ -27,3 +27,13 @@ that names both provenances; an unknown name raises a `ConfigError` listing ever
 
 Registration happens when the defining module is imported. Reading the registry never writes, so no locking is
 needed. Extensions register components; they do not patch core objects.
+
+## Configuration versions
+
+The core configuration (`regimekit.config.schema.ProjectConfig`) has no finance vocabulary. The finance
+application uses `regimekit.finance.FinanceConfig`, schema version 2: the source of the observations is
+`data.source` (`kind: provider` plus the provider options), the clock options are `data.clock_options`
+(`bars_per_day`), and the preparation keys are `observation_transform` and `missing_observations`. Version-1
+files (with `profile`, `data.primary`, `bars_per_day`, `initial_train_years`, ...) are migrated automatically
+when loaded; the resolved dump written next to a run is always version 2. Applications extend the core schema
+by subclassing its sections and registering migrations per `SCHEMA_ID` (ADR-0016).

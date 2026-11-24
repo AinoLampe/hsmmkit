@@ -8,7 +8,8 @@ from typing import Any
 import numpy as np
 from ruamel.yaml import YAML
 
-from regimekit.config.schema import ProjectConfig
+from regimekit.finance import FinanceConfig
+from tests.helpers.finance_config import parse_v1
 
 APPENDIX_A = Path(__file__).resolve().parents[1] / "fixtures" / "configs" / "appendix_a.yaml"
 
@@ -19,7 +20,7 @@ MEAN_SOJOURN_DAYS = (60.0, 30.0)
 
 def two_series_config(
     *, per_series: bool = True, family: str = "gbm", symbols: tuple[str, ...] = ("A", "B")
-) -> ProjectConfig:
+) -> FinanceConfig:
     """A valid 2-regime, `len(symbols)`-series config: negbin durations, no covariates, free `mu`/`sigma`."""
     raw: dict[str, Any] = YAML(typ="safe").load(APPENDIX_A.read_text(encoding="utf-8"))
     raw["data"]["primary"]["symbols"] = list(symbols)
@@ -55,4 +56,4 @@ def two_series_config(
     model["transition"] = {"mode": "jump", "order": 1, "covariates": []}
     raw["evaluation"]["metrics"] = ["log_score", "bic"]
     raw["evaluation"]["strategy"] = {"type": "regime_long_flat", "flat_if": {"regime": 0}, "cost_bps": 5}
-    return ProjectConfig.model_validate(raw)
+    return parse_v1(raw)

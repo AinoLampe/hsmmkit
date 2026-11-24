@@ -14,6 +14,7 @@ from regimekit.config.schema import EstimationSection, ProjectConfig
 from regimekit.config.yaml_io import dump_resolved, export_json_schema, load_config
 from regimekit.engine import explicit_duration
 from regimekit.engine.explicit_duration import ExplicitDurationEngine, _forward_backward_core
+from regimekit.finance import FinanceConfig
 from regimekit.utils.errors import ConfigError
 from tests.helpers.engine_fixtures import make_explicit_scenario
 
@@ -130,18 +131,18 @@ def test_e4_t06b_chunk_size_config_default_and_validation() -> None:
     assert EstimationSection(chunk_size=64).chunk_size == 64
     with pytest.raises(ValueError, match="greater than or equal to 1"):
         EstimationSection(chunk_size=0)
-    assert isinstance(load_config(FIXTURES / "appendix_a.yaml"), ProjectConfig)
+    assert isinstance(load_config(FIXTURES / "appendix_a.yaml", FinanceConfig), ProjectConfig)
 
 
 def test_e4_t06b_chunk_size_in_json_schema_and_resolved_dump(tmp_path: Path) -> None:
     """The JSON Schema lists `chunk_size` and the resolved dump writes the defaulted value."""
     schema_path = tmp_path / "schema.json"
-    export_json_schema(schema_path)
+    export_json_schema(schema_path, FinanceConfig)
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     props = schema["$defs"]["EstimationSection"]["properties"]
     assert "chunk_size" in props
     assert {"type": "null"} in props["chunk_size"]["anyOf"]
 
     resolved = tmp_path / "config.resolved.yaml"
-    dump_resolved(load_config(FIXTURES / "appendix_a.yaml"), resolved)
+    dump_resolved(load_config(FIXTURES / "appendix_a.yaml", FinanceConfig), resolved)
     assert "chunk_size" in _YAML.load(resolved)["estimation"]

@@ -14,6 +14,7 @@ from ruamel.yaml import YAML
 
 from regimekit.config.schema import EstimationSection
 from regimekit.config.yaml_io import dump_resolved, export_json_schema, load_config
+from regimekit.finance import FinanceConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "configs"
@@ -56,12 +57,12 @@ def test_e4_t07_parallel_scan_config_default_and_schema(tmp_path: Path) -> None:
     assert EstimationSection(parallel_scan=True).parallel_scan is True
 
     schema_path = tmp_path / "schema.json"
-    export_json_schema(schema_path)
+    export_json_schema(schema_path, FinanceConfig)
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     prop = schema["$defs"]["EstimationSection"]["properties"]["parallel_scan"]
     assert prop["type"] == "boolean"
     assert prop["default"] is False
 
     resolved = tmp_path / "config.resolved.yaml"
-    dump_resolved(load_config(FIXTURES / "appendix_a.yaml"), resolved)
+    dump_resolved(load_config(FIXTURES / "appendix_a.yaml", FinanceConfig), resolved)
     assert _YAML.load(resolved)["estimation"]["parallel_scan"] is False

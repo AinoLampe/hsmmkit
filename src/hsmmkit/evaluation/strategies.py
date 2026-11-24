@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import jax.numpy as jnp
 import numpy as np
@@ -26,11 +26,44 @@ import pandas as pd
 from regimekit.utils.errors import ConfigError, NumericalError
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import StrategyCfg
     from regimekit.inference.results import ForecastResult, PosteriorResult
     from regimekit.utils.typing import Array
 
 BPS = 1e-4  # one basis point as a fraction
+
+
+class StrategyCfg(Protocol):
+    """Structural type of the `evaluation.strategy` config section (defined by the finance application)."""
+
+    @property
+    def type(self) -> str:
+        """`regime_long_flat` or `regime_target_vol`."""
+        ...
+
+    @property
+    def flat_if(self) -> dict[str, Any] | None:
+        """Regimes in which the position is flat."""
+        ...
+
+    @property
+    def target_vol(self) -> float | None:
+        """Target volatility of `regime_target_vol`."""
+        ...
+
+    @property
+    def cost_bps(self) -> float:
+        """Transaction cost in basis points."""
+        ...
+
+    @property
+    def cap(self) -> float:
+        """Largest absolute position."""
+        ...
+
+    @property
+    def allow_short(self) -> bool:
+        """Whether `regime_target_vol` may go short."""
+        ...
 
 
 @runtime_checkable

@@ -9,6 +9,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from regimekit.finance.config import FinanceDurationCfg, FinanceParamCfg
 from regimekit.model.duration.base import broadcast_per_state, prior_from_cfg
 from regimekit.model.duration.geometric import GeometricDuration
 from regimekit.model.duration.negbin import NegBinDuration
@@ -125,10 +126,9 @@ def test_e3_t03_from_config_negbin_builds_specs() -> None:
 
 def test_e3_t03_from_config_init_mean_sojourn_days_rejected() -> None:
     """`init_mean_sojourn_days` is rejected here (needs `model/build.py`'s days->steps conversion)."""
-    schema = _cfg_module()
-    cfg = schema.DurationCfg(
+    cfg = FinanceDurationCfg(
         family="geometric",
-        params={"rate": schema.ParamCfg(mode="free", init_mean_sojourn_days=[60.0])},
+        params={"rate": FinanceParamCfg(mode="free", init_mean_sojourn_days=[60.0])},
         covariates=[],
     )
     with pytest.raises(ConfigError):

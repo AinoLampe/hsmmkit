@@ -74,11 +74,13 @@ def schedule_folds(times: np.ndarray, dt: np.ndarray, cfg: BacktestCfg, max_hori
     """The fold table for a grid of `T` rows.
 
     The initial training window is the shortest prefix whose elapsed time `cumsum(dt)` reaches
-    `initial_train_years`. Fold `k` has `train_end = initial_end + k * refit_every_steps`,
+    `initial_train` (clock units; or the first `initial_train_steps` rows). Fold `k` has
+    `train_end = initial_end + k * refit_every_steps`,
     `test_start = train_end + embargo_steps` and
     `test_end = min(test_start + refit_every_steps, T - max_horizon)`, so every origin has
     `max_horizon` realized future rows. `expanding` folds start at row 0; `rolling` folds start at the
-    latest row whose window still spans `rolling_years` (constant length up to one step). Folds with an
+    latest row whose window still spans `rolling_window` (or `rolling_window_steps` rows; constant
+    length up to one step). Folds with an
     empty test range are dropped.
 
     Args:
@@ -88,7 +90,7 @@ def schedule_folds(times: np.ndarray, dt: np.ndarray, cfg: BacktestCfg, max_hori
         max_horizon: largest forecast horizon (`max(cfg.horizons)`).
 
     Raises:
-        ConfigError: invalid backtest settings, `initial_train_years` longer than the data span, a
+        ConfigError: invalid backtest settings, `initial_train` longer than the data span, a
             rolling window longer than the initial window, or no fold left.
         DataError: `times` and `dt` disagree in length or `dt` is not positive.
     """
@@ -99,22 +101,42 @@ def schedule_folds(times: np.ndarray, dt: np.ndarray, cfg: BacktestCfg, max_hori
     _check_cfg(cfg, max_horizon)
 
     elapsed = np.cumsum(dt)
-    if elapsed[-1] < cfg.initial_train_years - _YEARS_TOL:
-        raise ConfigError(
-            f"initial_train_years={cfg.initial_train_years} exceeds the data span of {elapsed[-1]:.4g}",
-            path="evaluation.backtest.initial_train_years",
-        )
-    initial_end = int(np.searchsorted(elapsed, cfg.initial_train_years - _YEARS_TOL, side="left")) + 1
-
-    if cfg.scheme == "rolling":
-        if cfg.rolling_years is None or cfg.rolling_years <= 0:
+    if cfg.initial_train_steps is not None:  # the initial window given in rows
+        if cfg.initial_train_steps > n_rows:
             raise ConfigError(
-                "scheme 'rolling' requires rolling_years > 0", path="evaluation.backtest.rolling_years"
+                f"initial_train_steps={cfg.initial_train_steps} exceeds the {n_rows} grid rows",
+                path="evaluation.backtest.initial_train_steps",
             )
-        if cfg.rolling_years > cfg.initial_train_years + _YEARS_TOL:
+        initial_end = cfg.initial_train_steps
+        initial_len = float(elapsed[initial_end - 1])
+    else:
+        assert cfg.initial_train is not None
+        initial_len = cfg.initial_train
+        if elapsed[-1] < initial_len - _YEARS_TOL:
             raise ConfigError(
-                "rolling_years may not exceed initial_train_years (the first window could not be filled)",
-                path="evaluation.backtest.rolling_years",
+                f"initial_train={initial_len} exceeds the data span of {elapsed[-1]:.4g}",
+                path="evaluation.backtest.initial_train",
+            )
+        initial_end = int(np.searchsorted(elapsed, initial_len - _YEARS_TOL, side="left")) + 1
+
+    rolling_len: float | None = cfg.rolling_window
+    if cfg.scheme == "rolling":
+        if rolling_len is None and cfg.rolling_window_steps is None:
+            raise ConfigError(
+                "scheme 'rolling' requires rolling_window or rolling_window_steps",
+                path="evaluation.backtest.rolling_window",
+            )
+        if rolling_len is not None and rolling_len <= 0:
+            raise ConfigError("rolling_window must be > 0", path="evaluation.backtest.rolling_window")
+        if cfg.rolling_window_steps is not None and cfg.rolling_window_steps > initial_end:
+            raise ConfigError(
+                "rolling_window_steps may not exceed the initial window (it could not be filled)",
+                path="evaluation.backtest.rolling_window_steps",
+            )
+        if rolling_len is not None and rolling_len > initial_len + _YEARS_TOL:
+            raise ConfigError(
+                "rolling_window may not exceed initial_train (the first window could not be filled)",
+                path="evaluation.backtest.rolling_window",
             )
     cum0 = np.concatenate([[0.0], elapsed])  # cum0[e] - cum0[s] = elapsed time of rows [s, e)
 
@@ -130,10 +152,13 @@ def schedule_folds(times: np.ndarray, dt: np.ndarray, cfg: BacktestCfg, max_hori
         if cfg.scheme == "expanding":
             train_start = 0
         else:
-            assert cfg.rolling_years is not None
-            # the latest start whose window [s, train_end) still spans rolling_years
-            target = cum0[train_end] - cfg.rolling_years + _YEARS_TOL
-            train_start = max(int(np.searchsorted(cum0, target, side="right")) - 1, 0)
+            if cfg.rolling_window_steps is not None:
+                train_start = max(train_end - cfg.rolling_window_steps, 0)
+            else:
+                assert rolling_len is not None
+                # the latest start whose window [s, train_end) still spans rolling_window
+                target = cum0[train_end] - rolling_len + _YEARS_TOL
+                train_start = max(int(np.searchsorted(cum0, target, side="right")) - 1, 0)
         folds.append(Fold(len(folds), train_start, train_end, test_start, test_end))
         k += 1
 
@@ -151,8 +176,8 @@ def _check_cfg(cfg: BacktestCfg, max_horizon: int) -> None:
         raise ConfigError("refit_every_steps must be >= 1", path="evaluation.backtest.refit_every_steps")
     if cfg.embargo_steps < 0:
         raise ConfigError("embargo_steps must be >= 0", path="evaluation.backtest.embargo_steps")
-    if cfg.initial_train_years <= 0:
-        raise ConfigError("initial_train_years must be > 0", path="evaluation.backtest.initial_train_years")
+    if cfg.initial_train is not None and cfg.initial_train <= 0:
+        raise ConfigError("initial_train must be > 0", path="evaluation.backtest.initial_train")
     if max_horizon < 1 or (cfg.horizons and max_horizon < max(cfg.horizons)):
         raise ConfigError(
             f"max_horizon={max_horizon} must be >= 1 and cover horizons {cfg.horizons}",
@@ -313,7 +338,12 @@ def run_backtest(
             )
         forecaster = make_forecaster(cfg.forecast.covariate_forecaster)
     mc = MonteCarloForecaster(
-        spec, space, engine, forecaster, cfg.forecast, bars_per_day=cfg.data.bars_per_day
+        spec,
+        space,
+        engine,
+        forecaster,
+        cfg.forecast,
+        bars_per_day=int(cfg.data.clock_option("bars_per_day", 1)),
     )
 
     origin_rows: list[OriginRow] = []
@@ -378,7 +408,7 @@ def run_backtest(
                 horizons=horizons,
                 n_sim=n_sim,
                 seed=seed,
-                bars_per_day=cfg.data.bars_per_day,
+                bars_per_day=int(cfg.data.clock_option("bars_per_day", 1)),
                 strategy=strategy,
             )
             origin_rows += rows
@@ -483,7 +513,8 @@ def _strategy_trace(
         raise DataError(
             "the strategy recorded no position: every origin's next return is missing", path="data"
         )
-    cost_bps = cfg.evaluation.strategy.cost_bps if cfg.evaluation.strategy is not None else 0.0
+    strategy_cfg = getattr(cfg.evaluation, "strategy", None)  # the finance evaluation section adds it
+    cost_bps = strategy_cfg.cost_bps if strategy_cfg is not None else 0.0
     rows = np.asarray([o + 1 for _, o, _ in decisions], dtype=np.int64)
     return strategy_trace(
         np.asarray(grid.times)[rows],

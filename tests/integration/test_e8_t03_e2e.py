@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 from examples.synthetic import write_offline_project
 from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
+from regimekit.finance import FinanceConfig
 from regimekit.persistence.store import FILES
 
 _runner = CliRunner()
@@ -33,7 +34,7 @@ def flow(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path, Path]:
     work = tmp_path_factory.mktemp("e8t03")
     config = write_offline_project(work, DAX)
     out = work / "runs"
-    name = load_config(config).project.name
+    name = load_config(config, FinanceConfig).project.name
     model = out / f"{name}.rkmodel"
     steps = [
         ("validate-config", str(config)),
@@ -55,7 +56,7 @@ def flow(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path, Path]:
 
 def test_e8_t03_example_configs_are_valid_and_differ_in_the_index() -> None:
     """Both shipped example configs load; they are Appendix A with `^GDAXI` and `^GSPC`."""
-    dax, spx = load_config(DAX), load_config(SPX)
+    dax, spx = load_config(DAX, FinanceConfig), load_config(SPX, FinanceConfig)
     assert dax.data.primary.symbols == ["^GDAXI"]
     assert spx.data.primary.symbols == ["^GSPC"]
     assert dax.model == spx.model
@@ -81,7 +82,7 @@ def test_e8_t03_offline_flow_writes_every_artifact(flow: tuple[Path, Path, Path]
 def test_e8_t03_two_fits_give_bitwise_equal_params(flow: tuple[Path, Path, Path], tmp_path: Path) -> None:
     """AC2: a second `fit` of the same config and seed (42) writes byte-identical `params.safetensors`."""
     config, _, model = flow
-    assert load_config(config).project.seed == 42
+    assert load_config(config, FinanceConfig).project.seed == 42
     again = tmp_path / "again"
     result = _cli("--out", str(again), "fit", str(config))
     assert result.exit_code == 0, result.output

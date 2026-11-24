@@ -21,6 +21,7 @@ from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.estimation.map import fit
 from regimekit.estimation.objective import canonical_data
 from regimekit.estimation.results import FitResult
+from regimekit.finance import FinanceConfig
 from regimekit.model.build import build_model_spec
 from regimekit.model.params.manager import ParamManager
 from regimekit.model.spec import ModelSpec
@@ -98,7 +99,7 @@ def test_e8_t01_round_trip_is_bitwise_for_params_and_loglik(
         else _fitted(tmp_path, covariate=variant == "covariate", negbin=variant == "negbin")
     )
     path = ModelStore.save(source.fit, tmp_path / "m.rkmodel", source.cfg, source.data)
-    back = ModelStore.load(path)
+    back = ModelStore.load(path, FinanceConfig)
 
     assert set(back.params) == set(source.fit.params)
     for name, value in source.fit.params.items():
@@ -127,7 +128,7 @@ def test_e8_t01_load_does_not_need_data_and_rebuilds_the_covariate_split(tmp_pat
     spec_json = json.loads((path / "spec.json").read_text(encoding="utf-8"))
     assert spec_json["build_inputs"]["cov_names"]["emission"] == ["signal"]
     assert any(p["name"] == "emission.gamma" for p in spec_json["params"])
-    back = ModelStore.load(path)
+    back = ModelStore.load(path, FinanceConfig)
     assert "emission.gamma" in back.params
     _assert_same_structure(back.spec, source.fit.spec)
 
@@ -169,7 +170,7 @@ def test_e8_t01_bundle_has_all_files_with_the_documented_keys(plain: Fitted, bun
         assert key in spec_json, key
     assert spec_json["emission"]["family"] == "gbm"
     assert spec_json["duration"]["class"] == "GeometricDuration"
-    assert load_config(bundle / "config.resolved.yaml").model_dump() == plain.cfg.model_dump()
+    assert load_config(bundle / "config.resolved.yaml", FinanceConfig).model_dump() == plain.cfg.model_dump()
     snapshots = json.loads((bundle / "snapshots.json").read_text(encoding="utf-8"))
     assert snapshots["snapshot_ids"] == list(plain.data.snapshot_ids)
     report = json.loads((bundle / "fit_report.json").read_text(encoding="utf-8"))
@@ -184,7 +185,7 @@ def test_e8_t01_an_unregistered_profile_is_rejected_by_name(bundle: Path) -> Non
     manifest["profile"] = "quantum"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(PersistenceError, match="quantum"):
-        ModelStore.load(bundle)
+        ModelStore.load(bundle, FinanceConfig)
 
 
 # --- AC3 -----------------------------------------------------------------------------------------
@@ -197,7 +198,7 @@ def test_e8_t01_a_newer_bundle_version_is_refused(bundle: Path) -> None:
     manifest["bundle_version"] = BUNDLE_VERSION + 1
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(PersistenceError, match="newer"):
-        ModelStore.load(bundle)
+        ModelStore.load(bundle, FinanceConfig)
 
 
 def test_e8_t01_a_parameter_with_the_wrong_shape_is_reported_by_name(bundle: Path) -> None:
@@ -206,7 +207,7 @@ def test_e8_t01_a_parameter_with_the_wrong_shape_is_reported_by_name(bundle: Pat
     arrays["emission.sigma"] = np.concatenate([arrays["emission.sigma"], [0.5]])
     save_file(arrays, str(bundle / "params.safetensors"))
     with pytest.raises(PersistenceError, match=r"emission\.sigma") as err:
-        ModelStore.load(bundle)
+        ModelStore.load(bundle, FinanceConfig)
     assert err.value.path == "emission.sigma"
 
 
@@ -216,7 +217,7 @@ def test_e8_t01_theta_that_disagrees_with_u_is_refused(bundle: Path) -> None:
     arrays["emission.mu"] = arrays["emission.mu"] + 1e-6
     save_file(arrays, str(bundle / "params.safetensors"))
     with pytest.raises(PersistenceError, match=r"emission\.mu"):
-        ModelStore.load(bundle)
+        ModelStore.load(bundle, FinanceConfig)
 
 
 def test_e8_t01_missing_files_and_foreign_directories_are_persistence_errors(
@@ -227,7 +228,7 @@ def test_e8_t01_missing_files_and_foreign_directories_are_persistence_errors(
     shutil.copytree(bundle, broken)
     (broken / "fit_report.json").unlink()
     with pytest.raises(PersistenceError, match=r"fit_report\.json"):
-        ModelStore.load(broken)
+        ModelStore.load(broken, FinanceConfig)
 
     no_u = tmp_path / "no_u.rkmodel"
     shutil.copytree(bundle, no_u)
@@ -235,19 +236,21 @@ def test_e8_t01_missing_files_and_foreign_directories_are_persistence_errors(
     arrays.pop(U_KEY)
     save_file(arrays, str(no_u / "params.safetensors"))
     with pytest.raises(PersistenceError, match=U_KEY):
-        ModelStore.load(no_u)
+        ModelStore.load(no_u, FinanceConfig)
 
     with pytest.raises(PersistenceError):
-        ModelStore.load(tmp_path)
+        ModelStore.load(tmp_path, FinanceConfig)
     with pytest.raises(PersistenceError):
-        ModelStore.load(tmp_path / "nope.rkmodel")
+        ModelStore.load(tmp_path / "nope.rkmodel", FinanceConfig)
 
 
 def test_e8_t01_saving_over_an_existing_bundle_replaces_it(plain: Fitted, bundle: Path) -> None:
     """A second `save` into the same directory leaves a loadable bundle."""
     ModelStore.save(plain.fit, bundle, plain.cfg, plain.data)
-    assert np.array_equal(np.asarray(ModelStore.load(bundle).uparams), np.asarray(plain.fit.uparams))
-    assert jnp.asarray(ModelStore.load(bundle).uparams).dtype == jnp.float64
+    assert np.array_equal(
+        np.asarray(ModelStore.load(bundle, FinanceConfig).uparams), np.asarray(plain.fit.uparams)
+    )
+    assert jnp.asarray(ModelStore.load(bundle, FinanceConfig).uparams).dtype == jnp.float64
 
 
 def test_e8_t01_nan_parameters_round_trip_so_the_engine_can_report_them(
@@ -258,7 +261,7 @@ def test_e8_t01_nan_parameters_round_trip_so_the_engine_can_report_them(
     nan_u = jnp.full_like(manager.init_u(), jnp.nan)
     nan_fit = FitResult(**{**plain.fit.__dict__, "uparams": nan_u, "params": manager.unflatten(nan_u)})
     path = ModelStore.save(nan_fit, tmp_path / "nan.rkmodel", plain.cfg, plain.data)
-    back = ModelStore.load(path)
+    back = ModelStore.load(path, FinanceConfig)
     assert bool(jnp.all(jnp.isnan(back.uparams)))
 
 
@@ -281,7 +284,7 @@ def test_e8_t01_a_malformed_bundle_file_is_a_persistence_error_not_a_key_error(b
     del spec["build_inputs"]
     spec_path.write_text(json.dumps(spec), encoding="utf-8")
     with pytest.raises(PersistenceError, match="malformed"):
-        ModelStore.load(bundle)
+        ModelStore.load(bundle, FinanceConfig)
     (bundle / "manifest.json").write_text("[1, 2]", encoding="utf-8")
     with pytest.raises(PersistenceError):
-        ModelStore.load(bundle)
+        ModelStore.load(bundle, FinanceConfig)

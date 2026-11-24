@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.estimation.results import FitResult
+from regimekit.finance import FinanceConfig
 from regimekit.inference.decode import decode
 from regimekit.model.build import build_model_spec
 from regimekit.model.params.manager import ParamManager
@@ -33,7 +34,7 @@ def _empty_restarts() -> pd.DataFrame:
 
 def _write_model(config_path: Path, out_dir: Path, model_dir: Path, *, u: jnp.ndarray | None = None) -> None:
     """Build a `ModelSpec` from the resolved config + prepared data, write a model bundle."""
-    cfg = load_config(config_path)
+    cfg = load_config(config_path, FinanceConfig)
     dataset = read_prepared(out_dir / "prepared.parquet")
     spec = build_model_spec(cfg, dataset)
     manager = ParamManager(spec.param_specs)
@@ -75,7 +76,7 @@ def test_e6_t02_decode_writes_posterior_with_correct_shape_and_normalization(tmp
     assert result.exit_code == 0, result.output
 
     table = pd.read_parquet(out / "posterior.parquet")
-    n_states = load_config(config).model.n_states
+    n_states = load_config(config, FinanceConfig).model.n_states
     assert table.shape[1] == 2 * n_states + 2
     filtered_cols = [f"filtered_{i}" for i in range(n_states)]
     smoothed_cols = [f"smoothed_{i}" for i in range(n_states)]
@@ -145,7 +146,7 @@ def test_e6_t02_non_finite_loglik_exits_4(tmp_path: Path) -> None:
     out = tmp_path / "out"
     assert _fetch(config, out).exit_code == 0
     model_dir = tmp_path / "model"
-    cfg = load_config(config)
+    cfg = load_config(config, FinanceConfig)
     dataset = read_prepared(out / "prepared.parquet")
     spec = build_model_spec(cfg, dataset)
     manager = ParamManager(spec.param_specs)
@@ -166,11 +167,11 @@ def test_e6_t02_decode_api_matches_cli_output(tmp_path: Path) -> None:
     assert _decode(config, out, model_dir).exit_code == 0
 
     dataset = read_prepared(out / "prepared.parquet")
-    fit = ModelStore.load(model_dir)
+    fit = ModelStore.load(model_dir, FinanceConfig)
     api_result = decode(fit, dataset)
 
     table = pd.read_parquet(out / "posterior.parquet")
-    n_states = load_config(config).model.n_states
+    n_states = load_config(config, FinanceConfig).model.n_states
     np.testing.assert_allclose(
         table[[f"filtered_{i}" for i in range(n_states)]].to_numpy(),
         np.asarray(api_result.filtered),

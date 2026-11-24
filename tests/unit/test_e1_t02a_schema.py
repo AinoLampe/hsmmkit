@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 from ruamel.yaml import YAML
 
-from regimekit.config.schema import ProjectConfig, parse_project_config
 from regimekit.utils.errors import ConfigError
+from tests.helpers.finance_config import parse_v1 as parse_project_config
 
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "configs"
 _YAML = YAML(typ="safe")
@@ -36,9 +36,9 @@ def test_e1_t02a_appendix_a_parses_without_error(appendix_a: dict[str, Any]) -> 
 
 
 def test_e1_t02a_appendix_a_profile_and_clock_defaults(appendix_a: dict[str, Any]) -> None:
-    """The parsed model has `profile == 'finance'` and `data.clock == 'trading'` from defaults."""
+    """The migrated model has schema version 2 and `data.clock == 'trading'`."""
     config = parse_project_config(appendix_a)
-    assert config.profile == "finance"
+    assert config.schema_version == 2
     assert config.data.clock == "trading"
 
 
@@ -83,12 +83,12 @@ def test_e1_t02a_steps_clock_with_days_fails_on_param_cfg_path() -> None:
 
 
 def test_e1_t02a_bars_per_day_2_under_steps_fails() -> None:
-    """`bars_per_day: 2` under `clock: steps` fails with path `data.bars_per_day`."""
+    """`bars_per_day: 2` under `clock: steps` fails with path `data.clock_options.bars_per_day`."""
     data = copy.deepcopy(_load("steps_clock.yaml"))
     data["data"]["bars_per_day"] = 2
     with pytest.raises(ConfigError) as exc_info:
         parse_project_config(data)
-    assert exc_info.value.path == "data.bars_per_day"
+    assert exc_info.value.path == "data.clock_options.bars_per_day"
 
 
 # --- AC3: every validation rule has a failing fixture + ConfigError.path test ----------------
@@ -309,5 +309,5 @@ def test_e1_t02a_model_dump_round_trips(appendix_a: dict[str, Any]) -> None:
     """`ProjectConfig.model_dump()` round-trips through `model_validate` unchanged."""
     config = parse_project_config(appendix_a)
     dumped = config.model_dump(mode="json")
-    reloaded = ProjectConfig.model_validate(dumped)
+    reloaded = type(config).model_validate(dumped)
     assert reloaded == config

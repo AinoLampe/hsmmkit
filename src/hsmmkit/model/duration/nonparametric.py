@@ -77,7 +77,7 @@ class NonparametricDuration(ExplicitDurationBase):
                 "per-state values/init cannot describe an (N, D_max) pmf; use init_mean_sojourn_steps",
                 path="model.duration.params.logits",
             )
-        if pcfg.init_mean_sojourn_days is not None:
+        if getattr(pcfg, "init_mean_sojourn_days", None) is not None:
             raise ConfigError(
                 "init_mean_sojourn_days needs a clock-aware days->steps conversion (model/build.py); "
                 "pre-convert to init_mean_sojourn_steps",

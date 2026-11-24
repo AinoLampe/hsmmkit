@@ -11,7 +11,7 @@ Every emission and duration component receives the step size `\Delta_t` explicit
 
 | Clock | `\Delta_t` | Parameters are |
 |---|---|---|
-| `trading` | `1 / (252 H)` years, `H` = `data.bars_per_day` | annualized |
+| `trading` | `1 / (252 H)` years, `H` = `data.clock_options.bars_per_day` | annualized |
 | `calendar` | `(\tau_t - \tau_{t-1}) / 365.25` years | annualized |
 | `steps` | `1` | per step, never annualized |
 
@@ -48,4 +48,4 @@ spacing and `\Delta \equiv 1`.
 | `y_t` | `PreparedDataset.observations` `(T, M)`, with `mask` |
 | `z^\pi_t, z^d_t, z^e_t` | `cov_transition`, `cov_duration`, `cov_emission` `(T, K)` |
 | lag | `data.covariates[].lag` |
-| `H` | `data.bars_per_day` |
+| `H` | `data.clock_options.bars_per_day` |

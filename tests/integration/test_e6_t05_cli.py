@@ -18,6 +18,7 @@ from typer.testing import CliRunner
 from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine
+from regimekit.finance import FinanceConfig
 from regimekit.inference.covariate_forecasters import make_forecaster
 from regimekit.inference.forecast import MonteCarloForecaster
 from regimekit.inference.results import ForecastResult
@@ -115,9 +116,9 @@ def test_e6_t05_forecast_cli_matches_a_direct_library_call(tmp_path: Path) -> No
     )
     assert result.exit_code == 0, result.output
 
-    cfg = load_config(config)
+    cfg = load_config(config, FinanceConfig)
     dataset = read_prepared(out / "prepared.parquet")
-    fit = ModelStore.load(model_dir)
+    fit = ModelStore.load(model_dir, FinanceConfig)
     mc = MonteCarloForecaster(
         fit.spec,
         build_expanded(fit.spec),
@@ -197,7 +198,7 @@ def test_e6_t05_simulate_config_writes_1500_valid_rows(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
 
     table = pd.read_parquet(out / "simulation.parquet")
-    cfg = load_config(config)
+    cfg = load_config(config, FinanceConfig)
     assert len(table) == 1500
     assert set(table["path"]) == {0, 1, 2}
     assert table["regime"].between(0, cfg.model.n_states - 1).all()
@@ -288,8 +289,8 @@ def test_e6_t05_parquet_schemas_are_the_documented_ones(tmp_path: Path) -> None:
     ]
     forecast = pd.read_parquet(out / "forecast.parquet")
     assert set(forecast["kind"]) == {"regime_prob", "quantile", "mean", "var"}
-    n_states = load_config(config).model.n_states
-    n_quantiles = len(load_config(config).forecast.quantiles)
+    n_states = load_config(config, FinanceConfig).model.n_states
+    n_quantiles = len(load_config(config, FinanceConfig).forecast.quantiles)
     per_step = n_states + n_quantiles + 2
     assert len(forecast) == 3 * per_step
 
@@ -297,7 +298,7 @@ def test_e6_t05_parquet_schemas_are_the_documented_ones(tmp_path: Path) -> None:
 def test_e6_t05_scenario_values_reach_the_forecast(tmp_path: Path) -> None:
     """With non-trivial coefficients, different scenario paths give different forecasts (same seed)."""
     config, out, _ = _project(tmp_path)
-    cfg = load_config(config)
+    cfg = load_config(config, FinanceConfig)
     dataset = read_prepared(out / "prepared.parquet")
     manager = ParamManager(build_model_spec(cfg, dataset).param_specs)
     base_u = manager.init_u()
@@ -321,7 +322,7 @@ def test_e6_t05_scenario_without_covariates_is_a_config_error(tmp_path: Path) ->
     config, out, _ = _project(tmp_path)
     dataset = read_prepared(out / "prepared.parquet")
     bare = dataclasses.replace(dataset, prep_stats=dataclasses.replace(dataset.prep_stats, cov_names=()))
-    cfg = load_config(config)
+    cfg = load_config(config, FinanceConfig)
     assert _covariate_forecaster(cfg, tmp_path, bare, None) is None
     with pytest.raises(ConfigError):
         _covariate_forecaster(cfg, tmp_path, bare, tmp_path / "scenario.csv")

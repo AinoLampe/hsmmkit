@@ -186,7 +186,7 @@ def rate_spec_from_cfg(
             tie_group=rate_cfg.tie,
             constraint=rate_cfg.constraint,
         )
-    if rate_cfg.init_mean_sojourn_days is not None:
+    if getattr(rate_cfg, "init_mean_sojourn_days", None) is not None:
         raise ConfigError(
             "init_mean_sojourn_days needs a clock-aware days->steps conversion (model/build.py, "
             "CLAUDE.md §3.3); pre-convert to init_mean_sojourn_steps before DurationFamily.from_config",

@@ -10,11 +10,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regimekit.config.schema import CovariateCfg, DataSection, PrepCfg, PriceSource
+from regimekit.config.schema import SourceCfg
 from regimekit.config.yaml_io import load_config
 from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset, PrepStats
 from regimekit.data.prepare import Preparer, prep_stats_from_json, prep_stats_to_json
 from regimekit.data.transforms import apply_transforms, log_returns
+from regimekit.finance import FinanceConfig
+from regimekit.finance.config import FinanceCovariateCfg, FinanceDataSection, FinancePrepCfg
 from regimekit.utils.errors import ConfigError, DataError
 
 N_DAYS = 200
@@ -60,18 +62,25 @@ def _trend(seed: int = 1) -> np.ndarray:
     return 20.0 + np.linspace(0.0, 30.0, N_DAYS) + rng.normal(0.0, 1.0, N_DAYS)
 
 
+def _v2_cov(c: dict[str, Any]) -> dict[str, Any]:
+    """A Part I covariate dict (`provider`, `series`) in the version-2 layout (`source`)."""
+    c = dict(c)
+    c["source"] = {"kind": "provider", "provider": c.pop("provider"), "series": c.pop("series")}
+    return c
+
+
 def _cfg(
     covariates: list[dict[str, Any]] | None = None,
     *,
     clock: str = "trading",
     standardize: bool = True,
     missing_returns: str = "drop",
-) -> DataSection:
-    return DataSection(
-        primary=PriceSource(provider="csv", symbols=["X"], interval="1d", start="2021-01-04"),
+) -> FinanceDataSection:
+    return FinanceDataSection(
+        source=SourceCfg(kind="provider", provider="csv", symbols=["X"], interval="1d", start="2021-01-04"),
         clock=clock,  # type: ignore[arg-type]
-        covariates=[CovariateCfg(**c) for c in (covariates or [])],
-        preparation=PrepCfg(standardize_covariates=standardize, missing_returns=missing_returns),  # type: ignore[arg-type]
+        covariates=[FinanceCovariateCfg(**_v2_cov(c)) for c in (covariates or [])],
+        preparation=FinancePrepCfg(standardize_covariates=standardize, missing_observations=missing_returns),  # type: ignore[arg-type]
     )
 
 
@@ -428,7 +437,9 @@ def test_e2_t07_prep_stats_json_round_trip() -> None:
 
 def test_e2_t07_validate_passes_on_appendix_a() -> None:
     """AC4: the Appendix A data section yields a valid dataset (two FRED-like covariates)."""
-    cfg = load_config(Path(__file__).parents[1] / "fixtures" / "configs" / "appendix_a.yaml").data
+    cfg = load_config(
+        Path(__file__).parents[1] / "fixtures" / "configs" / "appendix_a.yaml", FinanceConfig
+    ).data
     vix = _trend()
     vix[[30, 31]] = np.nan  # FRED "." holidays
     covs = [_cov("VIXCLS", vix), _cov("T10Y2Y", np.sin(np.arange(N_DAYS) / 10.0))]
