@@ -22,6 +22,9 @@ CASSETTES = Path(__file__).resolve().parents[1] / "fixtures" / "cassettes" / "yf
 SYMBOL = "^GDAXI"
 
 
+pytestmark = pytest.mark.finance
+
+
 class CassetteDownloader:
     """Replays the recorded frames; unknown symbols come back empty, as yfinance does."""
 

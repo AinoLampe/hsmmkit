@@ -106,6 +106,7 @@ markers = [
   "live: network tests",
   "benchmark: pytest-benchmark",
   "gpu: requires GPU",
+  "finance: needs regimekit.finance or a finance provider package (excluded by the core-only job)",
 ]
 addopts = "-m 'not slow and not live and not benchmark and not gpu' --import-mode=importlib"
 

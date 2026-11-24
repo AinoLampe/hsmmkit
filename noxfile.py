@@ -46,6 +46,24 @@ def tests(session: nox.Session) -> None:
 
 
 @nox.session
+def core(session: nox.Session) -> None:
+    """Core suite with `regimekit.finance` and the provider packages blocked (`HSMM_CORE_ONLY=1`, E10-T01)."""
+    env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu", HSMM_CORE_ONLY="1")
+    session.run(
+        "uv",
+        "run",
+        "pytest",
+        "-m",
+        "not finance and not live and not slow and not benchmark and not gpu",
+        "-n",
+        "auto",
+        *session.posargs,
+        env=env,
+        external=True,
+    )
+
+
+@nox.session
 def recovery(session: nox.Session) -> None:
     """Full parameter-recovery suite (slow: six scenarios, ~4 h on a laptop; the weekly CI job)."""
     env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")

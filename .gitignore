@@ -29,6 +29,7 @@ dist/
 runs/
 *.parquet
 !tests/fixtures/**/*.parquet
+!tests/golden/**/*.parquet
 .cache/
 
 # Env

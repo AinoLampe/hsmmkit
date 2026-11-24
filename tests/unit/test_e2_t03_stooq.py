@@ -23,6 +23,9 @@ CASSETTE = Path(__file__).resolve().parents[1] / "fixtures" / "cassettes" / "sto
 KEY = "SECRET-KEY-123"
 
 
+pytestmark = pytest.mark.finance
+
+
 class CassetteDownloader:
     """Replays the recorded frame for `^dax`; other symbols come back empty, as stooq does."""
 

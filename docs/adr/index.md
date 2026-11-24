@@ -20,5 +20,6 @@ Part II, or raised during implementation) are added by the tickets that need the
 | [0011](0011-safetensors.md) | safetensors for the model bundle (new runtime dependency) |
 | [0012](0012-core-profile-split.md) | Core/profile split |
 | [0013](0013-three-clocks.md) | Three clocks, including `steps` |
+| [0014](0014-two-repo-split.md) | Two repositories: `hsmmkit` library and `regimekit` application (proposed) |
 | [0022](0022-in-scan-emissions.md) | Recurrent emissions (carry) and the annualization exception |
 | [0023](0023-endogenous-covariates.md) | Endogenous covariates as emission channels (proposed) |

@@ -1,0 +1,59 @@
+name: Golden
+
+# Short job (a few minutes) for the v0.2.0 golden values, so the long PR pipeline is not needed for them.
+#  - workflow_dispatch: run the golden test on a branch (`regenerate: false`), or regenerate the values on the
+#    runner and commit them to that branch (`regenerate: true`, owner approval required, CLAUDE.md 3.9).
+#  - push of `.github/golden-regen-request` on a non-main branch: same as `regenerate: true` (bootstrap, because
+#    a dispatch needs the workflow on the default branch); the first line of the file is the note.
+
+on:
+  workflow_dispatch:
+    inputs:
+      regenerate:
+        description: "Regenerate the golden values on this runner and commit them (owner approval needed)"
+        type: boolean
+        default: false
+      note:
+        description: "Why the values are regenerated (recorded in manifest.json)"
+        type: string
+        default: ""
+  push:
+    branches-ignore: [main]
+    paths: [".github/golden-regen-request"]
+
+permissions:
+  contents: write
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REGIMEKIT_TYPECHECK: "1"
+      JAX_PLATFORMS: cpu
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --all-groups
+      - name: Regenerate the golden values
+        if: github.event_name == 'push' || inputs.regenerate
+        env:
+          NOTE: ${{ inputs.note }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then NOTE="$(head -n 1 .github/golden-regen-request)"; fi
+          uv run python scripts/make_golden_v0_2_0.py --note "$NOTE"
+      - name: Golden test (recomputes the pipeline on this runner and compares bitwise)
+        run: uv run pytest tests/golden/test_e10_t01_v0_2_0.py -q -p no:cacheprovider
+      - name: Commit regenerated values
+        if: github.event_name == 'push' || inputs.regenerate
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/golden/v0_2_0
+          if git diff --cached --quiet; then echo "no change"; else
+            git commit -m "chore(golden): regenerate the v0.2.0 golden values on the CI runner [skip ci]"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi

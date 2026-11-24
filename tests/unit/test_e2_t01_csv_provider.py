@@ -27,6 +27,9 @@ from regimekit.utils.errors import ProviderError
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "csv"
 
 
+pytestmark = pytest.mark.finance
+
+
 @pytest.fixture
 def provider() -> CsvProvider:
     """Provider rooted at the synthetic CSV fixtures."""

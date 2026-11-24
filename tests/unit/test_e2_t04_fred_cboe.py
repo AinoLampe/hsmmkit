@@ -26,6 +26,9 @@ CASSETTES = Path(__file__).resolve().parents[1] / "fixtures" / "cassettes"
 KEY = "FRED-SECRET-KEY-42"
 
 
+pytestmark = pytest.mark.finance
+
+
 class FakeClock:
     """Monotonic clock whose `sleep` advances time and records every wait."""
 

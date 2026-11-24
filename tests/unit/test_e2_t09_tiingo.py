@@ -24,6 +24,9 @@ KEY = "TIINGO-SECRET-KEY-7"
 T0 = 1_719_792_000.0  # 2024-07-01T00:00:00Z
 
 
+pytestmark = pytest.mark.finance
+
+
 class WallClock:
     """Settable wall clock (epoch seconds)."""
 
