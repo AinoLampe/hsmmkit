@@ -15,12 +15,13 @@ import pandas as pd
 
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.estimation.init import lattice_jitter, observed_rows, random, rollvol_kmeans
+from regimekit.estimation.init import observed_rows
 from regimekit.estimation.objective import canonical_data, make_objective
 from regimekit.estimation.optimizers import minimize
 from regimekit.estimation.results import FitResult
 from regimekit.model.lattice import has_identifiability_guard, post_sort_states
 from regimekit.model.params.manager import ParamManager
+from regimekit.plugins import REGISTRY
 from regimekit.statespace.builders import build_expanded, build_explicit
 from regimekit.utils.errors import ConfigError, NumericalError
 from regimekit.utils.jax_setup import setup as jax_setup
@@ -39,8 +40,6 @@ if TYPE_CHECKING:
 _LOG = get_logger("regimekit.estimation.map")
 
 _WARM_START = "warm_start"
-_DATA_STRATEGIES = {"rollvol_kmeans": rollvol_kmeans, "random": random}
-_SPEC_ONLY_STRATEGIES = {"lattice_jitter": lattice_jitter}
 
 
 def _restart_plan(strategies: list[str], restarts: int) -> list[str]:
@@ -54,9 +53,8 @@ def _restart_plan(strategies: list[str], restarts: int) -> list[str]:
 
 
 def _init_theta(strategy: str, data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
-    if strategy in _DATA_STRATEGIES:
-        return _DATA_STRATEGIES[strategy](data, spec, key)
-    return _SPEC_ONLY_STRATEGIES[strategy](spec, key)
+    result: Params = REGISTRY.get("init", strategy)(data, spec, key)
+    return result
 
 
 def fit(

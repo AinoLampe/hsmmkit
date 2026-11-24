@@ -28,6 +28,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from regimekit.plugins import REGISTRY, register
 from regimekit.utils.errors import ConfigError, DataError
 
 if TYPE_CHECKING:
@@ -289,32 +290,55 @@ class ARForecaster:
         return jax.vmap(one_path)(eps_corr)
 
 
+@register("covariate_forecaster", "freeze")
+def _make_freeze(
+    cfg: CovariateForecasterCfg, scenario_values: dict[str, np.ndarray] | None
+) -> CovariateForecaster:
+    return cast(CovariateForecaster, FreezeForecaster())
+
+
+@register("covariate_forecaster", "scenario")
+def _make_scenario(
+    cfg: CovariateForecasterCfg, scenario_values: dict[str, np.ndarray] | None
+) -> CovariateForecaster:
+    if scenario_values is None:
+        raise ConfigError(
+            "scenario forecaster needs scenario_values (read from forecast.covariate_forecaster.path)",
+            path="forecast.covariate_forecaster.path",
+        )
+    return cast(CovariateForecaster, ScenarioForecaster(paths=scenario_values))
+
+
+@register("covariate_forecaster", "bootstrap")
+def _make_bootstrap(
+    cfg: CovariateForecasterCfg, scenario_values: dict[str, np.ndarray] | None
+) -> CovariateForecaster:
+    if cfg.mean_block_length is None:
+        raise ConfigError(
+            "bootstrap forecaster requires mean_block_length",
+            path="forecast.covariate_forecaster.mean_block_length",
+        )
+    return cast(CovariateForecaster, BootstrapForecaster(mean_block_length=float(cfg.mean_block_length)))
+
+
+@register("covariate_forecaster", "ar")
+def _make_ar(
+    cfg: CovariateForecasterCfg, scenario_values: dict[str, np.ndarray] | None
+) -> CovariateForecaster:
+    return cast(CovariateForecaster, ARForecaster(diagonal=bool(cfg.diagonal)))
+
+
 def make_forecaster(
     cfg: CovariateForecasterCfg, scenario_values: dict[str, np.ndarray] | None = None
 ) -> CovariateForecaster:
     """`forecast.covariate_forecaster` config -> an (unfitted) `CovariateForecaster`.
 
     `scenario_values` must already be parsed (the caller reads `cfg.path`, not this function --
-    `inference/` is not an I/O layer).
+    `inference/` is not an I/O layer). The factory is looked up in `REGISTRY` kind `covariate_forecaster`.
     """
-    if cfg.type == "freeze":
-        return cast(CovariateForecaster, FreezeForecaster())
-    if cfg.type == "scenario":
-        if scenario_values is None:
-            raise ConfigError(
-                "scenario forecaster needs scenario_values (read from forecast.covariate_forecaster.path)",
-                path="forecast.covariate_forecaster.path",
-            )
-        return cast(CovariateForecaster, ScenarioForecaster(paths=scenario_values))
-    if cfg.type == "bootstrap":
-        if cfg.mean_block_length is None:
-            raise ConfigError(
-                "bootstrap forecaster requires mean_block_length",
-                path="forecast.covariate_forecaster.mean_block_length",
-            )
-        return cast(CovariateForecaster, BootstrapForecaster(mean_block_length=float(cfg.mean_block_length)))
-    if cfg.type == "ar":
-        return cast(CovariateForecaster, ARForecaster(diagonal=bool(cfg.diagonal)))
-    raise ConfigError(
-        f"unknown covariate forecaster type {cfg.type!r}", path="forecast.covariate_forecaster.type"
-    )
+    if not REGISTRY.has("covariate_forecaster", cfg.type):
+        raise ConfigError(
+            f"unknown covariate forecaster type {cfg.type!r}", path="forecast.covariate_forecaster.type"
+        )
+    factory = REGISTRY.get("covariate_forecaster", cfg.type)
+    return cast(CovariateForecaster, factory(cfg, scenario_values))

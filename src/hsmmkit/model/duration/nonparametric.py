@@ -16,6 +16,7 @@ import numpy as np
 from regimekit.model.duration.base import Params, broadcast_per_state, prior_from_cfg
 from regimekit.model.duration.explicit import ExplicitDurationBase, ParamDef
 from regimekit.model.params.spec import ParamSpec
+from regimekit.plugins import register
 from regimekit.utils.errors import ConfigError
 from regimekit.utils.typing import Array
 
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
 _MIN_PROB = 1e-12
 
 
+@register("duration", "nonparametric")
 @dataclass(frozen=True)
 class NonparametricDuration(ExplicitDurationBase):
     """Free pmf `p_i(d)`, `d = 1..d_max`, per state (`d_max` is a static hyperparameter)."""

@@ -13,10 +13,12 @@ from jax.scipy import special as jsp_special
 from regimekit.model.dists import poisson_shifted_logpmf
 from regimekit.model.duration.base import Params
 from regimekit.model.duration.explicit import ExplicitDurationBase, ParamDef
+from regimekit.plugins import register
 from regimekit.utils.errors import ConfigError
 from regimekit.utils.typing import Array
 
 
+@register("duration", "poisson")
 @dataclass(frozen=True)
 class PoissonDuration(ExplicitDurationBase):
     """`d = 1 + Poisson(kappa_i / dt)`, truncated at `D_max` and renormalized; `E[x] = dt + kappa`.

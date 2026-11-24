@@ -11,6 +11,7 @@ from jax.scipy import special as jsp_special
 from regimekit.model.dists import _weibull_cdf
 from regimekit.model.duration.base import Params
 from regimekit.model.duration.explicit import ExplicitDurationBase, ParamDef, grid_log_pmf
+from regimekit.plugins import register
 from regimekit.utils.typing import Array
 
 _INIT_SHAPE = 1.5
@@ -20,6 +21,7 @@ def _gamma_fn(x: Array) -> Array:
     return jnp.exp(jsp_special.gammaln(x))
 
 
+@register("duration", "weibull")
 @dataclass(frozen=True)
 class WeibullDuration(ExplicitDurationBase):
     """`x ~ Weibull(shape_i, scale_i)`, `d = ceil(x / dt)`; `E[x] = scale * Gamma(1 + 1/shape)`.

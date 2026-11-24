@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
+from regimekit.plugins import CORE_PROVENANCE, REGISTRY
 from regimekit.utils.errors import ConfigError
 
 Need = Literal["forecast", "posterior", "fit", "labels", "strategy"]
@@ -61,7 +62,6 @@ class FunctionMetric:
         return self.fn(**ctx)
 
 
-_REGISTRY: dict[str, Metric] = {}
 _BUILTIN_MODULES = (
     "regimekit.evaluation.metrics.predictive",
     "regimekit.evaluation.metrics.model",
@@ -70,16 +70,16 @@ _BUILTIN_MODULES = (
 )
 
 
-def register(metric: Metric, *, replace: bool = False) -> Metric:
-    """Add `metric` under `metric.name`.
+def register(metric: Metric, *, replace: bool = False, provenance: str = CORE_PROVENANCE) -> Metric:
+    """Add `metric` under `metric.name` (a facade over `REGISTRY` kind `metric`).
 
     Raises:
         ConfigError: the name is already taken and `replace` is false.
     """
     _load_builtin()  # so a custom metric can never be shadowed by (or clash with) a lazily loaded builtin
-    if metric.name in _REGISTRY and not replace:
+    if REGISTRY.has("metric", metric.name) and not replace:
         raise ConfigError(f"metric {metric.name!r} is already registered", path="evaluation.metrics")
-    _REGISTRY[metric.name] = metric
+    REGISTRY.register("metric", metric.name, metric, provenance=provenance, replace=True)
     return metric
 
 
@@ -115,7 +115,7 @@ def _load_builtin() -> None:
 def available() -> list[str]:
     """Sorted names of every registered metric."""
     _load_builtin()
-    return sorted(_REGISTRY)
+    return list(REGISTRY.names("metric"))
 
 
 def resolve(names: list[str]) -> list[Metric]:
@@ -125,9 +125,9 @@ def resolve(names: list[str]) -> list[Metric]:
         ConfigError: an unknown name (`path="evaluation.metrics"`, the message lists the known ones).
     """
     _load_builtin()
-    unknown = [n for n in names if n not in _REGISTRY]
+    unknown = [n for n in names if not REGISTRY.has("metric", n)]
     if unknown:
         raise ConfigError(
-            f"unknown metric(s) {unknown}; known: {sorted(_REGISTRY)}", path="evaluation.metrics"
+            f"unknown metric(s) {unknown}; known: {list(REGISTRY.names('metric'))}", path="evaluation.metrics"
         )
-    return [_REGISTRY[n] for n in names]
+    return [REGISTRY.get("metric", n) for n in names]

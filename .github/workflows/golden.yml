@@ -38,6 +38,8 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-groups
+      - name: Runner CPU (golden values are machine dependent)
+        run: grep -m1 "model name" /proc/cpuinfo; uname -r
       - name: Regenerate the golden values
         if: github.event_name == 'push' || inputs.regenerate
         env:

@@ -19,12 +19,14 @@ from regimekit.model.duration.base import (
     rate_spec_from_cfg,
 )
 from regimekit.model.params.spec import ParamSpec
+from regimekit.plugins import register
 from regimekit.utils.typing import Array
 
 if TYPE_CHECKING:
     from regimekit.config.schema import DurationCfg
 
 
+@register("duration", "geometric")
 @dataclass(frozen=True)
 class GeometricDuration:
     """`r_i = 1` for every state: `d - 1 ~ Geometric(a_i)`, `E[d] = 1 / a_i`."""

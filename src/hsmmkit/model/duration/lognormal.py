@@ -10,11 +10,13 @@ import jax.numpy as jnp
 from regimekit.model.dists import _lognormal_cdf
 from regimekit.model.duration.base import Params
 from regimekit.model.duration.explicit import ExplicitDurationBase, ParamDef, grid_log_pmf
+from regimekit.plugins import register
 from regimekit.utils.typing import Array
 
 _INIT_SD_LOG = 0.5
 
 
+@register("duration", "lognormal")
 @dataclass(frozen=True)
 class LogNormalDuration(ExplicitDurationBase):
     """`log x ~ N(mu_log_i, sd_log_i^2)`, `d = ceil(x / dt)`; `E[x] = exp(mu_log + sd_log^2 / 2)`.

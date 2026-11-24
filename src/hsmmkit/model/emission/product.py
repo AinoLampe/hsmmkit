@@ -22,9 +22,11 @@ import jax.numpy as jnp
 
 from regimekit.model.emission.base import EmissionFamily, Support
 from regimekit.model.params import ParamSpec
+from regimekit.plugins import register
 from regimekit.utils.typing import Array
 
 
+@register("emission", "product")
 @dataclass(frozen=True)
 class ProductEmission:
     """Product of independent per-series emission densities over a shared regime (`n_series` series).

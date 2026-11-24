@@ -17,6 +17,7 @@ import numpy as np
 
 from regimekit.model.params.manager import ParamManager
 from regimekit.model.transition import build_memory_layout
+from regimekit.plugins import register
 
 if TYPE_CHECKING:
     from regimekit.data.contracts import PreparedDataset
@@ -165,6 +166,7 @@ def observed_rows(data: PreparedDataset) -> PreparedDataset:
     )
 
 
+@register("init", "rollvol_kmeans")
 def rollvol_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
     """Cluster a rolling realized-volatility series into `n_states` regimes and read off `theta`.
 
@@ -280,6 +282,7 @@ def lattice_jitter(spec: ModelSpec, key: Array) -> Params:
     return theta
 
 
+@register("init", "random")
 def random(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
     """Scale-free, clock-neutral random restarts: `s = sd(observations) / sqrt(nominal_dt)`.
 
@@ -334,3 +337,9 @@ def random(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
             theta[ps.name] = jax.random.normal(next(keys), ps.shape) * 0.1
 
     return theta
+
+
+@register("init", "lattice_jitter")
+def _lattice_jitter_init(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
+    """`lattice_jitter` under the common `(data, spec, key)` signature of registered init strategies."""
+    return lattice_jitter(spec, key)

@@ -56,6 +56,7 @@ nav:
       - Validation: guide/validation.md
       - Python API and CLI: guide/project.md
       - Examples and tutorial: guide/examples.md
+      - Extending: guide/extending.md
       - Troubleshooting: guide/troubleshooting.md
   - Math:
       - Time conventions: math/time.md

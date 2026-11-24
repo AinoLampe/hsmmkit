@@ -14,21 +14,16 @@ follow-up for whoever first builds a lattice-configured model end to end.
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from regimekit.model.duration.gamma import GammaDuration
-from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.duration.lognormal import LogNormalDuration
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.duration.nonparametric import NonparametricDuration
-from regimekit.model.duration.poisson import PoissonDuration
-from regimekit.model.duration.weibull import WeibullDuration
-from regimekit.model.emission.gbm import GBMFamily
+import regimekit.model.duration
+import regimekit.model.emission  # noqa: F401  (registers the emission families)
 from regimekit.model.emission.product import ProductEmission
-from regimekit.model.emission.student_t import StudentTFamily
 from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition
+from regimekit.plugins import REGISTRY, Kind
 from regimekit.utils.clock import days_to_steps
 from regimekit.utils.errors import ConfigError
 
@@ -38,16 +33,29 @@ if TYPE_CHECKING:
     from regimekit.model.transition import TransitionModel
     from regimekit.utils.clock import Clock
 
-EMISSION_FAMILIES: dict[str, Any] = {"gbm": GBMFamily, "student_t": StudentTFamily}
-DURATION_FAMILIES: dict[str, Any] = {
-    "geometric": GeometricDuration,
-    "negbin": NegBinDuration,
-    "poisson": PoissonDuration,
-    "gamma": GammaDuration,
-    "weibull": WeibullDuration,
-    "lognormal": LogNormalDuration,
-    "nonparametric": NonparametricDuration,
-}
+
+class _FamilyView(Mapping[str, Any]):
+    """Read-only view of the registered `kind` families a config can name (those with `from_config`)."""
+
+    def __init__(self, kind: Kind) -> None:
+        self._kind = kind
+
+    def __getitem__(self, name: str) -> Any:  # noqa: ANN401
+        if REGISTRY.has(self._kind, name):
+            obj = REGISTRY.get(self._kind, name)
+            if hasattr(obj, "from_config"):
+                return obj
+        raise KeyError(name)
+
+    def __iter__(self) -> Iterator[str]:
+        return (n for n in REGISTRY.names(self._kind) if n in self)
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self)
+
+
+EMISSION_FAMILIES: Mapping[str, Any] = _FamilyView("emission")
+DURATION_FAMILIES: Mapping[str, Any] = _FamilyView("duration")
 
 
 def _with_mean_sojourn_steps(

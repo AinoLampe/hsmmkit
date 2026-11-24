@@ -18,6 +18,7 @@ from regimekit.model.duration.base import (
     rate_spec_from_cfg,
 )
 from regimekit.model.params.spec import ParamSpec
+from regimekit.plugins import register
 from regimekit.utils.errors import ConfigError
 from regimekit.utils.typing import Array
 
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from regimekit.config.schema import DurationCfg
 
 
+@register("duration", "negbin")
 @dataclass(frozen=True)
 class NegBinDuration:
     """Regime `i` has `r_i >= 1` phases; on a constant grid `d - r_i ~ NegBin(r_i, a_i)`.

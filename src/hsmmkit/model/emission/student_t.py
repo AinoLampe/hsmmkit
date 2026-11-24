@@ -23,6 +23,7 @@ from regimekit.model.dists import sample_student_t, student_t_logpdf
 from regimekit.model.emission.base import Support
 from regimekit.model.emission.gbm import _coef_spec, _spec_from_paramcfg
 from regimekit.model.params.spec import ParamSpec
+from regimekit.plugins import register
 from regimekit.utils.errors import ConfigError
 from regimekit.utils.typing import Array
 
@@ -33,6 +34,7 @@ NU_TIE_GROUP = "nu"
 _DEFAULT_NU_INIT = 8.0
 
 
+@register("emission", "student_t")
 @dataclass(frozen=True)
 class StudentTFamily:
     """Per-state location-scale Student-t emission.

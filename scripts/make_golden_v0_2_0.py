@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -21,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-GOLDEN_DIR = ROOT / "tests" / "golden" / "v0_2_0"
+GOLDEN_DIR = Path(os.environ.get("REGIMEKIT_GOLDEN_DIR", ROOT / "tests" / "golden" / "v0_2_0"))
 EXAMPLE = ROOT / "examples" / "configs" / "dax_3state_gbm_nb.yaml"
 HORIZON, N_SIM, SEED = 20, 2000, 42
 # Two walk-forward folds on the 3-year synthetic sample, reduced simulation size.
@@ -71,11 +72,12 @@ def compute(work: Path) -> dict[str, dict[str, np.ndarray] | pd.DataFrame]:
     }
 
 
-def load_stored() -> dict[str, dict[str, np.ndarray] | pd.DataFrame]:
-    """The committed golden values."""
+def load_stored(directory: Path | None = None) -> dict[str, dict[str, np.ndarray] | pd.DataFrame]:
+    """The golden values in `directory` (default: the committed ones)."""
+    directory = directory or GOLDEN_DIR
     out: dict[str, dict[str, np.ndarray] | pd.DataFrame] = {}
     for name in FILES:
-        path = GOLDEN_DIR / name
+        path = directory / name
         if name.endswith(".npz"):
             with np.load(path) as z:
                 out[name] = {k: z[k] for k in z.files}
@@ -163,10 +165,23 @@ def write_golden(fresh: dict[str, dict[str, np.ndarray] | pd.DataFrame], note: s
 def main() -> None:
     """Command line entry: `python scripts/make_golden_v0_2_0.py --note "..."`."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--note", required=True, help="why the values are (re)generated")
+    parser.add_argument("--note", help="why the values are regenerated (writes to REGIMEKIT_GOLDEN_DIR)")
+    parser.add_argument(
+        "--compare",
+        type=Path,
+        help="do not write: recompute and compare bitwise with the golden files in this directory "
+        "(single-machine check: write a baseline from the merge base with REGIMEKIT_GOLDEN_DIR first)",
+    )
     args = parser.parse_args()
     with tempfile.TemporaryDirectory() as tmp:
-        write_golden(compute(Path(tmp)), args.note)
+        fresh = compute(Path(tmp))
+    if args.compare is not None:
+        bad = differences(load_stored(args.compare), fresh)
+        print("DIFFERENCES:", bad)
+        raise SystemExit(1 if bad else 0)
+    if not args.note:
+        parser.error("--note is required unless --compare is given")
+    write_golden(fresh, args.note)
 
 
 if __name__ == "__main__":

@@ -10,11 +10,13 @@ import jax.numpy as jnp
 from regimekit.model.dists import _gamma_cdf
 from regimekit.model.duration.base import Params
 from regimekit.model.duration.explicit import ExplicitDurationBase, ParamDef, grid_log_pmf
+from regimekit.plugins import register
 from regimekit.utils.typing import Array
 
 _INIT_SHAPE = 2.0
 
 
+@register("duration", "gamma")
 @dataclass(frozen=True)
 class GammaDuration(ExplicitDurationBase):
     """`x ~ Gamma(shape_i, scale_i)`, `d = ceil(x / dt)`; `E[x] = shape * scale`.

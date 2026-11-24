@@ -23,6 +23,7 @@ from regimekit.model.dists import normal_logpdf, sample_normal
 from regimekit.model.emission.base import Support
 from regimekit.model.params import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior, Prior
 from regimekit.model.params.spec import Domain, Mode, ParamSpec
+from regimekit.plugins import register
 from regimekit.utils.errors import ConfigError
 from regimekit.utils.typing import Array
 
@@ -112,6 +113,7 @@ def _coef_spec(name: str, n_states: int, n_coef: int) -> ParamSpec:
     )
 
 
+@register("emission", "gbm")
 @dataclass(frozen=True)
 class GBMFamily:
     """Per-state geometric Brownian motion emission (Gaussian log-returns).
