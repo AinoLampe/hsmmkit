@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
+from regimekit.finance.clocks import TRADING_DAYS_PER_YEAR
 from regimekit.finance.config import FinanceDurationCfg as DurationCfg  # finance params allow the `days` key
 from regimekit.model.duration import (
     GammaDuration,
@@ -23,7 +24,6 @@ from regimekit.model.duration import (
 )
 from regimekit.model.duration.explicit import check_d_max
 from regimekit.model.params import ParamManager
-from regimekit.utils.clock import TRADING_DAYS_PER_YEAR
 from regimekit.utils.errors import ConfigError
 
 N = 3

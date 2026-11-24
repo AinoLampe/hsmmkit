@@ -25,9 +25,9 @@ from regimekit.evaluation.strategies import (
     strategy_trace,
 )
 from regimekit.finance import FinanceConfig
+from regimekit.finance.clocks import TRADING_DAYS_PER_YEAR
 from regimekit.finance.config import StrategyCfg
 from regimekit.inference.results import ForecastResult, PosteriorResult
-from regimekit.utils.clock import TRADING_DAYS_PER_YEAR
 from regimekit.utils.errors import ConfigError
 from tests.helpers import backtest_fixtures as bf
 

@@ -24,7 +24,6 @@ from regimekit.statespace.builders import initial_log_rho
 from regimekit.utils.errors import NumericalError
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import Clock
     from regimekit.model.params.manager import Params
     from regimekit.model.spec import ModelSpec
     from regimekit.statespace.index import StateSpace
@@ -161,7 +160,7 @@ def simulate_dataset(
     z_d: Array | None = None,
     z_e: Array | None = None,
     *,
-    clock: Clock = "trading",
+    clock: str,
     nominal_dt: float | None = None,
 ) -> PreparedDataset:
     """A single simulated path (`n_paths=1`) wrapped as a synthetic `PreparedDataset` (tests/recovery).

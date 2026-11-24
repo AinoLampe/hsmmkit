@@ -240,8 +240,8 @@ class Preparer:
         grid = build_grid(
             obs,
             cast(Any, cfg.preparation.missing_observations),  # "mask" arrives with E10-T05
-            clock=cast(Clock, cfg.clock),
-            bars_per_day=int(cfg.clock_option("bars_per_day", 1)),
+            clock=cfg.clock,
+            clock_options=cfg.clock_options,
         )
 
         y = log_returns(grid.prices)

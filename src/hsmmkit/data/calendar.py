@@ -18,15 +18,15 @@ This module and `utils/clock.py` are the only places that branch on the clock *n
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
 from regimekit.data.contracts import Clock, CovariateSeries, ObservationSet
-from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR, TRADING_DAYS_PER_YEAR, is_irregular
 from regimekit.utils.clock import future_grid as future_grid  # re-export (E6-T04a)
+from regimekit.utils.clock import get_clock, is_irregular, parse_clock_options
 from regimekit.utils.errors import ConfigError, DataError
 
 MissingReturns = Literal["drop", "error"]
@@ -88,24 +88,12 @@ def _as_ns(times: np.ndarray) -> np.ndarray:
     return np.asarray(times).astype("datetime64[ns]")
 
 
-def _grid_dt(times: np.ndarray, clock: Clock, bars_per_day: int) -> np.ndarray:
-    n_steps = times.shape[0] - 1
-    if clock == "trading":
-        return np.full(n_steps, 1.0 / (TRADING_DAYS_PER_YEAR * bars_per_day), dtype=np.float64)
-    if clock == "calendar":
-        days = np.diff(times).astype(np.int64).astype(np.float64) / _NS_PER_DAY
-        return days / CALENDAR_DAYS_PER_YEAR
-    if clock == "steps":
-        return np.ones(n_steps, dtype=np.float64)
-    raise ConfigError(f"unknown clock {clock!r}", path="data.clock")
-
-
 def build_grid(
     obs: ObservationSet,
     missing_returns: MissingReturns,
     *,
-    clock: Clock,
-    bars_per_day: int = 1,
+    clock: str,
+    clock_options: Mapping[str, Any] | None = None,
 ) -> Grid:
     """Build the master grid from the primary instrument's observations.
 
@@ -114,15 +102,15 @@ def build_grid(
         missing_returns: `"drop"` removes every row where the primary has a missing (NaN) price (the other
             series keep their NaN and are masked by `Preparer`); `"error"` raises on the first row where
             any series is missing.
-        clock: `trading` (`Δ = 1/(252·bars_per_day)` years), `calendar` (`Δ_t = (τ_t - τ_{t-1})`
-            in days / 365.25) or `steps` (`Δ_t ≡ 1`, ADR-0013).
-        bars_per_day: intraday bars per trading day `H` (trading clock only; 1 = daily).
+        clock: name of a registered clock (`steps`, `calendar`, or an application's, e.g. the finance
+            application's trading-day clock): it defines `Δ_t` (ADR-0013, ADR-0015).
+        clock_options: the clock's options (`data.clock_options`), validated by its options model.
 
     Returns:
         The grid with `T + 1` times and `T` values of `Δ_t`.
 
     Raises:
-        ConfigError: unknown `missing_returns` policy or clock, `bars_per_day < 1`.
+        ConfigError: unknown `missing_returns` policy or clock, invalid clock options.
         DataError: non-increasing times, a missing price under `"error"`, fewer than two rows left.
     """
     if missing_returns not in ("drop", "error"):
@@ -130,8 +118,8 @@ def build_grid(
             f"missing_returns must be 'drop' or 'error', got {missing_returns!r}",
             path="data.preparation.missing_returns",
         )
-    if bars_per_day < 1:
-        raise ConfigError(f"bars_per_day must be >= 1, got {bars_per_day}", path="data.bars_per_day")
+    clk = get_clock(clock)
+    opts = parse_clock_options(clock, clock_options)
 
     times = _as_ns(obs.times)
     prices = np.asarray(obs.prices, dtype=np.float64)
@@ -155,13 +143,13 @@ def build_grid(
     if times.shape[0] < 2:
         raise DataError("the master grid needs at least two rows with a price", path="prices")
 
-    dt = _grid_dt(times, clock, bars_per_day)
+    dt = clk.dt(times, times.shape[0] - 1, opts)
     return Grid(
         times=times,
         prices=prices,
         dt=dt,
         nominal_dt=float(np.median(dt)),
-        irregular=False if clock == "steps" else is_irregular(dt),
+        irregular=False if clk.unit == "step" else is_irregular(dt),
         clock=clock,
     )
 

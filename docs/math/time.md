@@ -49,3 +49,10 @@ spacing and `\Delta \equiv 1`.
 | `z^\pi_t, z^d_t, z^e_t` | `cov_transition`, `cov_duration`, `cov_emission` `(T, K)` |
 | lag | `data.covariates[].lag` |
 | `H` | `data.clock_options.bars_per_day` |
+
+## Clocks are registered components (E10-T03)
+
+A clock defines `Δ_t` and the future grid of a forecast. The core registers `steps` (`Δ ≡ 1`) and `calendar`
+(`Δ_t` in years from the timestamps); the finance application registers `trading` (`Δ = 1/(252 H)`, `H` =
+`data.clock_options.bars_per_day`). Choose the clock with `data.clock`; its options go in `data.clock_options`.
+See ADR-0015.

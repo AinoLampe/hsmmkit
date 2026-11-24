@@ -14,6 +14,7 @@ free); mean sojourn <= 25% rel; jump probabilities <= 0.15 abs; coefficients sig
 
 from __future__ import annotations
 
+import functools
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -43,6 +44,7 @@ from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition, build_memory_layout
 from regimekit.statespace.builders import build_expanded, build_explicit
 from regimekit.statespace.index import StateSpace
+from regimekit.utils.clock import get_clock, parse_clock_options
 from regimekit.utils.rng import key_for
 
 if TYPE_CHECKING:
@@ -52,7 +54,16 @@ if TYPE_CHECKING:
 
 # --- truth values shared by every scenario (concept Appendix D worked example) -----------------
 
-NOMINAL_DT = 1.0 / 252.0  # daily step, "trading" clock
+RECOVERY_CLOCK = "trading"  # daily grid, parameters in years (clock registry)
+
+
+@functools.cache
+def nominal_dt() -> float:
+    """The daily step of the recovery scenarios, taken from the `RECOVERY_CLOCK` clock (E10-T03)."""
+    clock = get_clock(RECOVERY_CLOCK)
+    return float(clock.dt(None, 1, parse_clock_options(RECOVERY_CLOCK, None))[0])
+
+
 N_STATES = 3
 SIGMA_STAR = np.array([0.10, 0.18, 0.35])
 MU_STAR = np.array([0.10, 0.00, -0.20])
@@ -177,7 +188,7 @@ def _build_spec_and_truth(scenario: Scenario) -> tuple[ModelSpec, Params]:
         specs.append(
             ParamSpec(name="duration.rate", shape=(n,), domain="positive", mode="free", init=np.full(n, 10.0))
         )
-        theta.update(dur.init_from_mean_sojourn(jnp.asarray(MEAN_SOJOURN_DAYS), NOMINAL_DT))
+        theta.update(dur.init_from_mean_sojourn(jnp.asarray(MEAN_SOJOURN_DAYS), nominal_dt()))
         if scenario.cov_duration:
             specs.append(
                 ParamSpec(
@@ -201,7 +212,7 @@ def _build_spec_and_truth(scenario: Scenario) -> tuple[ModelSpec, Params]:
                 name="duration.scale", shape=(n,), domain="positive", mode="free", init=np.full(n, 0.05)
             )
         )
-        theta.update(dur.init_from_mean_sojourn(jnp.asarray(MEAN_SOJOURN_DAYS), NOMINAL_DT))
+        theta.update(dur.init_from_mean_sojourn(jnp.asarray(MEAN_SOJOURN_DAYS), nominal_dt()))
         engine_name = "explicit"
 
     # transition: baseline pi_rows, or covariate-conditioned a/b.
@@ -305,7 +316,7 @@ def _empty_prepared(t_len: int, y: np.ndarray, dt: jnp.ndarray) -> PreparedDatas
         cov_emission=None,
         cov_names={"transition": (), "duration": (), "emission": ()},
         clock="trading",
-        nominal_dt=NOMINAL_DT,
+        nominal_dt=nominal_dt(),
         prep_stats=stats,
         snapshot_ids=(),
     )
@@ -330,12 +341,12 @@ def _simulate_explicit(spec: ModelSpec, theta: Params, seed: int, t_len: int) ->
     current = int(rng.integers(spec.n_states))
     while len(regimes) < t_len:
         sojourn = rng.gamma(float(shape[current]), float(scale[current]))
-        d = max(1, int(np.ceil(sojourn / NOMINAL_DT)))
+        d = max(1, int(np.ceil(sojourn / nominal_dt())))
         regimes.extend([current] * d)
         current = int(rng.choice(spec.n_states, p=pi[current]))
     regime_arr = jnp.asarray(regimes[:t_len], dtype=jnp.int32)
 
-    dt = jnp.full((t_len,), NOMINAL_DT)
+    dt = jnp.full((t_len,), nominal_dt())
     y = np.asarray(spec.emission.sample(key_for(seed, _SIM_PURPOSE), regime_arr, dt, theta, None))
     return _empty_prepared(t_len, y, dt)
 
@@ -345,7 +356,7 @@ def _simulate(scenario: Scenario, spec: ModelSpec, theta: Params, seed: int, t_l
         return _simulate_explicit(spec, theta, seed, t_len)
 
     space, _ = _space_and_engine(spec, EstimationSection())
-    dt = jnp.full((t_len,), NOMINAL_DT)
+    dt = jnp.full((t_len,), nominal_dt())
     z_pi = jnp.asarray(_ar1_covariates(t_len, 2, derive_cov_seed(seed))) if scenario.cov_transition else None
     z_d = jnp.asarray(_ar1_covariates(t_len, 1, derive_cov_seed(seed) + 1)) if scenario.cov_duration else None
     return simulate_dataset(
@@ -358,7 +369,7 @@ def _simulate(scenario: Scenario, spec: ModelSpec, theta: Params, seed: int, t_l
         z_d,
         None,
         clock="trading",
-        nominal_dt=NOMINAL_DT,
+        nominal_dt=nominal_dt(),
     )
 
 
@@ -456,7 +467,7 @@ def _mu_checks(theta_hat: Params, se: dict[str, np.ndarray] | None) -> list[Para
 
 
 def _mean_sojourn_checks(theta_hat: Params, spec: ModelSpec) -> list[ParamCheck]:
-    hat_days = np.asarray(spec.duration.mean_sojourn(theta_hat, NOMINAL_DT)) / NOMINAL_DT
+    hat_days = np.asarray(spec.duration.mean_sojourn(theta_hat, nominal_dt())) / nominal_dt()
     out = []
     for i in range(N_STATES):
         rel = abs(hat_days[i] - MEAN_SOJOURN_DAYS[i]) / MEAN_SOJOURN_DAYS[i]

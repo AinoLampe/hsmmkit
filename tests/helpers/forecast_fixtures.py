@@ -10,8 +10,8 @@ import pandas as pd
 from regimekit.config.schema import CovariateForecasterCfg, ForecastSection
 from regimekit.data.contracts import PreparedDataset, PrepStats
 from regimekit.estimation.results import FitResult
+from regimekit.finance.clocks import TRADING_DAYS_PER_YEAR
 from regimekit.inference.forecast import MonteCarloForecaster
-from regimekit.utils.clock import TRADING_DAYS_PER_YEAR
 from tests.helpers.objective_fixtures import Case
 
 DT = 1.0 / TRADING_DAYS_PER_YEAR

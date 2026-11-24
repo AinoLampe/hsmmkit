@@ -25,7 +25,7 @@ from regimekit.config.defaults import (
     MAX_ORDER_WARN,
 )
 from regimekit.plugins import REGISTRY, Kind
-from regimekit.utils.clock import CLOCK_NAMES
+from regimekit.utils.clock import get_clock, parse_clock_options
 from regimekit.utils.errors import ConfigError
 
 CURRENT_SCHEMA_VERSION = 1
@@ -151,10 +151,13 @@ class DataSection(_Base):
     @field_validator("clock")
     @classmethod
     def _known_clock(cls, value: str) -> str:
-        names = REGISTRY.names("clock") or CLOCK_NAMES  # the registry fills in E10-T03
-        if value not in names:
-            raise ConfigError(f"unknown clock '{value}'; registered: {', '.join(names)}", path="data.clock")
+        get_clock(value)  # ConfigError(path="data.clock") listing the registered clocks
         return value
+
+    @model_validator(mode="after")
+    def _valid_clock_options(self) -> DataSection:
+        parse_clock_options(self.clock, self.clock_options)  # ConfigError(path="data.clock_options.<field>")
+        return self
 
 
 # --- model: params, priors, emission/duration/transition/lattice -----------------------------

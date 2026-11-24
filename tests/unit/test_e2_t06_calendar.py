@@ -57,7 +57,10 @@ GAP_STEP = 3  # dt index of the interval (Thu 03-28, Mon 04-01]
 def _holiday_grid(clock: str, bars_per_day: int = 1) -> Grid:
     times = _ns(HOLIDAY_DATES)
     return build_grid(
-        _obs(times, np.linspace(100, 105, len(times))), "drop", clock=clock, bars_per_day=bars_per_day
+        _obs(times, np.linspace(100, 105, len(times))),
+        "drop",
+        clock=clock,
+        clock_options={"bars_per_day": bars_per_day} if clock == "trading" else None,
     )  # type: ignore[arg-type]
 
 
@@ -167,8 +170,8 @@ def test_e2_t06_grid_rejects_bad_policy_and_bars() -> None:
         build_grid(_obs(times, [1.0, 2.0]), "ffill", clock="trading")  # type: ignore[arg-type]
     assert info.value.path == "data.preparation.missing_returns"
     with pytest.raises(ConfigError) as info:
-        build_grid(_obs(times, [1.0, 2.0]), "drop", clock="trading", bars_per_day=0)
-    assert info.value.path == "data.bars_per_day"
+        build_grid(_obs(times, [1.0, 2.0]), "drop", clock="trading", clock_options={"bars_per_day": 0})
+    assert info.value.path == "data.clock_options.bars_per_day"
     with pytest.raises(ConfigError) as info:
         build_grid(_obs(times, [1.0, 2.0]), "drop", clock="hourly")  # type: ignore[arg-type]
     assert info.value.path == "data.clock"

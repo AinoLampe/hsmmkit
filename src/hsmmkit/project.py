@@ -562,7 +562,7 @@ class Project:
             engine_for(config, spec.engine),
             forecaster,
             config.forecast,
-            bars_per_day=config.data.bars_per_day,
+            clock_options=config.data.clock_options,
         )
         result = mc.forecast(
             fit,

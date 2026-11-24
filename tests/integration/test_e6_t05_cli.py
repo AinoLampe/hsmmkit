@@ -125,7 +125,7 @@ def test_e6_t05_forecast_cli_matches_a_direct_library_call(tmp_path: Path) -> No
         ExpandedHMMEngine(parallel_scan=cfg.estimation.parallel_scan),
         make_forecaster(cfg.forecast.covariate_forecaster),
         cfg.forecast,
-        bars_per_day=cfg.data.bars_per_day,
+        clock_options=cfg.data.clock_options,
     )
     direct = mc.forecast(fit, dataset, 5, 200, cfg.project.seed)
     back = read_forecast(out)

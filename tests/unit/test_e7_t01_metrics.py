@@ -21,10 +21,10 @@ from regimekit.evaluation.metrics.predictive import (
 )
 from regimekit.evaluation.metrics.registry import FunctionMetric, available, register, resolve
 from regimekit.finance import FinanceConfig
+from regimekit.finance.clocks import TRADING_DAYS_PER_YEAR
 from regimekit.inference.decode import decode
 from regimekit.inference.forecast import MonteCarloForecaster
 from regimekit.inference.results import ForecastResult
-from regimekit.utils.clock import TRADING_DAYS_PER_YEAR
 from regimekit.utils.errors import ConfigError
 from tests.helpers.forecast_fixtures import fit_of
 from tests.helpers.objective_fixtures import make_case

@@ -19,8 +19,9 @@ real `dt_future`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import partial
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import jax
 import jax.numpy as jnp
@@ -327,7 +328,7 @@ class MonteCarloForecaster:
         engine: the matching inference engine.
         forecaster: covariate forecaster, or `None` for covariate-free models and `horizon == 1`.
         cfg: `forecast` config section (quantile levels).
-        bars_per_day: intraday bars per trading day (trading clock `Δ`), 1 for daily data.
+        clock_options: the options of the dataset's clock (`data.clock_options`).
     """
 
     def __init__(
@@ -337,7 +338,7 @@ class MonteCarloForecaster:
         engine: InferenceEngine,
         forecaster: CovariateForecaster | None,
         cfg: ForecastSection,
-        bars_per_day: int = 1,
+        clock_options: Mapping[str, Any] | None = None,
     ) -> None:
         """Store the model structure, engine, covariate forecaster and forecast config."""
         self.spec = spec
@@ -345,7 +346,7 @@ class MonteCarloForecaster:
         self.engine = engine
         self.forecaster = forecaster
         self.cfg = cfg
-        self.bars_per_day = bars_per_day
+        self.clock_options = dict(clock_options or {})
 
     def _origin_log_alpha(self, fit: FitResult, data: PreparedDataset, posterior: Posterior | None) -> Array:
         if posterior is None:
@@ -406,8 +407,7 @@ class MonteCarloForecaster:
             )
 
         times = np.asarray(data.times).astype("datetime64[ns]")
-        step = np.median(np.diff(times)).astype("m8[ns]") if times.shape[0] > 1 else None
-        horizon_times, dt_np = future_grid(times[-1], horizon, data.clock, self.bars_per_day, step)
+        horizon_times, dt_np = future_grid(times[-1], horizon, data.clock, self.clock_options, times)
         dt_future = jnp.asarray(dt_np)
 
         log_alpha_t = self._origin_log_alpha(fit, data, posterior)

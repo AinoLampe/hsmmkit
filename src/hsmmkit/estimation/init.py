@@ -2,7 +2,7 @@
 
 Each strategy returns a `Params` dict (`theta`, constrained space); `estimation/map.py` converts it to
 `u` via `ParamManager.flatten`. All three are clock-neutral: they work in steps via `nominal_dt`, never a
-literal `252`/`365.25` (CLAUDE.md §3.2).
+year constant (CLAUDE.md §3.2).
 """
 
 from __future__ import annotations

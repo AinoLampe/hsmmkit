@@ -33,7 +33,9 @@ def _problem(duration: str, seed: int, t_len: int) -> tuple[ModelSpec, PreparedD
     theta = dict(case.manager.unflatten(case.manager.init_u()))
     theta["emission.mu"], theta["emission.sigma"] = jnp.asarray(TRUE_MU), jnp.asarray(TRUE_SIGMA)
     theta.update(case.spec.duration.init_from_mean_sojourn(MEAN_SOJOURN, DT))
-    data = simulate_dataset(key_for(seed, SIM_PURPOSE), theta, case.spec, case.space, jnp.full((t_len,), DT))
+    data = simulate_dataset(
+        key_for(seed, SIM_PURPOSE), theta, case.spec, case.space, jnp.full((t_len,), DT), clock="trading"
+    )
     return case.spec, data
 
 

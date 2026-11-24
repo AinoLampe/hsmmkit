@@ -11,9 +11,9 @@ data `[0, o + 1)`; the realized `Y_h` uses rows `o + 1 .. o + h`.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 
 _LOG = get_logger("regimekit.backtest")
 
-_YEARS_TOL = 1e-9  # elapsed-time comparisons: `504 * (1/252)` must count as 2 years
+_YEARS_TOL = 1e-9  # elapsed-time comparisons: a sum of equal steps must count as the exact length
 
 
 @dataclass(frozen=True)
@@ -245,11 +245,10 @@ def _filter_posterior(log_alpha: Array, loglik: Array, space: StateSpace, engine
     )
 
 
-def _next_dt(data: PreparedDataset, bars_per_day: int) -> float:
+def _next_dt(data: PreparedDataset, clock_options: Mapping[str, Any]) -> float:
     """`Δ` of the first forecast step, on the same grid `MonteCarloForecaster` samples on."""
     times = np.asarray(data.times).astype("datetime64[ns]")
-    step = np.median(np.diff(times)).astype("m8[ns]") if times.shape[0] > 1 else None
-    _, dt = future_grid(times[-1], 1, data.clock, bars_per_day, step)
+    _, dt = future_grid(times[-1], 1, data.clock, clock_options, times)
     return float(dt[0])
 
 
@@ -343,7 +342,7 @@ def run_backtest(
         engine,
         forecaster,
         cfg.forecast,
-        bars_per_day=int(cfg.data.clock_option("bars_per_day", 1)),
+        clock_options=cfg.data.clock_options,
     )
 
     origin_rows: list[OriginRow] = []
@@ -408,7 +407,7 @@ def run_backtest(
                 horizons=horizons,
                 n_sim=n_sim,
                 seed=seed,
-                bars_per_day=int(cfg.data.clock_option("bars_per_day", 1)),
+                clock_options=cfg.data.clock_options,
                 strategy=strategy,
             )
             origin_rows += rows
@@ -453,7 +452,7 @@ def _forecast_fold(
     horizons: list[int],
     n_sim: int,
     seed: int,
-    bars_per_day: int,
+    clock_options: Mapping[str, Any],
     strategy: Strategy | None,
 ) -> tuple[list[OriginRow], list[tuple[int, int, np.ndarray]]]:
     """Metric rows `(fold, origin, horizon, metric, value)` and strategy decisions of one fold."""
@@ -481,7 +480,7 @@ def _forecast_fold(
             "realized": obs_np[o + 1 : o + 1 + max_h],
         }
         if wants_mixture:
-            dt_next = _next_dt(data_o, bars_per_day)
+            dt_next = _next_dt(data_o, clock_options)
             base["dt_next"] = dt_next
             base["z_emission_next"] = _row(data.cov_emission, o)
             if engine_tag == "expanded":

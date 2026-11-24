@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from regimekit.config.schema import DurationCfg, ProjectConfig
     from regimekit.data.contracts import PreparedDataset
     from regimekit.model.transition import TransitionModel
-    from regimekit.utils.clock import Clock
 
 
 class _FamilyView(Mapping[str, Any]):
@@ -59,7 +58,7 @@ DURATION_FAMILIES: Mapping[str, Any] = _FamilyView("duration")
 
 
 def _with_mean_sojourn_steps(
-    cfg: DurationCfg, clock: Clock, nominal_dt: float, bars_per_day: int
+    cfg: DurationCfg, clock: str, nominal_dt: float, clock_options: Mapping[str, Any]
 ) -> DurationCfg:
     """`init_mean_sojourn_days` -> `init_mean_sojourn_steps` via `days_to_steps` (CLAUDE.md §3.3).
 
@@ -70,7 +69,7 @@ def _with_mean_sojourn_steps(
     for key, param in cfg.params.items():
         days = getattr(param, "init_mean_sojourn_days", None)
         if days is not None:
-            steps = [days_to_steps(d, clock, nominal_dt, bars_per_day) for d in days]
+            steps = [days_to_steps(d, clock, nominal_dt, clock_options) for d in days]
             param = param.model_copy(
                 update={"init_mean_sojourn_days": None, "init_mean_sojourn_steps": steps}
             )
@@ -89,7 +88,7 @@ class BuildInputs:
 
     n_series: int
     cov_names: dict[str, tuple[str, ...]]
-    clock: Clock
+    clock: str
     nominal_dt: float
 
     @classmethod
@@ -138,7 +137,7 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
     if dur_cls is None:
         raise ConfigError(f"unknown duration family {m.duration.family!r}", path="model.duration.family")
     duration_cfg = _with_mean_sojourn_steps(
-        m.duration, inputs.clock, inputs.nominal_dt, int(cfg.data.clock_option("bars_per_day", 1))
+        m.duration, inputs.clock, inputs.nominal_dt, cfg.data.clock_options
     )
     if m.duration.family == "nonparametric":
         duration, duration_specs = dur_cls.from_config(

@@ -302,7 +302,8 @@ def test_e2_t08_pinned_snapshot_replays_primary_only_run(tmp_path: Path) -> None
 
 def _prepared(clock: str = "trading") -> PreparedDataset:
     cfg = load_config(FIXTURES / "configs" / "appendix_a.yaml", FinanceConfig).data
-    cfg = cfg.model_copy(update={"clock": clock})
+    options = cfg.clock_options if clock == "trading" else {}  # only the trading clock has options
+    cfg = cfg.model_copy(update={"clock": clock, "clock_options": options})
     dates = pd.bdate_range("2021-01-04", periods=120)
     times = dates.to_numpy(dtype="datetime64[ns]")
     rng = np.random.default_rng(3)

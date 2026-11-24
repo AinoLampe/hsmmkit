@@ -10,7 +10,8 @@ import pytest
 
 from regimekit.config.schema import BacktestCfg
 from regimekit.evaluation.backtest import Fold, fold_table, schedule_folds
-from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR, TRADING_DAYS_PER_YEAR
+from regimekit.finance.clocks import TRADING_DAYS_PER_YEAR
+from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from regimekit.utils.errors import ConfigError, DataError
 
 T = 1000

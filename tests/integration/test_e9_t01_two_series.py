@@ -36,7 +36,7 @@ def _simulate(seed: int, t_len: int) -> tuple[ModelSpec, PreparedDataset]:
     theta["emission.mu"], theta["emission.sigma"] = jnp.asarray(MU_STAR), jnp.asarray(SIGMA_STAR)
     theta.update(spec.duration.init_from_mean_sojourn(jnp.asarray(MEAN_SOJOURN_DAYS), DT))
     data = simulate_dataset(
-        key_for(seed, SIM_PURPOSE), theta, spec, build_expanded(spec), jnp.full((t_len,), DT)
+        key_for(seed, SIM_PURPOSE), theta, spec, build_expanded(spec), jnp.full((t_len,), DT), clock="trading"
     )
     return spec, data
 

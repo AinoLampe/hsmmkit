@@ -7,11 +7,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from regimekit.finance.clocks import TRADING_DAYS_PER_YEAR
 from regimekit.inference.covariate_forecasters import ColumnMap
 from regimekit.inference.forecast import forecast_paths, forecast_paths_explicit
 from regimekit.model.spec import ModelSpec
 from regimekit.statespace.builders import build_explicit
-from regimekit.utils.clock import TRADING_DAYS_PER_YEAR, future_grid
+from regimekit.utils.clock import future_grid
 from regimekit.utils.errors import ConfigError
 from regimekit.utils.rng import FORECAST_ORIGIN, FORECAST_PATHS, PURPOSE_FORECAST, key_for
 from tests.helpers.objective_fixtures import Case, make_case
@@ -46,7 +47,8 @@ def test_e6_t04a_future_grid_calendar_has_calendar_gaps() -> None:
 def test_e6_t04a_future_grid_steps_is_unit_and_continues_with_step() -> None:
     """AC3: the steps clock yields `1` and continues with the given spacing."""
     step = np.timedelta64(7, "D")
-    times, dt = future_grid(FRIDAY, 3, "steps", step=step)
+    history = np.array([FRIDAY - step.astype("m8[ns]"), FRIDAY])  # spacing of the observed grid = step
+    times, dt = future_grid(FRIDAY, 3, "steps", None, history)
     assert np.all(dt == 1.0)
     assert np.all(np.diff(np.concatenate([[FRIDAY], times])) == step.astype("m8[ns]"))
 
@@ -54,7 +56,7 @@ def test_e6_t04a_future_grid_steps_is_unit_and_continues_with_step() -> None:
 def test_e6_t04a_future_grid_intraday_bars_skip_the_weekend() -> None:
     """Intraday bars never land on a weekend and use `1/(TRADING_DAYS_PER_YEAR H)`."""
     last = np.datetime64("2024-03-29T18:00:00", "ns")  # Friday evening, 4 bars per day (6 h apart)
-    times, dt = future_grid(last, 6, "trading", bars_per_day=4)
+    times, dt = future_grid(last, 6, "trading", {"bars_per_day": 4})
     assert all(_weekday(t) < 5 for t in times)
     assert _weekday(times[0]) == 0  # Fri 18:00 + 6 h = Sat 00:00 ... skipped through Sunday to Monday
     assert np.all(dt == 1.0 / (TRADING_DAYS_PER_YEAR * 4))
@@ -64,7 +66,7 @@ def test_e6_t04a_future_grid_intraday_bars_skip_the_weekend() -> None:
 def test_e6_t04a_future_grid_rejects_bad_arguments(h: int, bars: int) -> None:
     """A zero horizon or zero bars per day is a `ConfigError`."""
     with pytest.raises(ConfigError):
-        future_grid(FRIDAY, h, "trading", bars_per_day=bars)
+        future_grid(FRIDAY, h, "trading", {"bars_per_day": bars})
 
 
 # --- helpers ------------------------------------------------------------------------------------

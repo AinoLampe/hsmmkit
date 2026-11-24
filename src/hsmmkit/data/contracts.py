@@ -13,10 +13,11 @@ from typing import Any, Literal
 import jax
 import numpy as np
 
+from regimekit.utils.clock import get_clock
 from regimekit.utils.errors import DataError
 from regimekit.utils.typing import Array
 
-Clock = Literal["trading", "calendar", "steps"]
+Clock = str  # the name of a registered clock (`regimekit.data.clocks`, `PreparedDataset.clock`)
 Support = Literal["real", "count", "binary", "categorical"]
 
 
@@ -247,8 +248,9 @@ class PreparedDataset:
             raise DataError(f"dt must have shape (T={t},)", path="dt")
         if not bool(np.all(np.asarray(dt) > 0)):
             raise DataError("dt must be > 0 everywhere", path="dt")
-        if self.clock == "steps" and not bool(np.all(np.asarray(dt) == 1)):
-            raise DataError("dt must be exactly 1 under clock='steps'", path="dt")
+        clock = get_clock(self.clock)  # unknown name: ConfigError listing the registered clocks
+        if clock.unit == "step" and not bool(np.all(np.asarray(dt) == 1)):
+            raise DataError(f"dt must be exactly 1 under the step clock {self.clock!r}", path="dt")
 
         if mask.shape != (t, m) or np.asarray(mask).dtype != np.bool_:
             raise DataError(f"mask must be a bool array of shape (T={t}, M={m})", path="mask")

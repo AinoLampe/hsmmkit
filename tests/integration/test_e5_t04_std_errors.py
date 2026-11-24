@@ -39,7 +39,9 @@ def test_e5_t04_std_errors_within_20_percent_of_empirical_se() -> None:
     theta_hats: list[dict[str, np.ndarray]] = []
     hessian_se = None
     for i in range(N_REPLICATIONS):
-        data = simulate_dataset(key_for(100, i), theta_true, case.spec, case.space, case.data.dt)
+        data = simulate_dataset(
+            key_for(100, i), theta_true, case.spec, case.space, case.data.dt, clock="trading"
+        )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             result = fit(case.spec, data, cfg, seed=i)
