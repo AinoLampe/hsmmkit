@@ -22,6 +22,9 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from golden_env import PINNED_ENV, is_pinned, pinned_environ  # noqa: E402
+
 GOLDEN_DIR = Path(os.environ.get("REGIMEKIT_GOLDEN_DIR", ROOT / "tests" / "golden" / "v0_2_0"))
 EXAMPLE = ROOT / "examples" / "configs" / "dax_3state_gbm_nb.yaml"
 HORIZON, N_SIM, SEED = 20, 2000, 42
@@ -157,6 +160,9 @@ def write_golden(fresh: dict[str, dict[str, np.ndarray] | pd.DataFrame], note: s
         "n_sim": N_SIM,
         "seed": SEED,
         "machine": _machine(),
+        "pinned_environment": {
+            k: v for k, v in PINNED_ENV.items() if k not in ("JAX_PLATFORMS", "REGIMEKIT_TYPECHECK")
+        },
         "notes": [*notes, note],
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -173,6 +179,8 @@ def main() -> None:
         "(single-machine check: write a baseline from the merge base with REGIMEKIT_GOLDEN_DIR first)",
     )
     args = parser.parse_args()
+    if not is_pinned():  # restart with the instruction set capped (see scripts/golden_env.py)
+        os.execve(sys.executable, [sys.executable, *sys.argv], pinned_environ())
     with tempfile.TemporaryDirectory() as tmp:
         fresh = compute(Path(tmp))
     if args.compare is not None:
