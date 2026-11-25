@@ -66,11 +66,13 @@ def _check_name(kind: Kind, name: str, path: str, *, needs: str | None = None) -
     return name
 
 
-def _validate_source_options(kind: str, options: dict[str, Any], path: str) -> None:
+def _validate_source_options(
+    kind: str, options: dict[str, Any], path: str, *, covariate: bool = False
+) -> None:
     """Validate a core source's options with its `options_model` (lazy: the sources import this module)."""
     from regimekit.data.sources.base import validate_options
 
-    validate_options(kind, options, path)
+    validate_options(kind, options, path, covariate=covariate)
 
 
 # --- project / data -------------------------------------------------------------------------
@@ -164,7 +166,7 @@ class DataSection(_Base):
             if cov.source is not None:
                 _check_name("source", cov.source.kind, f"data.covariates[{i}].source.kind")
                 _validate_source_options(
-                    cov.source.kind, cov.source.options(), f"data.covariates[{i}].source"
+                    cov.source.kind, cov.source.options(), f"data.covariates[{i}].source", covariate=True
                 )
         return self
 

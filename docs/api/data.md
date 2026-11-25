@@ -5,7 +5,7 @@
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.data.cache
+::: regimekit.finance.cache
     options:
       show_root_heading: true
       heading_level: 3

@@ -1,4 +1,4 @@
-"""Domain-neutral data sources (E10-T04a): `numpy`, `pandas`, `csv`, `parquet`.
+"""Domain-neutral data sources (E10-T04a/b): `numpy`, `pandas`, `csv`, `parquet`, `xarray`.
 
 Importing the package registers the sources under the kind `source`. `load_data` is the config-driven
 entry point: it resolves `data.source`, loads, and checks the result against `data.clock`.
@@ -14,6 +14,7 @@ from regimekit.data.sources import csv as csv  # registers `csv`
 from regimekit.data.sources import numpy as numpy  # registers `numpy`
 from regimekit.data.sources import pandas as pandas  # registers `pandas`
 from regimekit.data.sources import parquet as parquet  # registers `parquet`
+from regimekit.data.sources import xarray as xarray  # registers `xarray` (the library loads lazily)
 from regimekit.data.sources.base import Source, TabularOpts, get_source, validate_options
 from regimekit.utils.clock import get_clock
 from regimekit.utils.errors import ConfigError

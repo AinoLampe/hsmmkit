@@ -7,7 +7,6 @@ keys of `data.source:` (error path `data.source.<key>`).
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -18,6 +17,7 @@ import pydantic
 from pydantic import BaseModel, ConfigDict, Field
 
 from regimekit.data.contracts import CovariateSeries, ObservationSet
+from regimekit.data.provenance import hash_arrays, hash_file
 from regimekit.plugins import REGISTRY
 from regimekit.utils.errors import ConfigError, DataError
 
@@ -74,15 +74,22 @@ def get_source(name: str) -> Source:
     return entry
 
 
-def validate_options(kind: str, raw: Mapping[str, Any], path: str) -> BaseModel | None:
+def validate_options(
+    kind: str, raw: Mapping[str, Any], path: str, *, covariate: bool = False
+) -> BaseModel | None:
     """`raw` validated by the options model of the source `kind`; `None` if `kind` has no options model.
+
+    `covariate=True` uses the source's `covariate_options_model` when it declares one.
 
     Raises:
         ConfigError: unknown kind or an invalid option (`path="<path>.<key>"`).
     """
     import regimekit.data.sources  # noqa: F401
 
-    options_model = getattr(REGISTRY.get("source", kind), "options_model", None)
+    entry = REGISTRY.get("source", kind)
+    options_model = getattr(entry, "options_model", None)
+    if covariate:
+        options_model = getattr(entry, "covariate_options_model", options_model)
     if options_model is None:
         return None
     try:
@@ -95,23 +102,13 @@ def validate_options(kind: str, raw: Mapping[str, Any], path: str) -> BaseModel 
 
 
 def sha256_file(path: Path) -> str:
-    """Hex sha256 of the file's bytes."""
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
+    """Hex sha256 of the file's bytes (see `regimekit.data.provenance`)."""
+    return hash_file(path)
 
 
 def sha256_arrays(names: Sequence[str], arrays: Sequence[np.ndarray]) -> str:
-    """Hex sha256 over the column names and the contiguous array buffers (in-memory data)."""
-    digest = hashlib.sha256()
-    for name, array in zip(names, arrays, strict=True):
-        digest.update(name.encode("utf-8") + b"\0")
-        arr = np.ascontiguousarray(array)
-        digest.update(str(arr.dtype).encode() + str(arr.shape).encode() + b"\0")
-        digest.update(arr.tobytes())
-    return digest.hexdigest()
+    """Hex sha256 over the column names and the array buffers (see `regimekit.data.provenance`)."""
+    return hash_arrays(names, arrays)
 
 
 def _require_columns(frame: pd.DataFrame, columns: Sequence[str], path: str) -> None:

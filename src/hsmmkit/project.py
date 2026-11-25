@@ -26,7 +26,6 @@ import pydantic
 
 from regimekit.config.schema import BacktestCfg
 from regimekit.config.yaml_io import dump_resolved, load_config
-from regimekit.data.cache import Cache, CachedProvider, SnapshotPolicy
 from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
 from regimekit.data.prepare import Preparer, PrepDiagnostics, prep_stats_to_json
 from regimekit.data.quality import DataQualityReport, build_quality_report
@@ -41,7 +40,7 @@ from regimekit.evaluation.compare import CompareEntry, check_snapshots, comparis
 from regimekit.evaluation.report import build_report, versions
 from regimekit.evaluation.results import BacktestResult
 from regimekit.evaluation.strategies import make_strategy
-from regimekit.finance import FinanceConfig, FinanceDataSection, PriceSource, get_provider
+from regimekit.finance import Cache, FetchContext, FinanceConfig, PriceSource, SnapshotPolicy
 from regimekit.inference.covariate_forecasters import CovariateForecaster, make_forecaster
 from regimekit.inference.decode import decode as decode_posterior
 from regimekit.inference.forecast import MonteCarloForecaster
@@ -59,6 +58,7 @@ from regimekit.persistence.results import (
     write_simulation,
 )
 from regimekit.persistence.store import ModelStore
+from regimekit.plugins import REGISTRY
 from regimekit.statespace.builders import build_expanded, build_explicit
 from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from regimekit.utils.errors import ConfigError, DataError, PersistenceError, RegimekitError
@@ -144,21 +144,6 @@ def summary_lines(config: FinanceConfig) -> list[str]:
         f"covariate entry points: {', '.join(entry_points) if entry_points else '(none)'}",
         f"warnings: {'; '.join(config.warnings) if config.warnings else '(none)'}",
     ]
-
-
-def make_provider(name: str, data: FinanceDataSection, config_dir: Path) -> object:
-    """Instantiate a provider adapter for `fetch`.
-
-    `csv` files are resolved relative to the config file's directory (the schema has no provider
-    options); quota-tracking providers keep their quota files in the cache directory. API keys come
-    from the environment only (CLAUDE.md section 9).
-    """
-    kwargs: dict[str, object] = {}
-    if name == "csv":
-        kwargs["root"] = config_dir
-    elif name in ("stooq", "tiingo"):
-        kwargs["quota_dir"] = Path(data.cache.dir).expanduser()
-    return get_provider(name, **kwargs)
 
 
 def _train_end(obs: ObservationSet, backtest: BacktestCfg) -> np.datetime64:
@@ -358,25 +343,10 @@ class Project:
         offline = self.offline if offline is None else offline
         data = self.config.data
         _check_pinned(self.config, offline)
-        policy = SnapshotPolicy(data.cache.snapshot, data.cache.max_age_days, offline)
-        log = get_logger("regimekit.fetch")
-        cache = Cache(data.cache.dir)
-        providers: dict[str, CachedProvider] = {}
-
-        def cached(name: str) -> CachedProvider:
-            if name not in providers:
-                inner = make_provider(name, data, self.config_dir)
-                providers[name] = CachedProvider(inner, cache, policy)  # type: ignore[arg-type]
-                log.info("provider_terms_of_use", provider=name, note=providers[name].tos_note)
-            return providers[name]
-
-        p = data.primary
-        primary = cached(p.provider)
-        obs = primary.fetch_prices(list(p.symbols), p.start, p.end, p.interval, p.adjusted)
-        covs = [cached(c.provider).fetch_series(c.series, p.start, p.end) for c in data.covariates]
-        if obs.values.shape[0] < 2:
-            raise DataError(f"the primary request returned {obs.values.shape[0]} rows", path="data.primary")
-        self.last_fetched = FetchedInputs(obs, covs, cache, primary.name)
+        context = FetchContext(data, self.config_dir, offline)
+        source = REGISTRY.get("source", data.source.kind)
+        obs, covs = source.load(data.primary, obj=context)
+        self.last_fetched = FetchedInputs(obs, covs, context.cache, context.primary_name)
         return self.last_fetched
 
     def fetch(self, *, offline: bool | None = None, write: bool = False) -> PreparedDataset:

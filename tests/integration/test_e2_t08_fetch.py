@@ -392,7 +392,7 @@ def test_e2_t08_refetch_reports_adjustment_discontinuity(tmp_path: Path) -> None
 
 def test_e2_t08_quota_providers_keep_quota_in_cache_dir(tmp_path: Path) -> None:
     """stooq/tiingo are built with `quota_dir` = the cache directory (no network at construction)."""
-    from regimekit.project import make_provider as _make_provider
+    from regimekit.finance.providers.source import make_provider as _make_provider
 
     data = load_config(_write_csv_project(tmp_path), FinanceConfig).data
     cache_dir = Path(data.cache.dir).expanduser()

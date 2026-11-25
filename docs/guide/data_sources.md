@@ -1,7 +1,7 @@
 # Data sources
 
 A *source* turns a file or an in-memory object into observations, without any domain knowledge. The core ships
-four sources, registered under the kind `source`: `numpy`, `pandas`, `csv` and `parquet`. Applications register
+five sources, registered under the kind `source`: `numpy`, `pandas`, `csv`, `parquet` and `xarray`. Applications register
 more (the finance application registers `provider`, which fetches prices from market-data providers).
 
 ```yaml
@@ -46,6 +46,17 @@ Covariate columns become `CovariateSeries` on the same time axis (`frequency="gr
 
 Time columns are parsed as UTC (`pd.to_datetime(utc=True)`); timestamps that do not strictly increase raise
 `DataError(path="data.source.time_column")`. A missing column raises `DataError` naming the column.
+
+- **`xarray`**: an `xarray.Dataset` (`obj`) or a `.nc` / `.zarr` store (`path`). `observation_columns` are data
+  variables, `time_column` a coordinate, `sequence_column` a coordinate or variable. The library loads lazily; if it
+  is missing the error says `pip install hsmmkit[xarray]`.
+
+## The finance `provider` source
+
+The finance application registers one more kind, `provider` (E10-T04b): `data.source` takes `provider, symbols,
+interval, start, end, adjusted, field`; a covariate's `source: {kind: provider, provider, series}` takes
+`provider, series`. Loading goes through the parquet cache of `regimekit.finance.cache` (snapshot ids,
+`max_age_days`, `--offline` replay); the core keeps only the content hashes of `regimekit.data.provenance`.
 
 ## Loading from the configuration
 

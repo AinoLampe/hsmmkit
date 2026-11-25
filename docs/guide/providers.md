@@ -103,7 +103,7 @@ uses only the Python standard library, so no extra dependency is needed and the 
 
 ## Local cache, snapshots and offline replay
 
-`regimekit.data.cache.CachedProvider` wraps a provider (the `fetch` command wires it up) and stores what was
+`regimekit.finance.cache.CachedProvider` wraps a provider (the `fetch` command wires it up) and stores what was
 fetched as parquet under `data.cache.dir` (default `~/.cache/regimekit`, `~` expanded):
 
 ```text

@@ -36,12 +36,17 @@ class SourceCase:
         missing: `missing()` gives `(options, obj, needle)` of a load that must raise `DataError` whose
             message contains `needle` (the missing column or key).
         supports_timeless: `time=False` loads must work.
+        expected_source: the `ObservationSet.source` the load reports (default: the source's own name; the
+            `provider` source reports the provider adapter).
+        error: the exception type of the `missing` load (default `DataError`).
     """
 
     options: Callable[[bool], dict[str, Any]]
     obj: Callable[[bool], Any | None]
     missing: Callable[[], tuple[dict[str, Any], Any | None, str]]
     supports_timeless: bool = True
+    expected_source: str | None = None
+    error: type[Exception] = DataError
 
 
 def _frame(time: bool) -> pd.DataFrame:
@@ -113,6 +118,33 @@ def core_cases() -> dict[str, SourceCase]:
     }
 
 
+def xarray_case() -> SourceCase:
+    """Contract case of the `xarray` source (needs `xarray`)."""
+    import xarray as xr
+
+    def dataset(time: bool) -> Any:  # noqa: ANN401
+        frame = _frame(True)
+        index = pd.to_datetime(frame["t"]).to_numpy() if time else np.arange(len(frame))
+        data = {
+            c: ("time" if time else "step", frame[c].to_numpy())
+            for c in (*OBSERVATION_COLUMNS, *COVARIATE_COLUMNS)
+        }
+        return xr.Dataset(data, coords={"time" if time else "step": index})
+
+    def options(time: bool) -> dict[str, Any]:
+        return {
+            "observation_columns": OBSERVATION_COLUMNS,
+            "covariate_columns": COVARIATE_COLUMNS,
+            "time_column": "time" if time else None,
+        }
+
+    return SourceCase(
+        options=options,
+        obj=dataset,
+        missing=lambda: ({**options(True), "observation_columns": ["y1", "nope"]}, dataset(True), "nope"),
+    )
+
+
 def _load(name: str, options: dict[str, Any], obj: Any | None) -> tuple[ObservationSet, list[Any]]:  # noqa: ANN401
     source = get_source(name)
     opts = validate_options(name, options, "data.source")
@@ -135,7 +167,7 @@ def check_source(name: str, case: SourceCase) -> None:
     assert len(obs.series_names) == len(OBSERVATION_COLUMNS) == obs.values.shape[1], f"{name}: M mismatch"
     assert obs.series_names == tuple(OBSERVATION_COLUMNS), f"{name}: series_names {obs.series_names}"
     assert obs.values.dtype == np.float64, f"{name}: values dtype {obs.values.dtype}"
-    assert obs.source == name, f"{name}: ObservationSet.source is {obs.source!r}"
+    assert obs.source == (case.expected_source or name), f"{name}: ObservationSet.source is {obs.source!r}"
     assert obs.snapshot_id, f"{name}: the snapshot id must be set"
     assert [c.name for c in covs] == COVARIATE_COLUMNS, f"{name}: covariates {[c.name for c in covs]}"
     for cov in covs:
@@ -158,7 +190,7 @@ def check_source(name: str, case: SourceCase) -> None:
     message = None
     try:
         _load(name, bad_options, bad_obj)
-    except DataError as exc:
+    except case.error as exc:
         message = str(exc)
-    assert message is not None, f"{name}: a missing {needle!r} did not raise DataError"
+    assert message is not None, f"{name}: a missing {needle!r} did not raise {case.error.__name__}"
     assert needle in message, f"{name}: the error does not name {needle!r}: {message}"
