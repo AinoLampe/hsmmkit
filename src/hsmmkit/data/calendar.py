@@ -1,7 +1,7 @@
 """Master calendar: observation grid, `Δ_t` per clock, covariate alignment and lagging (FR-D04, FR-D05).
 
-Grid convention (concept §4.1, §5.6). The master grid is the primary instrument's timestamps after
-missing-price handling, `τ_0 < … < τ_T`. Observation `t` (math, 1-based) covers `(τ_{t-1}, τ_t]`,
+Grid convention (concept §4.1, §5.6). The master grid is the primary series' timestamps after
+missing-value handling, `τ_0 < … < τ_T`. Observation `t` (math, 1-based) covers `(τ_{t-1}, τ_t]`,
 so there are `T = len(times) - 1` observations and `Δ_t` has shape `(T,)`. In code, row `t`
 (0-based) is math step `t + 1`, i.e. the interval `(τ_t, τ_{t+1}]` (CLAUDE.md §3.7).
 
@@ -29,7 +29,7 @@ from regimekit.utils.clock import future_grid as future_grid  # re-export (E6-T0
 from regimekit.utils.clock import get_clock, is_irregular, parse_clock_options
 from regimekit.utils.errors import ConfigError, DataError
 
-MissingReturns = Literal["drop", "error"]
+MissingObservations = Literal["mask", "drop", "error"]
 
 _NS_PER_DAY = 86_400 * 10**9
 _NEVER = -1  # staleness of a row with no usable print (before the first one, or lost to the lag)
@@ -41,16 +41,16 @@ class Grid:
 
     Attributes:
         times: `(T+1,)` `datetime64[ns]` grid end times `τ_0 … τ_T` (`int64` step index if time-less).
-        prices: `(T+1, M)` float64 prices on the grid; column 0 (the primary) has no NaN, the other
-            series may (a missing print masks that series' returns, E9-T01).
-        dt: `(T,)` float64 `Δ_t` in clock units (years for `trading`/`calendar`, 1 for `steps`).
+        values: `(T+1, M)` float64 values on the grid; column 0 (the primary) has no NaN, the other
+            series may (a missing value masks that series' observation, E9-T01).
+        dt: `(T,)` float64 `Δ_t` in clock units (years for a year clock such as `calendar`, 1 for `steps`).
         nominal_dt: `median(Δ_t)`.
         irregular: `max Δ_t / min Δ_t > 1.5` (always `False` under `steps`).
         clock: the clock `dt` was computed under.
     """
 
     times: np.ndarray
-    prices: np.ndarray
+    values: np.ndarray
     dt: np.ndarray
     nominal_dt: float
     irregular: bool
@@ -90,7 +90,7 @@ def _as_ns(times: np.ndarray) -> np.ndarray:
 
 def build_grid(
     obs: ObservationSet,
-    missing_returns: MissingReturns,
+    missing_observations: MissingObservations,
     *,
     clock: str,
     clock_options: Mapping[str, Any] | None = None,
@@ -98,30 +98,31 @@ def build_grid(
     """Build the master grid from the primary instrument's observations.
 
     Args:
-        obs: prices `(T0, M)` on strictly increasing `times`; series 0 is the primary and defines the grid.
-        missing_returns: `"drop"` removes every row where the primary has a missing (NaN) price (the other
+        obs: values `(T0, M)` on strictly increasing `times`; series 0 is the primary and defines the grid.
+        missing_observations: `"mask"` keeps every row (non-finite values are masked later); `"drop"`
+            removes every row where the primary has a missing (NaN) value (the other
             series keep their NaN and are masked by `Preparer`); `"error"` raises on the first row where
             any series is missing.
         clock: name of a registered clock (`steps`, `calendar`, or an application's, e.g. the finance
-            application's trading-day clock): it defines `Δ_t` (ADR-0013, ADR-0015).
+            application's own clock): it defines `Δ_t` (ADR-0013, ADR-0015).
         clock_options: the clock's options (`data.clock_options`), validated by its options model.
 
     Returns:
         The grid with `T + 1` times and `T` values of `Δ_t`.
 
     Raises:
-        ConfigError: unknown `missing_returns` policy or clock, invalid clock options.
-        DataError: non-increasing times, a missing price under `"error"`, fewer than two rows left.
+        ConfigError: unknown `missing_observations` policy or clock, invalid clock options.
+        DataError: non-increasing times, a missing value under `"error"`, fewer than two rows left.
     """
-    if missing_returns not in ("drop", "error"):
+    if missing_observations not in ("mask", "drop", "error"):
         raise ConfigError(
-            f"missing_returns must be 'drop' or 'error', got {missing_returns!r}",
-            path="data.preparation.missing_returns",
+            f"missing_observations must be 'mask', 'drop' or 'error', got {missing_observations!r}",
+            path="data.preparation.missing_observations",
         )
     clk = get_clock(clock)
     opts = parse_clock_options(clock, clock_options)
 
-    prices = np.asarray(obs.values, dtype=np.float64)
+    values = np.asarray(obs.values, dtype=np.float64)
     times: np.ndarray
     if obs.times is None:
         if clk.unit != "step":
@@ -129,33 +130,35 @@ def build_grid(
                 f"observations without a time column need a step clock (data.clock: steps), not {clock!r}",
                 path="data.clock",
             )
-        times = np.arange(prices.shape[0], dtype=np.int64)  # the step index is the time axis
+        times = np.arange(values.shape[0], dtype=np.int64)  # the step index is the time axis
     else:
         times = _as_ns(obs.times)
         if times.shape[0] > 1 and not bool(np.all(np.diff(times) > np.timedelta64(0, "ns"))):
             raise DataError("primary times must be strictly increasing", path="times")
 
-    if missing_returns == "error":
-        gaps = np.argwhere(np.isnan(prices))
+    if missing_observations == "error":
+        gaps = np.argwhere(np.isnan(values))
         if gaps.size:
             row, col = gaps[np.argmin(gaps[:, 0])]
             first = str(times[row]) if obs.times is None else np.datetime_as_string(times[row], unit="s")
-            symbol = obs.series_names[col] if col < len(obs.series_names) else str(col)
-            what = "primary price" if col == 0 and len(obs.series_names) == 1 else f"price of {symbol!r}"
+            name = obs.series_names[col] if col < len(obs.series_names) else str(col)
+            what = "primary value" if col == 0 and len(obs.series_names) == 1 else f"value of {name!r}"
             raise DataError(
-                f"missing {what} at {first} (missing_returns='error')",
-                path="data.preparation.missing_returns",
+                f"missing {what} at {first} (missing_observations='error')",
+                path="data.preparation.missing_observations",
             )
-    missing = np.isnan(prices[:, 0])
+    missing = (
+        np.isnan(values[:, 0]) if missing_observations != "mask" else np.zeros(values.shape[0], dtype=bool)
+    )
     if missing.any():
-        times, prices = times[~missing], prices[~missing]
+        times, values = times[~missing], values[~missing]
     if times.shape[0] < 2:
-        raise DataError("the master grid needs at least two rows with a price", path="prices")
+        raise DataError("the master grid needs at least two rows with a value", path="values")
 
     dt = clk.dt(times, times.shape[0] - 1, opts)
     return Grid(
         times=times,
-        prices=prices,
+        values=values,
         dt=dt,
         nominal_dt=float(np.median(dt)),
         irregular=False if clk.unit == "step" else is_irregular(dt),
@@ -187,10 +190,12 @@ def _align_by_row(
     `<= t + 1 - lag`, carried at most `max_staleness` steps.
     """
     n_grid = grid.times.shape[0]
+    if raw_values.shape[0] == n_grid - 1:  # one print per observation; the grid has a virtual start time
+        raw_values = np.concatenate([[np.nan], raw_values])
     if raw_values.shape[0] != n_grid:
         raise DataError(
-            f"covariate {series.name!r}: a series without timestamps needs exactly {n_grid} values "
-            f"(the grid length), got {raw_values.shape[0]}",
+            f"covariate {series.name!r}: a series without timestamps needs {n_grid} values "
+            f"(the grid length, or one fewer with a virtual start time), got {raw_values.shape[0]}",
             path="data.covariates",
         )
     j = np.arange(n_grid)

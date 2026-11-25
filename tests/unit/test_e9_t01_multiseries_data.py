@@ -58,8 +58,8 @@ def test_e9_t01_secondary_gap_keeps_the_grid_row_and_masks_that_series() -> None
     prices[20, 1] = np.nan
     grid = build_grid(_obs(prices), "drop", clock="trading")
     assert grid.times.shape[0] == N_DAYS  # no row dropped
-    assert np.isnan(grid.prices[20, 1])
-    assert np.isfinite(grid.prices[:, 0]).all()
+    assert np.isnan(grid.values[20, 1])
+    assert np.isfinite(grid.values[:, 0]).all()
 
 
 def test_e9_t01_primary_gap_drops_the_row_for_every_series() -> None:
@@ -69,7 +69,7 @@ def test_e9_t01_primary_gap_drops_the_row_for_every_series() -> None:
     grid = build_grid(_obs(prices), "drop", clock="trading")
     assert grid.times.shape[0] == N_DAYS - 1
     assert TIMES[20] not in grid.times
-    assert grid.prices.shape == (N_DAYS - 1, 2)
+    assert grid.values.shape == (N_DAYS - 1, 2)
 
 
 def test_e9_t01_error_policy_rejects_a_gap_in_any_series() -> None:
@@ -78,7 +78,7 @@ def test_e9_t01_error_policy_rejects_a_gap_in_any_series() -> None:
     prices[20, 1] = np.nan
     with pytest.raises(DataError, match="'B'") as exc:
         build_grid(_obs(prices), "error", clock="trading")
-    assert exc.value.path == "data.preparation.missing_returns"
+    assert exc.value.path == "data.preparation.missing_observations"
 
 
 def test_e9_t01_single_series_grid_is_unchanged() -> None:

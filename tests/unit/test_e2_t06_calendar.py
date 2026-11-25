@@ -126,7 +126,7 @@ def test_e2_t06_grid_drops_rows_with_missing_price() -> None:
     times = _ns(["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"])
     grid = build_grid(_obs(times, [1.0, np.nan, 3.0, 4.0]), "drop", clock="trading")
     np.testing.assert_array_equal(grid.times, times[[0, 2, 3]])
-    np.testing.assert_array_equal(grid.prices[:, 0], [1.0, 3.0, 4.0])
+    np.testing.assert_array_equal(grid.values[:, 0], [1.0, 3.0, 4.0])
     assert grid.n_steps == 2
     assert grid.dt.shape == (2,)
 
@@ -137,7 +137,7 @@ def test_e2_t06_grid_drops_row_if_primary_series_missing() -> None:
     prices = np.array([[1.0, 10.0], [np.nan, 20.0], [3.0, 30.0]])
     grid = build_grid(_obs(times, prices), "drop", clock="trading")
     np.testing.assert_array_equal(grid.times, times[[0, 2]])
-    assert grid.prices.shape == (2, 2)
+    assert grid.values.shape == (2, 2)
 
 
 def test_e2_t06_grid_missing_error_policy_names_first_timestamp() -> None:
@@ -145,7 +145,7 @@ def test_e2_t06_grid_missing_error_policy_names_first_timestamp() -> None:
     times = _ns(["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"])
     with pytest.raises(DataError, match="2024-01-03") as info:
         build_grid(_obs(times, [1.0, np.nan, 3.0, np.nan]), "error", clock="trading")
-    assert info.value.path == "data.preparation.missing_returns"
+    assert info.value.path == "data.preparation.missing_observations"
 
 
 def test_e2_t06_grid_needs_two_rows() -> None:
@@ -167,7 +167,7 @@ def test_e2_t06_grid_rejects_bad_policy_and_bars() -> None:
     times = _ns(["2024-01-02", "2024-01-03"])
     with pytest.raises(ConfigError) as info:
         build_grid(_obs(times, [1.0, 2.0]), "ffill", clock="trading")  # type: ignore[arg-type]
-    assert info.value.path == "data.preparation.missing_returns"
+    assert info.value.path == "data.preparation.missing_observations"
     with pytest.raises(ConfigError) as info:
         build_grid(_obs(times, [1.0, 2.0]), "drop", clock="trading", clock_options={"bars_per_day": 0})
     assert info.value.path == "data.clock_options.bars_per_day"

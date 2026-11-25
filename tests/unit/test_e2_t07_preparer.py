@@ -14,9 +14,10 @@ from regimekit.config.schema import SourceCfg
 from regimekit.config.yaml_io import load_config
 from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset, PrepStats
 from regimekit.data.prepare import Preparer, prep_stats_from_json, prep_stats_to_json
-from regimekit.data.transforms import apply_transforms, log_returns
+from regimekit.data.transforms import apply_transforms
 from regimekit.finance import FinanceConfig
 from regimekit.finance.config import FinanceCovariateCfg, FinanceDataSection, FinancePrepCfg
+from regimekit.finance.transforms import log_returns
 from regimekit.utils.errors import ConfigError, DataError
 
 N_DAYS = 200

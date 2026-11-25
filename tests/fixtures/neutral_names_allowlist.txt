@@ -1,19 +1,6 @@
 # Neutral-name allow-list (E10-T01). Format: path:term  # ticket that removes the entry.
 # Paths are relative to src/regimekit. The list only shrinks; E10-T07b deletes it.
 cli/app.py:strategy  # E10-T07b
-data/calendar.py:price  # E10-T05
-data/calendar.py:returns  # E10-T05
-data/calendar.py:symbol  # E10-T05
-data/calendar.py:trading  # E10-T05
-data/prepare.py:log_return  # E10-T05
-data/prepare.py:price  # E10-T05
-data/prepare.py:returns  # E10-T05
-data/quality.py:price  # E10-T05
-data/quality.py:returns  # E10-T05
-data/quality.py:symbol  # E10-T05
-data/transforms.py:log_return  # E10-T05
-data/transforms.py:price  # E10-T05
-data/transforms.py:returns  # E10-T05
 engine/approx.py:returns  # E10-T07b
 engine/parallel.py:price  # E10-T07b
 estimation/init.py:returns  # E10-T07a

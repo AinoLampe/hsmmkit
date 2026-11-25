@@ -2,24 +2,31 @@
 
 Pipeline (same for `fit` and `transform`):
 
-1. Master grid from the primary prices (`data.calendar.build_grid`, `missing_returns` policy).
-2. Observations `y_t = log(P_t / P_{t-1})` (`transforms.log_returns`); `mask = isfinite(y)`,
-   masked values set to 0.
-3. Per covariate, in declared order: transforms on the series' own prints (`log`, `diff`, `pct`;
-   `zscore` is a deprecated alias of standardization), then alignment + lag + `max_staleness`
-   forward-fill (`data.calendar.align_covariate`).
-   Prints are sorted by time first; of duplicated timestamps the last (a revision) is kept.
-4. Warm-up: leading rows before every covariate has its first usable value are trimmed. The lag
+1. Master grid from the observations' times, or the step index (`data.calendar.build_grid`,
+   `missing_observations` policy: `mask` keeps every row, `drop` removes rows where the primary series is
+   missing, `error` raises).
+2. Observations `y = transform(values)` with the registered observation transform (`identity` by default;
+   an application registers more, e.g. a transform that drops the first row). `mask = isfinite(y)`, masked
+   values are set to 0. A transform that keeps every row gets one virtual grid time before the first row,
+   so that every observation has a spacing `dt`.
+3. Support check (`real`, `count`, `binary`, `categorical`) against the emission family's support; counts,
+   binary and categorical observations become `int64`.
+4. Per covariate, in declared order: transforms on the series' own prints (`log`, `diff`, `pct`; `zscore`
+   is a deprecated alias of standardization), then alignment + lag + `max_staleness` forward-fill
+   (`data.calendar.align_covariate`). Prints are sorted by time first; of duplicated timestamps the last
+   (a revision) is kept.
+5. Warm-up: leading rows before every covariate has its first usable value are trimmed. The lag
    shift and each `diff`/`pct` cost rows by construction; that is history that does not exist yet,
    not missing data, and is trimmed for every policy. A covariate that starts later than that
    (e.g. a series beginning after the primary) raises under `missing: error` and is trimmed with a
    warning otherwise.
-5. Missing policy on the remaining NaN, per covariate: `error` -> `DataError` naming the first
+6. Missing policy on the remaining NaN, per covariate: `error` -> `DataError` naming the first
    offending timestamp; `drop` -> drop those grid rows; `ffill` -> the fill up to `max_staleness`
-   already happened in step 3, rows still NaN are dropped like `drop`. Drops are joint: returns,
+   already happened in step 4, rows still NaN are dropped like `drop`. Drops are joint: observations,
    `dt`, `mask`, `times` and every covariate are re-sliced together.
-6. Standardization (`standardize_covariates`, or `zscore` in a covariate's transforms) with mean/std
-   (ddof 0) fitted by `fit` on rows whose end time is `<= train_end` only, applied by `transform`.
+7. Standardization of the covariates (`standardize_covariates`, or `zscore` in a covariate's transforms)
+   and, for real observations, of the observations (`standardize_observations`), with mean/std (ddof 0)
+   fitted by `fit` on rows whose end time is `<= train_end` only, applied by `transform`.
 """
 
 from __future__ import annotations
@@ -28,23 +35,55 @@ import json
 import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Any, cast, get_args
+from typing import Any, get_args
 
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
 from regimekit.config.schema import CovariateCfg, DataSection, EntryPoint
-from regimekit.data.calendar import align_covariate, build_grid
-from regimekit.data.contracts import Clock, CovariateSeries, ObservationSet, PreparedDataset, PrepStats
-from regimekit.data.transforms import apply_transforms, log_returns
-from regimekit.utils.errors import DataError
+from regimekit.data.calendar import Grid, align_covariate, build_grid
+from regimekit.data.contracts import (
+    Clock,
+    CovariateSeries,
+    ObservationSet,
+    PreparedDataset,
+    PrepStats,
+    Support,
+)
+from regimekit.data.transforms import apply_transforms, get_observation_transform
+from regimekit.utils.clock import get_clock, parse_clock_options
+from regimekit.utils.errors import ConfigError, DataError
 from regimekit.utils.logging import get_logger
 
 MIN_STD = 1e-12
 ENTRY_POINTS: tuple[EntryPoint, ...] = get_args(EntryPoint)
 
 _log = get_logger(__name__)
+
+
+def _step(t: Any) -> int:  # noqa: ANN401
+    """A step index from `t`; time-less data takes integer train bounds."""
+    try:
+        return int(t)
+    except (TypeError, ValueError):
+        raise DataError(
+            f"time-less data needs an integer train bound (a step index), got {t!r}", path="train_end"
+        ) from None
+
+
+def _at_or_before(times: np.ndarray, t: Any) -> np.ndarray:  # noqa: ANN401
+    """`times <= t` for timestamps or a step index."""
+    if np.issubdtype(times.dtype, np.integer):
+        return np.asarray(times <= _step(t))
+    return np.asarray(times <= _utc_ns(t))
+
+
+def _at_or_after(times: np.ndarray, t: Any) -> np.ndarray:  # noqa: ANN401
+    """`times >= t` for timestamps or a step index."""
+    if np.issubdtype(times.dtype, np.integer):
+        return np.asarray(times >= _step(t))
+    return np.asarray(times >= _utc_ns(t))
 
 
 def _utc_ns(t: str | np.datetime64 | pd.Timestamp) -> np.datetime64:
@@ -57,11 +96,8 @@ def _utc_ns(t: str | np.datetime64 | pd.Timestamp) -> np.datetime64:
 
 def _canonical(series: CovariateSeries) -> CovariateSeries:
     """Sort prints by time (stable) and keep the last of duplicated timestamps (a revised print)."""
-    if series.times is None:
-        raise DataError(
-            f"covariate {series.name!r} has no timestamps; the generic preparer comes with E10-T05",
-            path="data.covariates",
-        )
+    if series.times is None or np.issubdtype(np.asarray(series.times).dtype, np.integer):
+        return series  # time-less: one print per grid row, already in order
     times = np.asarray(series.times).astype("datetime64[ns]")
     order = np.argsort(times, kind="stable")
     times, values = times[order], np.asarray(series.values, dtype=np.float64)[order]
@@ -75,7 +111,9 @@ def _structural_warmup(c: CovariateCfg) -> int:
     return c.lag - 1 + sum(t in ("diff", "pct") for t in c.transform)
 
 
-def _iso(t: np.datetime64) -> str:
+def _iso(t: np.datetime64 | np.integer) -> str:
+    if isinstance(t, np.integer):
+        return str(int(t))
     ts = pd.Timestamp(t)
     return str(ts.date()) if ts == ts.normalize() else ts.isoformat()
 
@@ -91,6 +129,7 @@ class _Frame:
     covariates: np.ndarray  # (T, K), raw (transformed, aligned) covariate values
     nominal_dt: float
     clock: Clock
+    n_categories: int | None = None
 
 
 @dataclass(frozen=True, eq=False)
@@ -98,16 +137,43 @@ class PrepDiagnostics:
     """What the last `fit`/`transform` pipeline run removed or carried forward (for the quality report).
 
     Attributes:
-        missing_price_rows: primary rows dropped for a missing price (`missing_returns: drop`).
+        missing_rows: primary rows dropped for a missing value (`missing_observations: drop`).
         warmup_rows: leading grid rows trimmed before every covariate had a usable value.
         dropped: per covariate name, grid rows its `missing` policy dropped (rows can overlap).
         staleness: per covariate name, `(T_grid,)` staleness on the full grid (-1 = no usable print).
     """
 
-    missing_price_rows: int
+    missing_rows: int
     warmup_rows: int
     dropped: dict[str, int]
     staleness: dict[str, np.ndarray]
+
+
+def _with_virtual_start(grid: Grid, clock: str, clock_options: Any) -> Grid:  # noqa: ANN401
+    """The grid with one extra time before the first row, so that every observation has a spacing.
+
+    Used when the observation transform keeps every row: observation `t` then covers `(τ_{t-1}, τ_t]`
+    with `τ_{-1}` one median spacing before the first time (for a step index: one step).
+    """
+    clk = get_clock(clock)
+    opts = parse_clock_options(clock, clock_options)
+    times = grid.times
+    if np.issubdtype(times.dtype, np.integer):
+        first = times[:1] - 1
+    else:
+        spacing = np.median(np.diff(times)) if times.shape[0] > 1 else np.timedelta64(1, "D")
+        first = times[:1] - spacing
+    extended = np.concatenate([first, times])
+    dt = clk.dt(extended, extended.shape[0] - 1, opts)
+    values = np.vstack([np.full((1, grid.values.shape[1]), np.nan), grid.values])
+    return Grid(
+        times=extended,
+        values=values,
+        dt=dt,
+        nominal_dt=float(np.median(dt)),
+        irregular=False if clk.unit == "step" else grid.irregular,
+        clock=grid.clock,
+    )
 
 
 class Preparer:
@@ -117,8 +183,26 @@ class Preparer:
     equal `cfg.covariates[i].series`. Output covariate names are the config names.
     """
 
-    def __init__(self, cfg: DataSection) -> None:
-        """Store the `data:` config section; nothing is fitted yet."""
+    def __init__(
+        self, cfg: DataSection, *, support: Support = "real", n_categories: int | None = None
+    ) -> None:
+        """Store the `data:` config section and the observation support; nothing is fitted yet.
+
+        Args:
+            cfg: the `data:` section.
+            support: the emission family's support (`real`, `count`, `binary`, `categorical`).
+            n_categories: number of categories for `categorical` (`None`: `max + 1` with a warning).
+
+        Raises:
+            ConfigError: `standardize_observations` with a non-real support.
+        """
+        if cfg.preparation.standardize_observations and support != "real":
+            raise ConfigError(
+                f"standardize_observations needs real observations, not support {support!r}",
+                path="data.preparation.standardize_observations",
+            )
+        self.support = support
+        self.n_categories = n_categories
         self.cfg = cfg
         self._stats: PrepStats | None = None
         self.diagnostics: PrepDiagnostics | None = None
@@ -140,7 +224,7 @@ class Preparer:
         """Fit standardization statistics on rows whose end time is `<= train_end` (and `>= train_start`).
 
         Args:
-            obs: primary prices.
+            obs: the observations.
             covs: raw covariate series in `data.covariates` order.
             train_end: last training timestamp (inclusive), any `pd.Timestamp`-parsable value;
                 naive means UTC, timezone-aware values are converted to UTC.
@@ -154,9 +238,9 @@ class Preparer:
             DataError: no training rows, a train-window std `< 1e-12`, or any pipeline error.
         """
         frame = self._frame(obs, covs)
-        train = frame.times <= _utc_ns(train_end)
+        train = _at_or_before(frame.times, train_end)
         if train_start is not None:
-            train &= frame.times >= _utc_ns(train_start)
+            train &= _at_or_after(frame.times, train_start)
         if not train.any():
             raise DataError(
                 f"train_end {train_end!r} is before the first prepared observation {_iso(frame.times[0])}",
@@ -182,6 +266,24 @@ class Preparer:
                     f"covariate {c.name!r} has train-window std {std[i]:.3g} < {MIN_STD} (constant?)",
                     path=f"data.covariates[{i}]",
                 )
+        obs_mean: np.ndarray | None = None
+        obs_std: np.ndarray | None = None
+        if self.cfg.preparation.standardize_observations:
+            y, ok = frame.observations[train], frame.mask[train]
+            counts = ok.sum(axis=0)
+            if bool(np.any(counts < 2)):
+                raise DataError(
+                    "standardize_observations needs two observed train rows per series",
+                    path="data.preparation.standardize_observations",
+                )
+            obs_mean = (np.where(ok, y, 0.0).sum(axis=0) / counts).astype(np.float64)
+            centered = np.where(ok, y - obs_mean, 0.0)
+            obs_std = np.sqrt((centered**2).sum(axis=0) / counts)
+            if not bool(np.all(obs_std >= MIN_STD)):
+                raise DataError(
+                    f"an observation series has train-window std < {MIN_STD} (constant?)",
+                    path="data.preparation.standardize_observations",
+                )
         self._stats = PrepStats(
             cov_mean=mean,
             cov_std=std,
@@ -189,6 +291,8 @@ class Preparer:
             cov_names=tuple(c.name for c in covariates),
             transforms={c.name: list(c.transform) for c in covariates},
             lags={c.name: c.lag for c in covariates},
+            obs_mean=obs_mean,
+            obs_std=obs_std,
         )
         return self
 
@@ -206,6 +310,9 @@ class Preparer:
             )
         frame = self._frame(obs, covs)
         standardized = (frame.covariates - stats.cov_mean) / stats.cov_std
+        observations = frame.observations
+        if stats.obs_mean is not None and stats.obs_std is not None:
+            observations = np.where(frame.mask, (observations - stats.obs_mean) / stats.obs_std, 0.0)
 
         blocks: dict[EntryPoint, Any] = {}
         cov_names: dict[str, tuple[str, ...]] = {}
@@ -217,7 +324,7 @@ class Preparer:
 
         dataset = PreparedDataset(
             times=frame.times,
-            observations=jnp.asarray(frame.observations),
+            observations=jnp.asarray(observations),
             dt=jnp.asarray(frame.dt),
             mask=jnp.asarray(frame.mask),
             cov_transition=blocks.get("transition"),
@@ -228,8 +335,8 @@ class Preparer:
             nominal_dt=frame.nominal_dt,
             prep_stats=stats,
             snapshot_ids=(obs.snapshot_id, *(s.snapshot_id for s in covs)),
-            support="real",
-            n_categories=None,
+            support=self.support,
+            n_categories=frame.n_categories,
             labels=None,
             boundaries=None,
             group=None,
@@ -241,21 +348,28 @@ class Preparer:
 
     def _frame(self, obs: ObservationSet, covs: Sequence[CovariateSeries]) -> _Frame:
         cfg = self.cfg
-        if obs.times is None:
-            raise DataError(
-                "time-less observations need the generic preparer (E10-T05)", path="data.source.time_column"
-            )
         self._check_covariates(covs)
         grid = build_grid(
             obs,
-            cast(Any, cfg.preparation.missing_observations),  # "mask" arrives with E10-T05
+            cfg.preparation.missing_observations,
             clock=cfg.clock,
             clock_options=cfg.clock_options,
         )
 
-        y = log_returns(grid.prices)
+        transform = get_observation_transform(cfg.preparation.observation_transform)
+        y, _ = transform(grid.values, grid.times)
+        y = np.asarray(y)
+        removed = grid.times.shape[0] - y.shape[0]
+        if removed not in (0, 1):
+            raise DataError(
+                f"observation transform '{transform.name}' removed {removed} rows; only 0 or 1 are supported",
+                path="data.preparation.observation_transform",
+            )
+        if removed == 0:
+            grid = _with_virtual_start(grid, cfg.clock, cfg.clock_options)
         mask = np.isfinite(y)
         y = np.where(mask, y, 0.0)
+        y, n_categories = self._apply_support(y, mask, obs.series_names)
 
         n_cov = len(cfg.covariates)
         x = np.empty((grid.n_steps, n_cov), dtype=np.float64)
@@ -267,15 +381,15 @@ class Preparer:
                 grid, replace(s, values=values), c.lag, c.max_staleness, index=i
             )
         x[~np.isfinite(x)] = np.nan  # defensive: nothing non-finite may reach the dataset
-        missing_price_rows = int(obs.values.shape[0] - grid.times.shape[0])
+        missing_rows = int(obs.values.shape[0] - (grid.times.shape[0] - (1 - removed)))
         # Recorded before the policies run, so a report can still show staleness if `error` raises.
-        self.diagnostics = PrepDiagnostics(missing_price_rows, 0, {}, staleness)
+        self.diagnostics = PrepDiagnostics(missing_rows, 0, {}, staleness)
 
         start = self._warmup(x, cfg.covariates, grid.end_times)
         keep, dropped = self._policy_keep(x[start:], cfg.covariates, grid.end_times[start:])
         rows = start + np.flatnonzero(keep)
         self.diagnostics = PrepDiagnostics(
-            missing_price_rows=missing_price_rows,
+            missing_rows=missing_rows,
             warmup_rows=start,
             dropped=dropped,
             staleness=staleness,
@@ -288,7 +402,47 @@ class Preparer:
             covariates=x[rows],
             nominal_dt=grid.nominal_dt,
             clock=grid.clock,
+            n_categories=n_categories,
         )
+
+    def _apply_support(
+        self, y: np.ndarray, mask: np.ndarray, names: Sequence[str]
+    ) -> tuple[np.ndarray, int | None]:
+        """Check the observations against the support; counts, binary and categorical become `int64`."""
+        support = self.support
+        if support == "real":
+            return y, None
+        observed = np.where(mask, y, 0.0)
+        path = "data.source.observation_columns"
+
+        def violated(bad: np.ndarray) -> DataError:
+            r, m = (int(v) for v in np.argwhere(bad)[0])
+            return DataError(f"{support} support violated at row {r}, series {names[m]}", path=path)
+
+        integral = np.abs(observed - np.rint(observed)) < 1e-12
+        if not bool(np.all(integral | ~mask)):
+            raise violated(~integral & mask)
+        ints = np.rint(observed).astype(np.int64)
+        if support == "count":
+            if bool(np.any((ints < 0) & mask)):
+                raise violated((ints < 0) & mask)
+            return ints, None
+        if support == "binary":
+            bad = ~np.isin(ints, (0, 1)) & mask
+            if bool(bad.any()):
+                raise violated(bad)
+            return ints, None
+        if y.shape[1] != 1:
+            raise DataError("categorical support needs a single series", path=path)
+        if bool(np.any((ints < 0) & mask)):
+            raise violated((ints < 0) & mask)
+        n_cat = self.n_categories
+        if n_cat is None:
+            n_cat = int(ints[mask].max()) + 1 if bool(mask.any()) else 1
+            warnings.warn(f"n_categories not given; using max + 1 = {n_cat}", UserWarning, stacklevel=3)
+        if bool(np.any((ints >= n_cat) & mask)):
+            raise violated((ints >= n_cat) & mask)
+        return ints, n_cat
 
     def _check_covariates(self, covs: Sequence[CovariateSeries]) -> None:
         expected = self.cfg.covariates
@@ -298,8 +452,11 @@ class Preparer:
                 path="data.covariates",
             )
         for i, (c, s) in enumerate(zip(expected, covs, strict=True)):
-            series = None if c.source is None else c.source.option("series")
-            if s.series_id != series:
+            if c.source is None:
+                series: Any = c.column or c.name
+            else:
+                series = c.source.option("series")
+            if series is not None and s.series_id != series:
                 raise DataError(
                     f"covariate {i} ({c.name!r}) expects series {series!r}, got {s.series_id!r}",
                     path=f"data.covariates[{i}].series",
@@ -363,6 +520,14 @@ def prep_stats_to_json(stats: PrepStats) -> str:
             "cov_names": list(stats.cov_names),
             "transforms": {k: list(v) for k, v in stats.transforms.items()},
             "lags": dict(stats.lags),
+            **(
+                {}
+                if stats.obs_mean is None or stats.obs_std is None
+                else {
+                    "obs_mean": [float(v) for v in stats.obs_mean],
+                    "obs_std": [float(v) for v in stats.obs_std],
+                }
+            ),
         },
         indent=2,
     )
@@ -378,4 +543,6 @@ def prep_stats_from_json(text: str) -> PrepStats:
         cov_names=tuple(d["cov_names"]),
         transforms={k: list(v) for k, v in d["transforms"].items()},
         lags={k: int(v) for k, v in d["lags"].items()},
+        obs_mean=None if "obs_mean" not in d else np.asarray(d["obs_mean"], dtype=np.float64),
+        obs_std=None if "obs_std" not in d else np.asarray(d["obs_std"], dtype=np.float64),
     )

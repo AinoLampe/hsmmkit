@@ -1,31 +1,78 @@
-"""Pure observation and covariate transforms used by the `Preparer` (FR-D05).
+"""Observation transforms (registry kind `transform`) and covariate transforms of the `Preparer` (FR-D05).
 
-`log_returns` is the finance profile's observation transform; it is a standalone pure function so
-Part II can move it into the profile without touching the `Preparer`. Covariate transforms act on a
-series' own prints, before alignment onto the grid (E2-T06), in declared order.
+The core registers `identity` and `diff`; an application registers more (the finance application: a
+log-ratio transform). Covariate transforms act on a series' own prints, before alignment onto the grid
+(E2-T06), in declared order.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Protocol
 
 import numpy as np
 
-from regimekit.utils.errors import DataError
+from regimekit.plugins import REGISTRY, provenance_of
+from regimekit.utils.errors import ConfigError, DataError
 
 
-def log_returns(prices: np.ndarray) -> np.ndarray:
-    """Log-returns `y_t = log(P_t / P_{t-1})` per series.
+class ObservationTransform(Protocol):
+    """A registered observation transform (registry kind `transform`).
 
-    Args:
-        prices: `(T+1, M)` prices on the master grid.
-
-    Returns:
-        `(T, M)` float64 log-returns. Non-positive prices give `±inf`/NaN; the caller masks them.
+    Called with the `(T0, M)` values and their `(T0,)` times (`None` for time-less data); gives back the
+    transformed values and the matching times. A transform that shortens the series drops leading rows only
+    (the first row has no predecessor) and gives back the shortened times.
     """
-    p = np.asarray(prices, dtype=np.float64)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        return np.log(p[1:]) - np.log(p[:-1])
+
+    name: str
+
+    def __call__(self, values: np.ndarray, times: np.ndarray | None) -> tuple[np.ndarray, np.ndarray | None]:
+        """Transform `values`; the result has `T0 - k` rows and `times[k:]` for some `k >= 0`."""
+        ...
+
+
+class IdentityTransform:
+    """`y_t = x_t`: the observations pass through unchanged (the default)."""
+
+    name = "identity"
+
+    def __call__(self, values: np.ndarray, times: np.ndarray | None) -> tuple[np.ndarray, np.ndarray | None]:
+        """Return `values` and `times` as they are."""
+        return values, times
+
+
+class DiffTransform:
+    """`y_t = x_t - x_{t-1}`; the first row is dropped."""
+
+    name = "diff"
+
+    def __call__(self, values: np.ndarray, times: np.ndarray | None) -> tuple[np.ndarray, np.ndarray | None]:
+        """First differences per series, in float64."""
+        x = np.asarray(values, dtype=np.float64)
+        return x[1:] - x[:-1], None if times is None else times[1:]
+
+
+REGISTRY.register(
+    "transform", IdentityTransform.name, IdentityTransform(), provenance=provenance_of(__name__)
+)
+REGISTRY.register("transform", DiffTransform.name, DiffTransform(), provenance=provenance_of(__name__))
+
+
+def get_observation_transform(name: str | None) -> ObservationTransform:
+    """The registered transform `name` (`None` = `identity`).
+
+    Raises:
+        ConfigError: unknown name (`path="data.preparation.observation_transform"`).
+    """
+    chosen = name or "identity"
+    if not REGISTRY.has("transform", chosen):
+        listing = ", ".join(f"{e.name} ({e.provenance})" for e in REGISTRY.entries("transform"))
+        raise ConfigError(
+            f"unknown observation transform '{chosen}'; registered: {listing}",
+            path="data.preparation.observation_transform",
+        )
+    transform: ObservationTransform = REGISTRY.get("transform", chosen)
+    return transform
 
 
 def _apply_one(x: np.ndarray, name: str, path: str | None) -> np.ndarray:

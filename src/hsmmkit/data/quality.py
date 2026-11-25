@@ -1,27 +1,20 @@
-"""Data-quality report written by `regimekit fetch` (FR-D06, concept §5.6).
+"""Domain-neutral data-quality checks (E10-T05, FR-D06).
 
-Checks, all on the raw primary prices as fetched (before the master grid is built):
+Run on the raw observations of a source, before the master grid is built:
 
-- gaps against a plain weekday calendar (daily data only; no holiday calendar in 0.1.0, so exchange
-  holidays show up as gaps by design),
 - duplicated timestamps,
-- zero or negative prices,
-- `|return| > 8 sigma` log-returns (flag only; sigma is the robust MAD scale `1.4826 * MAD`, so a single
-  outlier cannot hide itself by inflating the standard deviation),
-- adjustment discontinuities between the two latest cache generations (max relative price
-  difference on their overlap `> 1e-6`),
-- per-covariate staleness histogram and the rows dropped by each missing-value policy (from the
-  `Preparer`'s `PrepDiagnostics`).
+- gaps in the time index (spacing `> 1.5 x` the median spacing; needs timestamps),
+- outliers `|y - median| > 8 x MAD` per series (flag only; the MAD is raw, not rescaled),
+- the staleness histogram of the covariates (from the preparer's `PrepDiagnostics`).
 
-A series whose MAD is 0 (e.g. mostly unchanged prices) gets no outlier check.
+An application adds its own checks on top (the finance application: weekday gaps, non-positive values,
+adjustment discontinuities).
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -29,165 +22,29 @@ import pandas as pd
 
 from regimekit.data.contracts import ObservationSet
 
-OUTLIER_SIGMAS = 8.0
-ADJUSTMENT_RTOL = 1e-6
-_MAD_TO_SIGMA = 1.4826
+GAP_FACTOR = 1.5
+OUTLIER_MADS = 8.0
 
 
-def _iso(t: np.datetime64 | pd.Timestamp) -> str:
+def iso(t: np.datetime64 | pd.Timestamp) -> str:
+    """A timestamp as `YYYY-MM-DD` (midnight) or ISO-8601."""
     ts = pd.Timestamp(t)
     return str(ts.date()) if ts == ts.normalize() else ts.isoformat()
 
 
 @dataclass(frozen=True)
-class DataQualityReport:
-    """Findings of the data-quality checks; every finding carries its timestamp(s)."""
+class GenericQuality:
+    """Findings of the generic checks; every finding carries its index or timestamp."""
 
-    symbols: list[str]
     n_rows: int
-    gaps: list[str] = field(default_factory=list)
     duplicates: list[str] = field(default_factory=list)
-    non_positive_prices: list[dict[str, Any]] = field(default_factory=list)
+    index_gaps: list[str] = field(default_factory=list)
     outliers: list[dict[str, Any]] = field(default_factory=list)
-    adjustment: dict[str, Any] | None = None
     staleness: dict[str, dict[str, int]] = field(default_factory=dict)
-    dropped_rows: dict[str, int] = field(default_factory=dict)
-
-    def to_json(self) -> str:
-        """The report as indented JSON."""
-        return json.dumps(asdict(self), indent=2)
-
-    def to_markdown(self) -> str:
-        """The report as a human-readable Markdown page."""
-        lines = [
-            "# Data-quality report",
-            "",
-            f"Symbols: {', '.join(self.symbols)} · rows: {self.n_rows}",
-            "",
-            f"## Gaps vs. weekday calendar ({len(self.gaps)})",
-            "",
-            *(f"- {d}" for d in self.gaps),
-            "",
-            f"## Duplicated timestamps ({len(self.duplicates)})",
-            "",
-            *(f"- {d}" for d in self.duplicates),
-            "",
-            f"## Zero or negative prices ({len(self.non_positive_prices)})",
-            "",
-            *(f"- {p['time']} {p['symbol']}: {p['price']}" for p in self.non_positive_prices),
-            "",
-            f"## |return| > {OUTLIER_SIGMAS:g} sigma, flag only ({len(self.outliers)})",
-            "",
-            *(
-                f"- {o['time']} {o['symbol']}: {o['return']:+.6f} ({o['sigmas']:.1f} sigma)"
-                for o in self.outliers
-            ),
-            "",
-            "## Adjustment discontinuities between cache generations",
-            "",
-        ]
-        if self.adjustment is None:
-            lines.append("- only one cache generation; nothing to compare")
-        else:
-            a = self.adjustment
-            verdict = "DISCONTINUOUS" if a["discontinuous"] else "consistent"
-            first = f", first at {a['first_time']}" if a["first_time"] else ""
-            lines.append(
-                f"- {verdict}: {a['latest'][:12]} vs {a['previous'][:12]}, "
-                f"{a['n_overlap']} overlapping rows, "
-                f"max relative difference {a['max_rel_diff']:.3g}{first}"
-            )
-        lines += ["", "## Covariate staleness (grid steps since the print became visible)", ""]
-        for name, hist in self.staleness.items():
-            lines.append(f"- {name}: " + ", ".join(f"{k}: {v}" for k, v in hist.items()))
-        lines += ["", "## Dropped rows", ""]
-        lines += [f"- {k}: {v}" for k, v in self.dropped_rows.items()]
-        return "\n".join(lines) + "\n"
-
-    def write(self, out_dir: Path) -> tuple[Path, Path]:
-        """Write `quality.json` and `quality.md` into `out_dir` (created if missing)."""
-        out_dir.mkdir(parents=True, exist_ok=True)
-        json_path, md_path = out_dir / "quality.json", out_dir / "quality.md"
-        json_path.write_text(self.to_json(), encoding="utf-8")
-        md_path.write_text(self.to_markdown(), encoding="utf-8")
-        return json_path, md_path
 
 
-def _gaps(times: np.ndarray, interval: str) -> list[str]:
-    if interval != "1d" or times.size == 0:
-        return []
-    days = pd.DatetimeIndex(times).normalize().unique()
-    expected = pd.bdate_range(days.min(), days.max())
-    return [_iso(d) for d in expected.difference(days)]
-
-
-def _duplicates(times: np.ndarray) -> list[str]:
-    index = pd.DatetimeIndex(times)
-    return [_iso(t) for t in index[index.duplicated(keep="first")].unique()]
-
-
-def _times(obs: ObservationSet) -> np.ndarray:
-    return np.asarray(obs.require_times())
-
-
-def _non_positive(obs: ObservationSet) -> list[dict[str, Any]]:
-    found = []
-    times = _times(obs)
-    rows, cols = np.nonzero(np.asarray(obs.values) <= 0)
-    for r, c in sorted(zip(rows.tolist(), cols.tolist(), strict=True), key=lambda rc: (times[rc[0]], rc[1])):
-        found.append(
-            {"time": _iso(times[r]), "symbol": obs.series_names[c], "price": float(obs.values[r, c])}
-        )
-    return found
-
-
-def _outliers(obs: ObservationSet) -> list[dict[str, Any]]:
-    found: list[dict[str, Any]] = []
-    frame = pd.DataFrame(np.asarray(obs.values, dtype=np.float64), index=pd.DatetimeIndex(_times(obs)))
-    frame = frame.sort_index(kind="stable")
-    frame = frame[~frame.index.duplicated(keep="last")]
-    for c, symbol in enumerate(obs.series_names):
-        series = frame.iloc[:, c]
-        series = series[np.isfinite(series) & (series > 0)]
-        returns = np.log(series).diff().dropna()
-        if returns.size < 3:
-            continue
-        deviations = np.abs(returns - returns.median())
-        sigma = _MAD_TO_SIGMA * float(deviations.median())
-        if sigma <= 0:
-            continue
-        for t, r in returns[np.abs(returns) > OUTLIER_SIGMAS * sigma].items():
-            found.append(
-                {"time": _iso(t), "symbol": symbol, "return": float(r), "sigmas": float(abs(r) / sigma)}
-            )
-    return sorted(found, key=lambda o: (o["time"], o["symbol"]))
-
-
-def _adjustment(latest: ObservationSet, previous: ObservationSet) -> dict[str, Any]:
-    new = pd.DataFrame(np.asarray(latest.values, dtype=np.float64), index=pd.DatetimeIndex(_times(latest)))
-    old = pd.DataFrame(
-        np.asarray(previous.values, dtype=np.float64), index=pd.DatetimeIndex(_times(previous))
-    )
-    new = new[~new.index.duplicated(keep="last")]
-    old = old[~old.index.duplicated(keep="last")]
-    common = new.index.intersection(old.index)
-    a, b = new.loc[common].to_numpy(), old.loc[common].to_numpy()
-    with np.errstate(divide="ignore", invalid="ignore"):
-        rel = np.abs(a - b) / np.abs(b)
-    rel = np.where(np.isfinite(rel), rel, 0.0)
-    worst = rel.max(axis=1) if rel.size else np.zeros(0)
-    over = np.flatnonzero(worst > ADJUSTMENT_RTOL)
-    return {
-        "latest": latest.snapshot_id,
-        "previous": previous.snapshot_id,
-        "n_overlap": len(common),
-        "max_rel_diff": float(worst.max()) if worst.size else 0.0,
-        "discontinuous": bool(over.size),
-        "first_time": _iso(common[over[0]]) if over.size else None,
-    }
-
-
-def _histogram(staleness: np.ndarray) -> dict[str, int]:
+def staleness_histogram(staleness: np.ndarray) -> dict[str, int]:
+    """Counts of grid steps since the print in use became visible; `no_value` where none was usable."""
     values = np.asarray(staleness)
     counts = {
         str(int(v)): int(n) for v, n in zip(*np.unique(values[values >= 0], return_counts=True), strict=True)
@@ -198,33 +55,58 @@ def _histogram(staleness: np.ndarray) -> dict[str, int]:
     return counts
 
 
-def build_quality_report(
-    obs: ObservationSet,
-    *,
-    generations: tuple[ObservationSet, ObservationSet] | None = None,
-    staleness: Mapping[str, np.ndarray] | None = None,
-    dropped_rows: Mapping[str, int] | None = None,
-) -> DataQualityReport:
-    """Run all checks on the raw primary prices.
+def duplicate_times(times: np.ndarray) -> list[str]:
+    """The timestamps that occur more than once (listed once each)."""
+    index = pd.DatetimeIndex(times)
+    return [iso(t) for t in index[index.duplicated(keep="first")].unique()]
 
-    Args:
-        obs: the primary prices as fetched (duplicates and non-positive prices are allowed here).
-        generations: the two newest cache generations of the primary request `(newest, previous)`,
-            for the adjustment check (independent of which generation `obs` was served from).
-        staleness: per covariate name, its staleness on the grid (`PrepDiagnostics.staleness`).
-        dropped_rows: rows removed per reason (missing prices, warm-up, each covariate's policy).
 
-    Returns:
-        The report; empty lists mean "no finding".
-    """
-    return DataQualityReport(
-        symbols=list(obs.series_names),
+def index_gaps(times: np.ndarray) -> list[str]:
+    """Timestamps that follow a gap of more than `1.5 x` the median spacing (the first one after the gap)."""
+    if times.shape[0] < 3:
+        return []
+    stamps = np.asarray(times).astype("datetime64[ns]")
+    steps = np.diff(stamps).astype(np.int64)
+    positive = steps[steps > 0]
+    if positive.size == 0:
+        return []
+    limit = GAP_FACTOR * float(np.median(positive))
+    return [iso(stamps[i + 1]) for i in np.flatnonzero(steps > limit)]
+
+
+def mad_outliers(obs: ObservationSet) -> list[dict[str, Any]]:
+    """Values with `|y - median| > 8 x MAD` per series; a series with MAD 0 gets no check."""
+    found: list[dict[str, Any]] = []
+    values = np.asarray(obs.values, dtype=np.float64)
+    for c, name in enumerate(obs.series_names):
+        column = values[:, c]
+        finite = np.isfinite(column)
+        if finite.sum() < 3:
+            continue
+        median = float(np.median(column[finite]))
+        mad = float(np.median(np.abs(column[finite] - median)))
+        if mad <= 0:
+            continue
+        for r in np.flatnonzero(finite & (np.abs(column - median) > OUTLIER_MADS * mad)):
+            where = iso(obs.times[r]) if obs.times is not None else str(int(r))
+            found.append(
+                {
+                    "at": where,
+                    "series": name,
+                    "value": float(column[r]),
+                    "mads": float(abs(column[r] - median) / mad),
+                }
+            )
+    return sorted(found, key=lambda o: (o["at"], o["series"]))
+
+
+def generic_checks(obs: ObservationSet, staleness: Mapping[str, np.ndarray] | None = None) -> GenericQuality:
+    """Run the generic checks on `obs`; `staleness` maps covariate names to their staleness on the grid."""
+    has_times = obs.times is not None
+    return GenericQuality(
         n_rows=int(obs.values.shape[0]),
-        gaps=_gaps(_times(obs), str(obs.meta.get("interval", "1d"))),
-        duplicates=_duplicates(_times(obs)),
-        non_positive_prices=_non_positive(obs),
-        outliers=_outliers(obs),
-        adjustment=None if generations is None else _adjustment(*generations),
-        staleness={name: _histogram(s) for name, s in (staleness or {}).items()},
-        dropped_rows=dict(dropped_rows or {}),
+        duplicates=duplicate_times(np.asarray(obs.times)) if has_times else [],
+        index_gaps=index_gaps(np.asarray(obs.times)) if has_times else [],
+        outliers=mad_outliers(obs),
+        staleness={name: staleness_histogram(s) for name, s in (staleness or {}).items()},
     )

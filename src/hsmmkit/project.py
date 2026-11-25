@@ -28,7 +28,6 @@ from regimekit.config.schema import BacktestCfg
 from regimekit.config.yaml_io import dump_resolved, load_config
 from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
 from regimekit.data.prepare import Preparer, PrepDiagnostics, prep_stats_to_json
-from regimekit.data.quality import DataQualityReport, build_quality_report
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.engine.explicit_duration import ExplicitDurationEngine
 from regimekit.estimation import fit as fit_model
@@ -40,7 +39,15 @@ from regimekit.evaluation.compare import CompareEntry, check_snapshots, comparis
 from regimekit.evaluation.report import build_report, versions
 from regimekit.evaluation.results import BacktestResult
 from regimekit.evaluation.strategies import make_strategy
-from regimekit.finance import Cache, FetchContext, FinanceConfig, PriceSource, SnapshotPolicy
+from regimekit.finance import (
+    Cache,
+    DataQualityReport,
+    FetchContext,
+    FinanceConfig,
+    PriceSource,
+    SnapshotPolicy,
+    build_quality_report,
+)
 from regimekit.inference.covariate_forecasters import CovariateForecaster, make_forecaster
 from regimekit.inference.decode import decode as decode_posterior
 from regimekit.inference.forecast import MonteCarloForecaster
@@ -179,9 +186,9 @@ def _dropped_rows(diagnostics: PrepDiagnostics | None, completed: bool) -> dict[
     if diagnostics is None:
         return {}
     if not completed:  # the policies did not finish: only the missing-price count is known
-        return {"missing_price": diagnostics.missing_price_rows}
+        return {"missing_price": diagnostics.missing_rows}
     return {
-        "missing_price": diagnostics.missing_price_rows,
+        "missing_price": diagnostics.missing_rows,
         "warmup": diagnostics.warmup_rows,
         **{f"covariate:{name}": n for name, n in diagnostics.dropped.items()},
     }

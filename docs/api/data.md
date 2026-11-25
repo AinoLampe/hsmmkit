@@ -26,6 +26,8 @@
       heading_level: 3
 
 ::: regimekit.data.quality
+
+::: regimekit.finance.quality
     options:
       show_root_heading: true
       heading_level: 3

@@ -138,6 +138,8 @@ class PrepStats:
     cov_names: tuple[str, ...]
     transforms: dict[str, list[str]]
     lags: dict[str, int]
+    obs_mean: np.ndarray | None = None  # (M,) train-window mean when `standardize_observations`
+    obs_std: np.ndarray | None = None  # (M,)
 
     def __eq__(self, other: object) -> bool:
         """Structural equality, safe for numpy array fields."""
@@ -150,6 +152,8 @@ class PrepStats:
             and self.cov_names == other.cov_names
             and self.transforms == other.transforms
             and self.lags == other.lags
+            and _array_equal(self.obs_mean, other.obs_mean)
+            and _array_equal(self.obs_std, other.obs_std)
         )
 
     def __hash__(self) -> int:
@@ -166,6 +170,8 @@ class PrepStats:
                 self.cov_names,
                 tuple(sorted((k, tuple(v)) for k, v in self.transforms.items())),
                 tuple(sorted(self.lags.items())),
+                None if self.obs_mean is None else self.obs_mean.tobytes(),
+                None if self.obs_std is None else self.obs_std.tobytes(),
             )
         )
 
