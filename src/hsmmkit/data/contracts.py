@@ -48,6 +48,19 @@ def own_lag_columns(observations: np.ndarray, mask: np.ndarray, p: int) -> tuple
     return lags, ok
 
 
+def times_increase(times: np.ndarray, sequence_ids: np.ndarray | None = None) -> bool:
+    """Whether `times` strictly increase (within each sequence when `sequence_ids` are given)."""
+    if times.shape[0] < 2:
+        return True
+    if sequence_ids is None:
+        return bool(np.all(np.diff(times) > np.timedelta64(0, "ns")))
+    _, codes = np.unique(np.asarray(sequence_ids), return_inverse=True)
+    order = np.argsort(codes, kind="stable")
+    t, c = times[order], codes[order]
+    same = c[1:] == c[:-1]
+    return bool(np.all(np.diff(t)[same] > np.timedelta64(0, "ns")))
+
+
 def _is_float_dtype(dtype: np.dtype[Any]) -> bool:
     return np.issubdtype(dtype, np.floating)
 
@@ -120,8 +133,11 @@ class ObservationSet:
             times = np.asarray(self.times)
             if times.ndim != 1 or times.shape[0] != t0:
                 raise DataError(f"times must have shape (T0={t0},)", path="times")
-            if t0 > 1 and not bool(np.all(np.diff(times) > np.timedelta64(0, "ns"))):
-                raise DataError("times must be strictly increasing", path="times")
+            seq = None if self.sequence_ids is None else np.asarray(self.sequence_ids)
+            if seq is not None and seq.shape != (t0,):
+                raise DataError(f"sequence_ids must have shape (T0={t0},)", path="sequence_ids")
+            if not times_increase(times, seq):
+                raise DataError("times must be strictly increasing (within each sequence)", path="times")
         if self.sequence_ids is not None and np.asarray(self.sequence_ids).shape != (t0,):
             raise DataError(f"sequence_ids must have shape (T0={t0},)", path="sequence_ids")
 

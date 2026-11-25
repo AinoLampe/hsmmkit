@@ -262,7 +262,7 @@ class Preparer:
         frame, train = self._train_frame(obs, covs, train_end, train_start)
         if not train.any():
             raise DataError(
-                f"train_end {train_end!r} is before the first prepared observation {_iso(frame.times[0])}",
+                f"train_end {train_end!r} is before the first prepared observation {_iso(frame.times.min())}",
                 path="train_end",
             )
         covariates = self.cfg.covariates
@@ -306,7 +306,7 @@ class Preparer:
         self._stats = PrepStats(
             cov_mean=mean,
             cov_std=std,
-            train_window=(_iso(frame.times[train][0]), _iso(frame.times[train][-1])),
+            train_window=(_iso(frame.times[train].min()), _iso(frame.times[train].max())),
             cov_names=tuple(c.name for c in covariates),
             transforms={c.name: list(c.transform) for c in covariates},
             lags={c.name: c.lag for c in covariates},

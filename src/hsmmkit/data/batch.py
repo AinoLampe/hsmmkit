@@ -41,6 +41,11 @@ def split_sequences(
         ConfigError: a covariate series that is not aligned with the observation rows.
     """
     if obs.sequence_ids is None:
+        if obs.meta.get("group_values") is not None:
+            raise ConfigError(
+                "data.sequences.group_by needs data.source.sequence_column (one group per sequence)",
+                path="data.sequences.group_by",
+            )
         return [("0", obs, list(covs))]
     ids = np.asarray(obs.sequence_ids)
     uniq, first = np.unique(ids, return_index=True)
@@ -202,6 +207,8 @@ class SequenceBatch:
     def group_names(self) -> tuple[str | None, ...]:
         """The distinct initial-distribution groups, sorted (`group_index` indexes this tuple)."""
         names = {s.group for s in self.sequences if s.group is not None}
+        if names and any(s.group is None for s in self.sequences):
+            raise DataError("some sequences have a group and some have none", path="data.sequences.group_by")
         return tuple(sorted(names)) if names else (None,)
 
     def padded(self) -> PaddedBatch:

@@ -244,3 +244,54 @@ def test_e12_t01a_segmentation_preset_loads_50_sequences_with_the_generator_leng
     assert batch.lengths.tolist() == expected.tolist()
     assert batch.t_max == 512
     assert batch.padded().observations.shape == (64, 512, 3)
+
+
+def test_e12_t01a_group_edge_cases_are_rejected() -> None:
+    """A missing group value, `group_by` without a sequence column and a half-grouped batch are errors."""
+    from hsmmkit.utils.errors import DataError
+
+    section = _section(sequences={"group_by": "g", "bucket_edges": [8]})
+    frame = _frame((4, 5), groups=("a", "b"))
+    frame.loc[0, "g"] = None
+    with pytest.raises(DataError) as err:
+        load_data(section, obj=frame)
+    assert err.value.path == "data.sequences.group_by"
+    no_seq = DataSection.model_validate(
+        {
+            "source": {"kind": "pandas", "observation_columns": ["x", "y"]},
+            "clock": "steps",
+            "sequences": {"group_by": "g"},
+        }
+    )
+    obs, covs = load_data(no_seq, obj=_frame((4, 5), groups=("a", "b")))
+    with pytest.raises(ConfigError) as err2:
+        Preparer(no_seq).fit(obs, covs, END)
+    assert err2.value.path == "data.sequences.group_by"
+    batch, _, _ = _batch((5, 6))
+    import dataclasses
+
+    mixed = SequenceBatch((dataclasses.replace(batch.sequences[0], group="a"), batch.sequences[1]))
+    with pytest.raises(DataError):
+        _ = mixed.group_names
+
+
+def test_e12_t01a_train_window_spans_all_timed_sequences() -> None:
+    """`PrepStats.train_window` is the min and max over the pooled training rows of every sequence."""
+    section = DataSection.model_validate(
+        {
+            "source": {
+                "kind": "pandas",
+                "observation_columns": ["x"],
+                "sequence_column": "sid",
+                "time_column": "t",
+            },
+            "clock": "calendar",
+        }
+    )
+    a = pd.DataFrame({"sid": "A", "t": pd.date_range("2020-06-01", periods=5), "x": np.arange(5.0)})
+    b = pd.DataFrame({"sid": "B", "t": pd.date_range("2019-01-01", periods=5), "x": np.arange(5.0)})
+    obs, covs = load_data(section, obj=pd.concat([a, b], ignore_index=True))
+    prep = Preparer(section).fit(obs, covs, "2021-01-01")
+    first, last = prep.prep_stats.train_window
+    assert first < "2019-06"
+    assert last > "2020-06"
