@@ -27,7 +27,12 @@ dependencies = [
 
 [project.optional-dependencies]
 gpu = ["jax[cuda12]>=0.11"]
-mcmc = ["numpyro>=0.20"]
+plot = ["matplotlib>=3.9"]
+sklearn = ["scikit-learn>=1.6"]
+bayes = ["numpyro>=0.20", "arviz>=0.21"]
+mcmc = ["numpyro>=0.20", "arviz>=0.21"]  # deprecated alias of `bayes`, removed in 0.5.0 (docs/guide/deprecations.md)
+xarray = ["xarray>=2025.1"]
+all = ["hsmmkit[plot,sklearn,bayes,xarray]"]
 
 [dependency-groups]
 dev = [
@@ -106,6 +111,10 @@ markers = [
   "live: network tests",
   "benchmark: pytest-benchmark",
   "gpu: requires GPU",
+  "plot: needs the `plot` extra (matplotlib)",
+  "sklearn: needs the `sklearn` extra (scikit-learn)",
+  "bayes: needs the `bayes` extra (numpyro, arviz)",
+  "xarray: needs the `xarray` extra",
   "finance: needs hsmmkit.finance or a finance provider package (excluded by the core-only job)",
 ]
 addopts = "-m 'not slow and not live and not benchmark and not gpu' --import-mode=importlib"

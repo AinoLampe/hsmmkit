@@ -49,7 +49,7 @@ Time columns are parsed as UTC (`pd.to_datetime(utc=True)`); timestamps that do 
 
 - **`xarray`**: an `xarray.Dataset` (`obj`) or a `.nc` / `.zarr` store (`path`). `observation_columns` are data
   variables, `time_column` a coordinate, `sequence_column` a coordinate or variable. The library loads lazily; if it
-  is missing the error says `pip install hsmmkit[xarray]`.
+  is missing the error says `pip install 'hsmmkit[xarray]'`.
 
 
 ## Loading from the configuration

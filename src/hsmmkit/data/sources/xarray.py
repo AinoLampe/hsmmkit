@@ -27,7 +27,7 @@ class XarraySource:
     def load(self, opts: BaseModel, *, obj: Any | None = None) -> Loaded:  # noqa: ANN401
         """Load from `obj` (a Dataset) or `opts.path` (`.nc` via `open_dataset`, `.zarr` via `open_zarr`)."""
         assert isinstance(opts, TabularOpts)
-        xr = optional_import("xarray", "xarray")
+        xr = optional_import("xarray", extra="xarray")
         digest: str | None = None
         if obj is not None:
             if not isinstance(obj, xr.Dataset):
