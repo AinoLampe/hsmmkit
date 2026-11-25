@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from hsmmkit.model.spec import ModelSpec
     from hsmmkit.utils.typing import Array
 
-_LOCATION_NAMES = frozenset({"emission.mean", "emission.mu", "emission.m"})
+_LOCATION_NAMES = frozenset({"emission.mean", "emission.mu", "emission.m", "emission.intercept"})
 _SCALE_NAMES = frozenset({"emission.scale", "emission.sigma", "emission.s"})
 _COEFFICIENT_NAMES = frozenset({"emission.gamma", "emission.delta", "duration.c", "transition.b"})
 _ROLL_WINDOW = 21

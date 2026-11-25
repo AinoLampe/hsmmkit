@@ -57,6 +57,7 @@ dev = [
   "towncrier>=26.9.0",
   "python-semantic-release>=10.7.0",
   "xarray>=2026.9.0",
+  "statsmodels>=0.15.0",
 ]
 
 [project.scripts]

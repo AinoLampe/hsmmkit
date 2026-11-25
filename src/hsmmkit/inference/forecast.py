@@ -79,6 +79,16 @@ def _blocks(
     )
 
 
+def _reject_autoregressive(spec: ModelSpec) -> None:
+    """Forecasting an autoregressive emission (`msar`) needs the last observed values as lags: not yet."""
+    if hasattr(spec.emission, "sample_path"):
+        raise ConfigError(
+            "forecasting with an autoregressive emission (msar) is not supported yet: its draws need the "
+            "last observed values as lags",
+            path="model.emission.family",
+        )
+
+
 def _check_inputs(log_alpha_t: Array, dt_future: Array, n_sim: int) -> None:
     if n_sim < 1:
         raise ConfigError(f"n_sim must be >= 1, got {n_sim}", path="forecast.n_sim")
@@ -118,6 +128,7 @@ def _expanded_path(
     z_e: Array,
     s0: Array,
 ) -> tuple[Array, Array, Array]:
+    _reject_autoregressive(spec)
     states, regimes, values = _simulate_one_path(
         key, theta, spec, space, _prepend(dt), _prepend(z_pi), _prepend(z_d), _prepend(z_e), s0
     )
@@ -233,6 +244,7 @@ def _explicit_path(
 
     carry0 = (j0.astype(jnp.int64), e0.astype(jnp.int64), d0)
     _, (states, regimes) = jax.lax.scan(step, carry0, (z_pi, z_d, jax.random.split(k_steps, h)))
+    _reject_autoregressive(spec)
     values = spec.emission.sample(k_emit, regimes, dt, theta, z_e)
     return states, regimes, values
 
@@ -394,6 +406,7 @@ class MonteCarloForecaster:
             ConfigError: `horizon < 1`, `n_sim < 1`, or covariates with `horizon > 1` and no forecaster.
             NumericalError: `n_sim * horizon * M > 2e8` (use fewer simulations) or non-finite output.
         """
+        _reject_autoregressive(self.spec)
         if horizon < 1:
             raise ConfigError(f"horizon must be >= 1, got {horizon}", path="forecast.horizon")
         if n_sim < 1:

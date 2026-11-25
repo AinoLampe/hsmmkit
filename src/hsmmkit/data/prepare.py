@@ -50,6 +50,8 @@ from hsmmkit.data.contracts import (
     PreparedDataset,
     PrepStats,
     Support,
+    lag_names,
+    own_lag_columns,
 )
 from hsmmkit.data.transforms import apply_transforms, get_observation_transform
 from hsmmkit.utils.clock import get_clock, parse_clock_options
@@ -184,7 +186,12 @@ class Preparer:
     """
 
     def __init__(
-        self, cfg: DataSection, *, support: Support = "real", n_categories: int | None = None
+        self,
+        cfg: DataSection,
+        *,
+        support: Support = "real",
+        n_categories: int | None = None,
+        own_lags: int = 0,
     ) -> None:
         """Store the `data:` config section and the observation support; nothing is fitted yet.
 
@@ -192,6 +199,9 @@ class Preparer:
             cfg: the `data:` section.
             support: the emission family's support (`real`, `count`, `binary`, `categorical`).
             n_categories: number of categories for `categorical` (`None`: `max + 1` with a warning).
+            own_lags: `p > 0` appends the own lags `y_{t-1..t-p}` (after the observation transform and
+                standardization) to the emission covariates as `__lag{l}_{series}`, and masks the first `p`
+                steps and every step with an unobserved lag (autoregressive emissions, `requires_own_lags`).
 
         Raises:
             ConfigError: `standardize_observations` with a non-real support.
@@ -203,6 +213,9 @@ class Preparer:
             )
         self.support = support
         self.n_categories = n_categories
+        if own_lags < 0:
+            raise ConfigError("own_lags must be >= 0", path="model.emission.ar.p")
+        self.own_lags = own_lags
         self.cfg = cfg
         self._stats: PrepStats | None = None
         self.diagnostics: PrepDiagnostics | None = None
@@ -322,11 +335,23 @@ class Preparer:
                 blocks[ep] = jnp.asarray(standardized[:, idx])
                 cov_names[ep] = tuple(names[i] for i in idx)
 
+        mask = frame.mask
+        if self.own_lags:
+            lags, ok = own_lag_columns(observations, mask, self.own_lags)
+            lag_block = jnp.asarray(lags)
+            block = blocks.get("emission")
+            blocks["emission"] = lag_block if block is None else jnp.concatenate([block, lag_block], axis=1)
+            cov_names["emission"] = (
+                *cov_names.get("emission", ()),
+                *lag_names(obs.series_names, self.own_lags),
+            )
+            mask = mask & ok[:, None]
+
         dataset = PreparedDataset(
             times=frame.times,
             observations=jnp.asarray(observations),
             dt=jnp.asarray(frame.dt),
-            mask=jnp.asarray(frame.mask),
+            mask=jnp.asarray(mask),
             cov_transition=blocks.get("transition"),
             cov_duration=blocks.get("duration"),
             cov_emission=blocks.get("emission"),

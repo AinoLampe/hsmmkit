@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import hsmmkit.model.duration
 import hsmmkit.model.emission  # noqa: F401  (registers the emission families)
@@ -98,6 +98,17 @@ class BuildInputs:
         return cls(int(data.observations.shape[1]), dict(data.cov_names), data.clock, float(data.nominal_dt))
 
 
+def required_own_lags(cfg: ProjectConfig) -> int:
+    """Own lags the preparer must generate for `cfg`'s emission (`requires_own_lags`; `0` for most families).
+
+    Pass the result as `Preparer(..., own_lags=...)`.
+    """
+    emis_cls = EMISSION_FAMILIES.get(cfg.model.emission.family)
+    if emis_cls is None or cfg.model.emission.ar is None:
+        return 0
+    return int(getattr(emis_cls, "lags_required", lambda _cfg: 0)(cfg.model.emission))
+
+
 def build_model_spec(cfg: ProjectConfig, data: PreparedDataset) -> ModelSpec:
     """Assemble a `ModelSpec` (structure + `param_specs`) from `cfg.model` and `data`'s covariate names.
 
@@ -138,6 +149,19 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
             f"ito_correction={m.emission.ito_correction} contradicts the family's own ({ito})",
             path="model.emission.ito_correction",
         )
+    memory_mode: Literal["segments", "steps"] = "segments"
+    if getattr(emission, "memory_steps", 0):
+        memory_mode = "steps"
+        if m.engine != "expanded" or m.transition.mode != "jump":
+            raise ConfigError(
+                "a mean-adjusted MS-AR runs on the expanded engine with jump transitions",
+                path="model.engine",
+            )
+        if m.duration.family != "geometric":
+            raise ConfigError(
+                "memory_mode 'steps' (mean-adjusted MS-AR) requires geometric durations",
+                path="model.duration.family",
+            )
     if n_series > 1 and not getattr(
         emission, "joint", False
     ):  # per-series masks and shared parameters (E9-T01); M = 1 keeps the bare family
@@ -177,4 +201,5 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
         d_max=m.d_max,
         initial=m.initial_state,
         param_specs=tuple(emission_specs) + tuple(duration_specs) + tuple(transition_specs),
+        memory_mode=memory_mode,
     )

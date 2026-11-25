@@ -220,6 +220,7 @@ The whole resolved configuration of the domain-neutral core.
 | `covariance` | `'diag' \| 'full'` | `'diag'` |
 | `mixture` | `MixtureCfg \| None` | `None` |
 | `per_series` | `bool` | `True` |
+| `ar` | `ArCfg \| None` | `None` |
 
 ## `model.duration`
 
@@ -394,6 +395,15 @@ A single (possibly per-state) parameter's estimation mode and initialization.
 |---|---|---|
 | `components` | `int` | required |
 | `base` | `str` | required |
+
+## `model.emission.ar`
+
+`model.emission.ar:` — order and form of an `msar` (Markov-switching autoregression) emission.
+
+| Field | Type | Default |
+|---|---|---|
+| `p` | `int` | `1` |
+| `form` | `'coefficients' \| 'mean_adjusted'` | `'coefficients'` |
 
 ## `model.duration.per_state`
 

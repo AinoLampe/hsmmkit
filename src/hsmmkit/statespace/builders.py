@@ -51,6 +51,8 @@ def build_expanded(spec: ModelSpec) -> StateSpace:
 @lru_cache(maxsize=16)
 def _build_expanded_cached(spec: ModelSpec) -> StateSpace:
     """`build_expanded` without the order warning (memoized per `spec`)."""
+    if spec.memory_mode == "steps":
+        return _build_steps(spec)
     n_states = spec.n_states
     order = spec.order
     layout = build_memory_layout(n_states, order)
@@ -116,6 +118,62 @@ def _build_expanded_cached(spec: ModelSpec) -> StateSpace:
         phase1_idx=jnp.asarray(phase1_idx),
         next_phase_state=jnp.asarray(next_phase_state),
         is_last_phase=jnp.asarray(is_last_phase),
+        exit_targets=jnp.asarray(exit_targets),
+    )
+    return dataclasses.replace(space, transition_fn=make_transition_fn(spec, space))
+
+
+def _build_steps(spec: ModelSpec) -> StateSpace:
+    """Time-step memory state space (`memory_mode: steps`, E11-T05): the tuples `(s_{t-p}, ..., s_t)`.
+
+    All `N^(p+1)` tuples with repeats allowed, the oldest regime most significant; `p` is
+    `spec.emission.memory_steps`. Durations are geometric (`r = 1`, checked at model build), so a state is
+    exactly a tuple (`phase == 1`). `exit_targets[s, j]` is the tuple `(s_{t-p+1}, ..., s_t, j)` that follows
+    `s` when the next regime is `j` (including `j == s_t`, the stay), which is what the transition function
+    scatters into. Hamilton's mean-adjusted MS-AR is the model that needs this memory.
+    """
+    n_states = spec.n_states
+    p = int(spec.emission.memory_steps)  # type: ignore[attr-defined]
+    if p < 1:
+        raise ConfigError(
+            "memory_mode='steps' needs an emission with memory_steps >= 1", path="model.emission"
+        )
+    if spec.order != 1 or spec.duration_conditioning != "current":
+        raise ConfigError(
+            "memory_mode='steps' requires transition.order == 1 and duration_conditioning='current'",
+            path="model.transition.order",
+        )
+    if any(spec.duration.n_phases(i) != 1 for i in range(n_states)):
+        raise ConfigError(
+            "memory_mode='steps' requires geometric durations (r = 1)", path="model.duration.family"
+        )
+    n_expanded = n_states ** (p + 1)
+    ids = np.arange(n_expanded, dtype=np.int64)
+    tuples = np.stack([(ids // n_states ** (p - k)) % n_states for k in range(p + 1)], axis=1)  # (S, p+1)
+    regime_of = tuples[:, p]
+    layout = build_memory_layout(n_states, 1)
+    index = StateIndex(
+        regime_of=jnp.asarray(regime_of),
+        phase_of=jnp.ones(n_expanded, dtype=jnp.int64),
+        memory_of=jnp.asarray(tuples[:, :p]),
+        collapse=jnp.asarray(np.eye(n_states, dtype=np.float64)[regime_of]),
+        row_of_state=jnp.asarray(regime_of),
+        n_expanded=n_expanded,
+        n_states=n_states,
+        order=1,  # no segment memory rows: `memory_of` holds the step history, `memory_marginals` is trivial
+    )
+    shifted = (ids % n_states**p) * n_states  # drop the oldest regime, make room for the new one
+    exit_targets = shifted[:, None] + np.arange(n_states)[None, :]  # (S, N)
+    space = StateSpace(
+        index=index,
+        layout=layout,
+        n_expanded=n_expanded,
+        n_rates=n_states,
+        rate_index_of=jnp.asarray(regime_of),
+        entry_state_of=jnp.full((n_states, n_states), -1),
+        phase1_idx=jnp.asarray(ids),
+        next_phase_state=jnp.full(n_expanded, -1),
+        is_last_phase=jnp.ones(n_expanded, dtype=bool),
         exit_targets=jnp.asarray(exit_targets),
     )
     return dataclasses.replace(space, transition_fn=make_transition_fn(spec, space))

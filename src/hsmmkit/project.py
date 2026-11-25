@@ -44,7 +44,7 @@ from hsmmkit.inference.decode import decode as decode_posterior
 from hsmmkit.inference.forecast import MonteCarloForecaster
 from hsmmkit.inference.results import ForecastResult, PosteriorResult
 from hsmmkit.inference.simulate import segments_of, simulate_paths
-from hsmmkit.model.build import build_model_spec
+from hsmmkit.model.build import build_model_spec, required_own_lags
 from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.persistence.results import (
     BACKTEST_META,
@@ -327,7 +327,7 @@ class Project:
         fetched = self.load_inputs(obj, offline=offline)
         obs, covs = fetched.obs, fetched.covs
         dataset = (
-            Preparer(self.config.data)
+            Preparer(self.config.data, own_lags=required_own_lags(self.config))
             .fit(obs, covs, _train_end(obs, self.config.backtest_cfg()))
             .transform(obs, covs)
         )
@@ -594,7 +594,11 @@ class Project:
         """Run the walk-forward backtest; returns `(result, meta, report markdown)`."""
         config = self.config
         obs, covs = fetched.obs, fetched.covs
-        grid = Preparer(config.data).fit(obs, covs, train_end=obs.require_times()[-1]).transform(obs, covs)
+        grid = (
+            Preparer(config.data, own_lags=required_own_lags(config))
+            .fit(obs, covs, train_end=obs.require_times()[-1])
+            .transform(obs, covs)
+        )
         spec = build_model_spec(config, grid)
         n_free = ParamManager(spec.param_specs).n_free
         hooks = [*self._hooks(grid), *extra_hooks]

@@ -81,6 +81,21 @@ def _regime_log_emis(theta: Params, spec: ModelSpec, data: PreparedDataset, dt: 
     return jnp.where(observed[:, None], log_emis, 0.0)
 
 
+def _expanded_log_emis(theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
+    """`(T, S)` emission table of the expanded states.
+
+    Segment memory: the per-regime table gathered by `regime_of`. Time-step memory (`memory_mode: steps`): the
+    emission is evaluated per tuple `(s_{t-p}, ..., s_t)`; masked steps contribute 0.
+    """
+    if spec.memory_mode != "steps":
+        return jnp.take(_regime_log_emis(theta, spec, data), space.index.regime_of, axis=1)
+    y, mask = data.observations, data.mask
+    z_e = _block(data.cov_emission, y.shape[0])
+    tuples = jnp.concatenate([space.index.memory_of, space.index.regime_of[:, None]], axis=1)
+    ell = spec.emission.log_prob_tuples(jnp.where(mask, y, 0.0), data.dt, theta, z_e, tuples)  # type: ignore[attr-defined]
+    return jnp.where(jnp.all(mask, axis=-1)[:, None], ell, 0.0)
+
+
 def _emission_inputs(
     theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
 ) -> tuple[Array, Array, Array, _Xs]:
@@ -91,7 +106,7 @@ def _emission_inputs(
     """
     t_len = data.observations.shape[0]
     z_pi, z_d = _block(data.cov_transition, t_len), _block(data.cov_duration, t_len)
-    ell = jnp.take(_regime_log_emis(theta, spec, data), space.index.regime_of, axis=1)  # (T, S)
+    ell = _expanded_log_emis(theta, spec, space, data)  # (T, S)
     log_rho = initial_log_rho(spec, space, theta, data.nominal_dt)
     return log_rho, ell[0], ell, (ell[1:], z_pi[1:], z_d[1:], data.dt[1:])
 
