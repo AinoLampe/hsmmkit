@@ -230,3 +230,65 @@ def test_e11_t02_param_manager_round_trips_the_cholesky_factor() -> None:
     chol = unpack_lower(theta["emission.chol"], 3)
     assert bool(jnp.all(jnp.diagonal(chol, axis1=-2, axis2=-1) > 0))
     np.testing.assert_allclose(np.asarray(mgr.flatten(theta)), np.asarray(u), atol=1e-12)
+
+
+def test_e11_t02_m_step_with_time_scaling_is_a_stationary_point() -> None:
+    """With `scale_by_dt` and varying `dt`, the closed form maximizes the weighted log-likelihood."""
+    m, t = 2, 200
+    rng = np.random.default_rng(5)
+    dt = jnp.asarray(rng.uniform(0.5, 2.0, size=t))
+    y = jnp.asarray(rng.normal(size=(t, m)) * np.asarray(jnp.sqrt(dt))[:, None] * 0.3)
+    gamma = jnp.asarray(rng.dirichlet(np.ones(N), size=t))
+    fam = GaussianFamily(covariance="full", scale_by_dt=True)
+    theta_hat = fam.m_step(fam.sufficient_stats(y, dt, gamma))
+    assert theta_hat is not None
+
+    def q(th: dict[str, jax.Array]) -> jax.Array:
+        return jnp.sum(gamma * fam.log_prob(y, dt, th, None))
+
+    grad = jax.grad(q)(theta_hat)
+    for key in theta_hat:
+        assert float(jnp.max(jnp.abs(grad[key]))) <= 1e-8 * max(1.0, abs(float(q(theta_hat))))
+
+
+def test_e11_t02_full_fit_runs_without_an_identifiability_guard(tmp_path: Path) -> None:
+    """MAP fit of a 2-regime, 2-series full-covariance model relabels by the first factor entry."""
+    from hsmmkit.config.schema import EstimationSection
+    from hsmmkit.estimation.map import fit
+    from tests.helpers.engine_fixtures import make_dataset
+
+    cfg = _full_cfg(tmp_path)
+    spec = build_model_spec_from(cfg, BuildInputs(n_series=2, cov_names={}, clock="steps", nominal_dt=1.0))
+    rng = np.random.default_rng(0)
+    y = np.concatenate([rng.normal(0.0, 0.5, (150, 2)), rng.normal(1.0, 1.5, (150, 2))])
+    data = make_dataset(y, np.ones(300))
+    est = EstimationSection(restarts=1, init=["random"], max_iter=40, device="cpu")
+    with pytest.warns(UserWarning, match="relabelling"):
+        result = fit(spec, data, est, seed=1)
+    assert np.isfinite(result.loglik)
+
+
+def test_e11_t02_unsupported_chol_keys_are_rejected(tmp_path: Path) -> None:
+    """`values`, `tie`, `constraint` and a non-lkj/normal/lognormal prior on `chol` are config errors."""
+    from hsmmkit.utils.errors import ConfigError
+
+    for patch, path in (
+        ({"values": [1.0, 0.0, 1.0]}, "values"),
+        ({"mode": "fixed"}, "mode"),
+        ({"prior": {"type": "dirichlet", "alpha": 1.0}}, "prior.type"),
+    ):
+        raw = core_raw(tmp_path)
+        raw["data"]["source"]["observation_columns"] = ["a", "b"]
+        raw["model"]["emission"] = {
+            "family": "gaussian",
+            "covariance": "full",
+            "params": {"mean": {"mode": "free"}, "chol": {"mode": "free", **patch}},
+        }
+        if patch.get("mode") == "fixed":
+            raw["model"]["emission"]["params"]["chol"]["values"] = None
+        with pytest.raises(ConfigError) as info:
+            build_model_spec_from(
+                parse_project_config(raw),
+                BuildInputs(n_series=2, cov_names={}, clock="steps", nominal_dt=1.0),
+            )
+        assert path in (info.value.path or "")

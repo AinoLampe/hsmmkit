@@ -129,7 +129,11 @@ def fit(
     u = best.u
     if not has_identifiability_guard(spec):
         scale_name = next(
-            (name for name in theta if name in ("emission.scale", "emission.sigma", "emission.s")),
+            (
+                name
+                for name in theta
+                if name in ("emission.scale", "emission.sigma", "emission.s", "emission.chol")
+            ),
             "emission.scale",
         )
         warnings.warn(

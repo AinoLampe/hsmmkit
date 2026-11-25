@@ -156,6 +156,17 @@ def _chol_spec(
 def _chol_spec_from_paramcfg(cfg: ParamCfg, n_states: int, n_series: int) -> ParamSpec:
     """`params.chol` config -> spec; `init` is one packed factor shared by all states (default identity)."""
     k = packed_size(n_series)
+    for key in ("values", "tie", "bounds"):
+        if getattr(cfg, key) is not None:
+            raise ConfigError(
+                f"params.chol does not support '{key}'", path=f"model.emission.params.chol.{key}"
+            )
+    if cfg.constraint != "none" or cfg.mode in ("fixed", "tied", "bounded"):
+        raise ConfigError(
+            f"params.chol supports mode 'free' or 'prior' without constraint, not mode {cfg.mode!r} "
+            f"and constraint {cfg.constraint!r}",
+            path="model.emission.params.chol.mode",
+        )
     init: np.ndarray | None = None
     if cfg.init is not None:
         if isinstance(cfg.init, str):
@@ -172,6 +183,11 @@ def _chol_spec_from_paramcfg(cfg: ParamCfg, n_states: int, n_series: int) -> Par
             )
     prior: Prior | None = None
     if cfg.prior is not None:
+        if cfg.prior.type not in ("normal", "lognormal", "lkj"):
+            raise ConfigError(
+                f"prior type {cfg.prior.type!r} is not valid for chol (normal, lognormal or lkj)",
+                path="model.emission.params.chol.prior.type",
+            )
         if cfg.prior.type == "lkj":
             prior = LkjPrior(eta=cfg.prior.eta if cfg.prior.eta is not None else 1.0)
         else:  # a scalar prior acts on the diagonal of L
