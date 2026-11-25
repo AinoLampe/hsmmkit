@@ -19,8 +19,8 @@ Progress ledger of the `hsmmkit` repository (restarted by E10-T08). The Part I l
 | E10-T07b | CLI app factory and `Project`/`FinanceProject` split; neutral-name allow-list empty | M | 8 | E10-T07a, E10-T04b, E10-T05, E10-T06 | done | 4252854 | done in RegimeDetectionAndForecast before the extraction (history: `git log`); commit refers to that repository |
 | E10-T08 | Extract `hsmmkit` repository; release 0.1.0 | M | 9 | E10-T07b | done | 6a2838d | Extracted with history (three filter-repo passes), rename commit, docs/CLAUDE.md/STATUS, pushed as `main`. AC1 not attainable (source history already squashed per ticket, see Follow-ups); AC2 full suite 809 passed + known XLA aborts that pass alone (gradient student_t o2, segmental Viterbi, parallel scan), `nox` lint/types/docs equivalents green locally; AC3 `test_e10_t08_*`; AC4 `downstream` job in `nightly.yml` (red until E10-T09); AC5 wheel built, installed in a fresh venv, `hsmmkit validate-config` on a core config OK; tag/release/TestPyPI are owner actions. Found by the smoke install and fixed here: `beartype` (dev dependency) was imported at import time, now lazy. |
 | E10-T09 | `regimekit` on top of `hsmmkit`; release 0.2.0 | M | 9 | E10-T08 | other-repo |  | RegimeDetectionAndForecast |
-| E10-T10 | Complete schema with feature gates; JSON Schema; presets registry | M | 10 | E10-T08 | in-progress |  | branch feat/E10-T10-core-schema-presets; see Spec fixes |
-| E10-T11 | Lazy optional imports, extras, import-time test | S | 10 | E10-T08 | todo |  |  |
+| E10-T10 | Complete schema with feature gates; JSON Schema; presets registry | M | 10 | E10-T08 | done | 37aa500 | See Spec fixes and Needs CI. Review: no blockers; findings fixed. |
+| E10-T11 | Lazy optional imports, extras, import-time test | S | 10 | E10-T08 | done |  | AC1 `test_e10_t11_import_pulls_no_extra_package`; AC2 `extras` matrix job in `pr.yml` (runs only in CI: Needs CI) + `test_e10_t11_missing_module_names_the_extra`; AC3 `test_e10_t11_extras_table` (`mcmc` == `bayes`). Import-time baseline recorded on a 4-core cloud VM (1.02 s cumulative, limit x1.3): machine dependent, may need a refresh on the CI runner. `optional_import(module, *, extra)` is keyword-only now. |
 | E11-T01 | `family_contract` suite | M | 10 | E10-T08 | todo |  |  |
 | E11-T02 | Gaussian full covariance | M | 10 | E11-T01 | todo |  |  |
 | E11-T03 | Multivariate Student-t | S | 10 | E11-T02 | todo |  |  |
@@ -98,6 +98,7 @@ Release 0.1.0 is prepared (tag `v0.1.0` is an owner action, see "Blocked / needs
   E4-T03a/b commits).
 
 ## Needs CI / network / GPU
+- E10-T11: the `extras` job (matrix none/plot/sklearn/bayes/xarray) and the import-time baseline (`benchmarks/import_time_baseline.json`, machine dependent) were not run on a CI runner; `uv.lock` was regenerated with `uv lock` for the new extras.
 - E10-T10 AC3 (second half): `--config-class regimekit.config.FinanceConfig` validates Appendix A v2 and lists `gbm` needs `regimekit` installed (test `test_e10_t10_regimekit_finance_config_schema_when_installed` is skipped here; runs in `downstream`).
 - E10-T10 follow-up for E12-T05: `per_state[i].params` get the generic param checks (already via `_named_param_cfgs`); `model.left_censored` with `engine: expanded` is accepted silently until E12-T04 decides.
 - GitHub Actions has not run in this repository: `pr.yml`, `nightly.yml` (incl. `downstream`), the coverage gate

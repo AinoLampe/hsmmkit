@@ -1,0 +1,8 @@
+{
+  "what": "python -X importtime -c 'import hsmmkit': cumulative microseconds of the hsmmkit entry (best of 5)",
+  "cumulative_us": 1019000,
+  "factor": 1.3,
+  "hardware": "4-core x86 cloud VM (reference machine of NFR-02 not available), JAX_PLATFORMS=cpu",
+  "recorded": "2026-11-25",
+  "refresh": "only with a justification in the commit message (new core dependency or module)"
+}

@@ -51,3 +51,36 @@ jobs:
           enable-cache: true
       - run: uv sync --all-groups
       - run: uv run nox -s docs
+
+  extras:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        extra: [none, plot, sklearn, bayes, xarray]
+    env:
+      HSMMKIT_TYPECHECK: "1"
+      JAX_PLATFORMS: cpu
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install core and dev tools plus the extra
+        run: |
+          if [ "${{ matrix.extra }}" = "none" ]; then uv sync --group dev; else uv sync --group dev --extra "${{ matrix.extra }}"; fi
+      - name: Remove the other extras' packages
+        run: |
+          for pkg in matplotlib scikit-learn numpyro arviz xarray; do
+            case "${{ matrix.extra }}:$pkg" in
+              plot:matplotlib|sklearn:scikit-learn|bayes:numpyro|bayes:arviz|xarray:xarray) ;;
+              *) uv pip uninstall "$pkg" || true  # the dev group carries them all ;;
+            esac
+          done
+      - name: "Tests of this extra (the none row: no extra marker)"
+        run: |
+          if [ "${{ matrix.extra }}" = "none" ]; then
+            uv run --no-sync pytest -m "not (plot or sklearn or bayes or xarray)" tests/unit/test_e10_t11_optional_import.py tests/unit/test_e10_t11_import_time.py -q
+          else
+            uv run --no-sync pytest -m "${{ matrix.extra }} or not (plot or sklearn or bayes or xarray)" tests/unit -q -n 2
+          fi

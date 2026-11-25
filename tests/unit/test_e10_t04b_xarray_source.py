@@ -18,6 +18,7 @@ from hsmmkit.testing.source_contract import FIXTURES, check_source, xarray_case
 from hsmmkit.utils.errors import ConfigError, DataError
 from hsmmkit.utils.optional import optional_import
 
+pytestmark = pytest.mark.xarray
 xr = pytest.importorskip("xarray")
 
 
@@ -55,10 +56,10 @@ def test_e10_t04b_sequence_column_may_be_a_coordinate() -> None:
 
 
 def test_e10_t04b_missing_xarray_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without the library the source raises `ImportError("pip install hsmmkit[xarray]")`."""
+    """Without the library the source raises an `ImportError` naming `hsmmkit[xarray]`."""
     monkeypatch.setitem(sys.modules, "xarray", None)
-    with pytest.raises(ImportError, match=r"pip install hsmmkit\[xarray\]"):
-        optional_import("xarray", "xarray")
+    with pytest.raises(ImportError, match=r"pip install 'hsmmkit\[xarray\]'"):
+        optional_import("xarray", extra="xarray")
     section = DataSection.model_validate({"source": {"kind": "xarray", "observation_columns": ["y1"]}})
     with pytest.raises(ImportError, match=r"hsmmkit\[xarray\]"):
         load_data(section, obj=object())
