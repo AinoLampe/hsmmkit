@@ -240,6 +240,11 @@ class BlockProductEmission(BaseEmission):
                     path=f"{path}.columns",
                 )
             cols = tuple(int(c) for c in bcfg.columns)
+            if bcfg.family == "msar":
+                raise ConfigError(
+                    "an msar emission cannot be a product block yet (own lags, time-step state space)",
+                    path=f"{path}.family",
+                )
             if bcfg.family == "product" or not REGISTRY.has("emission", bcfg.family):
                 raise ConfigError(f"unknown block family {bcfg.family!r}", path=f"{path}.family")
             family, block_specs = REGISTRY.get("emission", bcfg.family).from_config(
@@ -273,7 +278,10 @@ class BlockProductEmission(BaseEmission):
     def log_prob_masked(
         self, y: Array, mask: Array, dt: Array, theta: dict[str, Array], z: Array | None
     ) -> Array:
-        """`(T, N)`: joint blocks drop a row with any unobserved series, independent blocks keep the rest."""
+        """`(T, N)`: joint blocks drop a row with any unobserved series, independent blocks keep the rest.
+
+        `y` must be finite at masked entries (the engines pass `where(mask, y, 0)`), as for `ProductEmission`.
+        """
         total = 0.0
         for b, block in enumerate(self.blocks):
             yb, mb, tb = self._y(y, b), self._y(mask, b), self._block_theta(theta, b)

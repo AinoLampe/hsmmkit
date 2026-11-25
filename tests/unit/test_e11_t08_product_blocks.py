@@ -240,3 +240,70 @@ def test_e11_t08_required_series_support_follows_the_blocks(tmp_path: Path) -> N
 def core_config_plain(tmp_path: Path) -> Any:  # noqa: ANN401
     """A config without blocks."""
     return parse_project_config(core_raw(tmp_path))
+
+
+def test_e11_t08_engine_loglik_equals_the_per_series_product_bitwise(tmp_path: Path) -> None:
+    """AC2 at engine level: per-series blocks and the E9-T01 shorthand give a bitwise equal loglik."""
+    rng = np.random.default_rng(5)
+    y = rng.normal(size=(120, 2))
+    y[10, 1] = np.nan
+    times = np.arange(120).astype("datetime64[D]").astype("datetime64[ns]")
+    obs = ObservationSet(("a", "b"), times, y, "memory", "s")
+
+    def prepared(emission: dict[str, Any]) -> tuple[Any, Any, Any]:
+        raw = core_raw(tmp_path)
+        raw["data"]["source"]["observation_columns"] = ["a", "b"]
+        raw["model"]["emission"] = emission
+        cfg = parse_project_config(raw)
+        data = Preparer(cfg.data).fit(obs, [], train_end=times[-1]).transform(obs, [])
+        spec = build_model_spec(cfg, data)
+        return data, spec, build_expanded(spec)
+
+    short = {
+        "family": "gaussian",
+        "params": {
+            "mean": {"mode": "free", "init": [0.1, -0.2]},
+            "scale": {"mode": "free", "init": [0.7, 1.4]},
+        },
+    }
+    blocks = {
+        "family": "product",
+        "params": {},
+        "blocks": [{"family": "gaussian", "columns": [c], "params": short["params"]} for c in (0, 1)],
+    }
+    data_a, spec_a, space_a = prepared(short)
+    data_b, spec_b, space_b = prepared(blocks)
+    ta = dict(ParamManager(spec_a.param_specs).unflatten(ParamManager(spec_a.param_specs).init_u()))
+    tb = dict(ParamManager(spec_b.param_specs).unflatten(ParamManager(spec_b.param_specs).init_u()))
+    for name, value in ta.items():
+        if name.startswith("emission."):
+            for b in (0, 1):
+                tb[f"emission.b{b}.{name.removeprefix('emission.')}"] = value[:, b : b + 1]
+    la = ExpandedHMMEngine().loglik(ta, spec_a, space_a, data_a)
+    lb = ExpandedHMMEngine().loglik(tb, spec_b, space_b, data_b)
+    assert float(la) == float(lb)
+    post_a = ExpandedHMMEngine().forward_backward(ta, spec_a, space_a, data_a).smoothed
+    post_b = ExpandedHMMEngine().forward_backward(tb, spec_b, space_b, data_b).smoothed
+    assert np.array_equal(np.asarray(post_a), np.asarray(post_b))
+
+
+def test_e11_t08_msar_block_is_rejected(tmp_path: Path) -> None:
+    """An `msar` block needs lags / the step state space: rejected with its path (review finding)."""
+    em = _mixed_emission()
+    em["blocks"][1] = {"family": "msar", "columns": [2], "ar": {"p": 1}, "params": {}}
+    data = _data(parse_project_config(_raw(tmp_path, _mixed_emission())), _y(), ("real", "real", "count"))
+    with pytest.raises(ConfigError) as err:
+        build_model_spec(parse_project_config(_raw(tmp_path, em)), data)
+    assert err.value.path == "model.emission.blocks[1].family"
+
+
+def test_e11_t08_series_support_survives_the_prepared_dataset_round_trip(tmp_path: Path) -> None:
+    """`write_prepared` / `read_prepared` keep `series_support` (review finding)."""
+    from hsmmkit.persistence.results import read_prepared, write_prepared
+
+    cfg = parse_project_config(_raw(tmp_path, _mixed_emission()))
+    data = _data(cfg, _y(), ("real", "real", "count"))
+    path = write_prepared(data, tmp_path / "prepared.parquet")
+    back = read_prepared(path)
+    assert back.series_support == ("real", "real", "count")
+    assert back == data
