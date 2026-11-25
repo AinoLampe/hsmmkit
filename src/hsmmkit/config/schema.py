@@ -728,7 +728,7 @@ def _check_per_state_lengths(config: ProjectConfig) -> None:
 
     def _check(section_path: str, params: dict[str, ParamCfg]) -> None:
         for key, pc in params.items():
-            if key == "chol":  # packed factors: validated by the family (`covariance: full`)
+            if key in ("chol", "probs"):  # packed / categorical vectors: validated by the family
                 continue
             for field_name in ("values", "init", "init_mean_sojourn_steps"):
                 value = getattr(pc, field_name)

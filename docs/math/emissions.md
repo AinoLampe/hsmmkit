@@ -117,3 +117,19 @@ $$\log f = \log\Gamma\!\big(\tfrac{\nu+M}{2}\big) - \log\Gamma\!\big(\tfrac{\nu}
 with `L̃ = e^{δᵀz} √s L` and `ν_i > 2` shared by the series of one regime (`2 + softplus`). There is no Itô
 correction; `m_step` and `conjugate_prior` are absent (ECM estimates `ν`, E13-T02b). Sampling:
 `μ + L̃ ε / √(g/ν)`, `ε ~ N(0, I)`, `g ~ χ²_ν`.
+
+## Discrete families: Poisson, Bernoulli, Categorical
+
+With the linear predictor `η_im(t) = η_im + γ_imᵀ z_t` (covariate columns of `emission.covariates.mean`):
+
+- `poisson` (support `count`): `y_tm ~ Poisson(exp(η_im(t)) s(Δ_t))`, `s(Δ) = Δ` with `scale_by_dt` (default:
+  `Δ` is the exposure), `log f = y log λ − λ − log y!`. `params.rate` is given per unit exposure.
+- `bernoulli` (support `binary`): `y_tm ~ Bernoulli(σ(η_im(t)))`, `log f = y η − softplus(η)`; `params.prob`.
+- `categorical` (support `categorical`, one series, `K` categories): `y_t ~ Cat(softmax([0, η_i(t)]))` with
+  `η_i ∈ ℝ^{K−1}` and category 0 as the reference; `params.probs.init` lists the `K` start probabilities.
+
+Without covariate links the M-steps are closed forms: `λ = Σγ y / Σγ s`, `p = Σγ y / Σγ`,
+`p_k = Σγ 1[y = k] / Σγ` (clipped to `[1e−12, 1−1e−12]`); with links they answer `None` (ECM). Conjugate
+priors (`hsmmkit.model.conjugate`): Gamma on `λ`, Beta on `p`, Dirichlet on `p_k`, each with the posterior
+update and the digamma expectations that variational Bayes needs. The contract-suite moments of the
+categorical family are those of the category index.
