@@ -10,6 +10,7 @@ they propagate unwrapped).
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import itertools
 import warnings as warnings_module
@@ -239,9 +240,10 @@ class DataSection(_Base):
 class PriorCfg(_Base):
     """`prior:` — a named prior distribution and its parameters."""
 
-    type: Literal["normal", "lognormal", "dirichlet"]
+    type: Literal["normal", "lognormal", "dirichlet", "lkj"]
     sd: float | None = None
     alpha: float | None = None
+    eta: float | None = Field(default=None, gt=0.0)
 
 
 class ParamCfg(_Base):
@@ -726,6 +728,8 @@ def _check_per_state_lengths(config: ProjectConfig) -> None:
 
     def _check(section_path: str, params: dict[str, ParamCfg]) -> None:
         for key, pc in params.items():
+            if key == "chol":  # packed factors: validated by the family (`covariance: full`)
+                continue
             for field_name in ("values", "init", "init_mean_sojourn_steps"):
                 value = getattr(pc, field_name)
                 if isinstance(value, list) and len(value) != n:
@@ -845,7 +849,15 @@ def _non_conjugate_components(config: ProjectConfig) -> list[str]:
     for kind, name in families:
         entry = next((e for e in REGISTRY.entries(kind) if e.name == name), None)  # type: ignore[arg-type]
         fn = getattr(entry.obj, "conjugate_prior", None) if entry is not None else None
-        if (fn is None or fn is BaseEmission.conjugate_prior) and f"{kind}.{name}" not in out:
+        conjugate = fn is not None and fn is not BaseEmission.conjugate_prior
+        if conjugate and kind == "emission":  # the answer may depend on the options (e.g. `covariance`)
+            emission = config.model.emission
+            with contextlib.suppress(TypeError):  # a family without these options keeps the class answer
+                family = entry.obj(  # type: ignore[union-attr]
+                    covariance=emission.covariance, scale_by_dt=bool(emission.scale_by_dt)
+                )
+                conjugate = family.conjugate_prior() is not None
+        if not conjugate and f"{kind}.{name}" not in out:
             out.append(f"{kind}.{name}")
     return out
 

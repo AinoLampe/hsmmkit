@@ -138,7 +138,9 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
             f"ito_correction={m.emission.ito_correction} contradicts the family's own ({ito})",
             path="model.emission.ito_correction",
         )
-    if n_series > 1:  # per-series masks and shared parameters (E9-T01); M = 1 keeps the bare family
+    if n_series > 1 and not getattr(
+        emission, "joint", False
+    ):  # per-series masks and shared parameters (E9-T01); M = 1 keeps the bare family
         emission = ProductEmission.of(emission, n_series)
 
     if m.duration.family is None:  # `per_state` (gated until E12-T05)

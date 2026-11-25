@@ -135,3 +135,44 @@ def test_e11_t01_student_t_moments_edge_cases() -> None:
     assert np.isinf(var[1, 0])
     assert np.isclose(mean[2, 0], 0.3)
     assert np.isclose(var[2, 0], 0.25 * 5.0 / 3.0)
+
+
+def _full_theta(key: jax.Array, n: int, m: int, k: int) -> dict[str, jax.Array]:
+    from hsmmkit.model.dists import pack_lower
+
+    k1, k2, k3 = jax.random.split(key, 3)
+    a = jax.random.normal(k2, (n, m, m)) * 0.1
+    chol = jnp.tril(a) + jnp.eye(m) * (0.2 + jax.random.uniform(k3, (n, 1, 1)) * 0.2)
+    theta = {"emission.mean": 0.05 * jax.random.normal(k1, (n, m)), "emission.chol": pack_lower(chol)}
+    if k:
+        theta["emission.gamma"] = 0.5 * jax.random.normal(k1, (n, k))
+        theta["emission.delta"] = 0.3 * jax.random.normal(k2, (n, k))
+    return theta
+
+
+def _full_ref(y: jax.Array, dt: jax.Array, theta: dict[str, jax.Array], z: jax.Array | None) -> np.ndarray:
+    del dt, z
+    from hsmmkit.model.dists import unpack_lower
+
+    chol = np.asarray(unpack_lower(theta["emission.chol"], y.shape[1]))
+    return np.stack(
+        [
+            stats.multivariate_normal(np.asarray(theta["emission.mean"][i]), chol[i] @ chol[i].T).logpdf(
+                np.asarray(y)
+            )
+            for i in range(chol.shape[0])
+        ],
+        axis=1,
+    )
+
+
+family_contract.register_case(
+    FamilyCase(
+        name="gaussian-full",
+        factory=lambda: GaussianFamily(covariance="full"),
+        theta_factory=_full_theta,
+        data_factory=_real_data,
+        scipy_logpdf=_full_ref,
+        covariate_factory=lambda: GaussianFamily(covariance="full", mean_idx=(0,), scale_idx=(0,)),
+    )
+)
