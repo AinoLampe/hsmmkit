@@ -191,3 +191,21 @@ parameter. *Estimation hooks.* `sufficient_stats(y, dt, gamma, z, theta=theta)` 
 `theta`); `m_step` sets `w_{ik} ∝ Σ_t r_{tik}` and applies the base M-step (components of a state are re-sorted when
 an ordering is configured); `conjugate_prior()` is a Dirichlet on `w` times the base prior. A mixture of an
 exposure-scaled family (`scale_by_dt`) is over-dispersed, so its variance is not proportional to `Δ`.
+
+## Product of blocks `product`
+
+`family: product` with `blocks: [{family, columns, params, ...}]` composes independent **blocks** of series, each
+block any registered family (the E9-T01 `per_series` shorthand stays as the one-block-per-series special case):
+
+$$f_i(y_t) = \prod_{b} f_i^{(b)}\big(y_t[\text{cols}_b]\big),\qquad \text{the blocks partition the columns.}$$
+
+`columns` are indices into `observation_columns` (names are not supported yet) and every column belongs to exactly
+one block. A block of several series is the family itself when it is joint (full-covariance Gaussian, `student_t`
+with `covariance: full`, `msar`, a mixture) and the independent per-series product otherwise. Parameters are
+named `emission.b{b}.<name>`; covariates are the block's own. **Masking:** a joint block drops its whole row when any
+of its series is unobserved (marginalizing a partially missing Gaussian is backlog); an independent block keeps the
+other series' contribution. **Supports:** `PreparedDataset.series_support` lists the support of each column (the
+preparer validates every column against its block's family; the observations stay float, `support` holds the first
+non-real support). **Estimation:** `sufficient_stats` is the tuple of the blocks' statistics, `m_step` merges the
+blocks' closed forms (`None` if any block has none) and `m_step_partial` returns a per-block result with `None`
+holes (ECM updates only those blocks); the conjugate prior is the product of the blocks' priors when each exists.

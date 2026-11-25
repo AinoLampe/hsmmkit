@@ -136,6 +136,9 @@ def fit(
             ),
             "emission.scale",
         )
+        sort_hook = getattr(spec.emission, "default_sort_name", None)
+        if sort_hook is not None and sort_hook(theta) is not None:
+            scale_name = sort_hook(theta)
         warnings.warn(
             f"no identifiability guard (no fixed or ordered emission location/scale spec): "
             f"relabelling states by ascending {scale_name} to fix label switching",

@@ -11,6 +11,7 @@ Three identifiability helpers for label switching (concept §4.8):
 from __future__ import annotations
 
 import itertools
+import re
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
@@ -121,11 +122,16 @@ def apply_ordering(specs: tuple[ParamSpec, ...], name: str | None = None) -> tup
     return tuple(out)
 
 
+def _unprefixed(name: str) -> str:
+    """`emission.b3.scale` (a `product` block parameter) -> `emission.scale`."""
+    return re.sub(r"^emission\.b\d+\.", "emission.", name)
+
+
 def has_identifiability_guard(spec: ModelSpec) -> bool:
     """`True` if some per-state spec is `increasing`, or every location/scale emission spec is `fixed`."""
     if any(s.constraint == "increasing" for s in spec.param_specs):
         return True
-    identifying = [s for s in spec.param_specs if s.name in _IDENTIFYING_EMISSION]
+    identifying = [s for s in spec.param_specs if _unprefixed(s.name) in _IDENTIFYING_EMISSION]
     if not identifying:
         return False
     return all(
@@ -187,6 +193,8 @@ def post_sort_states(theta: Params, spec: ModelSpec, by: str | None = None) -> t
     columns, so the model is unchanged up to labels (`jump_probs` is invariant). The caller recomputes
     `u` from the sorted `theta` (`ParamManager.flatten`).
     """
+    if by is None and hasattr(spec.emission, "default_sort_name"):
+        by = spec.emission.default_sort_name(theta)
     if by is None:
         by = next((n for n in _SCALE_NAMES if n in theta), _SCALE_NAMES[0])
     if by not in theta:

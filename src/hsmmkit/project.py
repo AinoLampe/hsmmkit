@@ -44,7 +44,7 @@ from hsmmkit.inference.decode import decode as decode_posterior
 from hsmmkit.inference.forecast import MonteCarloForecaster
 from hsmmkit.inference.results import ForecastResult, PosteriorResult
 from hsmmkit.inference.simulate import segments_of, simulate_paths
-from hsmmkit.model.build import build_model_spec, required_own_lags
+from hsmmkit.model.build import build_model_spec, required_own_lags, required_series_support
 from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.persistence.results import (
     BACKTEST_META,
@@ -327,7 +327,11 @@ class Project:
         fetched = self.load_inputs(obj, offline=offline)
         obs, covs = fetched.obs, fetched.covs
         dataset = (
-            Preparer(self.config.data, own_lags=required_own_lags(self.config))
+            Preparer(
+                self.config.data,
+                own_lags=required_own_lags(self.config),
+                series_support=required_series_support(self.config),
+            )
             .fit(obs, covs, _train_end(obs, self.config.backtest_cfg()))
             .transform(obs, covs)
         )
@@ -595,7 +599,11 @@ class Project:
         config = self.config
         obs, covs = fetched.obs, fetched.covs
         grid = (
-            Preparer(config.data, own_lags=required_own_lags(config))
+            Preparer(
+                config.data,
+                own_lags=required_own_lags(config),
+                series_support=required_series_support(config),
+            )
             .fit(obs, covs, train_end=obs.require_times()[-1])
             .transform(obs, covs)
         )

@@ -307,6 +307,10 @@ class EmissionCfg(_Base):
     """`True`: own location/scale per series, `(N, M)`; `False`: one per regime, shared."""
     ar: ArCfg | None = None
     """`msar`: autoregressive order and form (required by that family, rejected by every other)."""
+    columns: list[int | str] | None = None
+    """A `product` block: the observation columns (indices or names) the block's family emits."""
+    blocks: list[EmissionCfg] | None = None
+    """`product`: independent blocks of series, each any registered family (each names its `columns`)."""
 
     @field_validator("family")
     @classmethod

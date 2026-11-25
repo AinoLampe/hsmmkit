@@ -71,6 +71,7 @@ def write_prepared(dataset: PreparedDataset, path: Path | str) -> Path:
         "snapshot_ids": list(dataset.snapshot_ids),
         "prep_stats": prep_stats_to_json(dataset.prep_stats),
         "support": dataset.support,
+        "series_support": None if dataset.series_support is None else list(dataset.series_support),
         "n_categories": dataset.n_categories,
         "n_labels": n_labels,
         "boundaries": None
@@ -140,6 +141,7 @@ def read_prepared(path: Path | str) -> PreparedDataset:
         prep_stats=prep_stats_from_json(meta["prep_stats"]),
         snapshot_ids=tuple(meta["snapshot_ids"]),
         support=meta["support"],
+        series_support=None if meta.get("series_support") is None else tuple(meta["series_support"]),
         n_categories=meta["n_categories"],
         labels=labels,
         boundaries=None

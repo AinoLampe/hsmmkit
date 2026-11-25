@@ -192,6 +192,7 @@ class Preparer:
         support: Support = "real",
         n_categories: int | None = None,
         own_lags: int = 0,
+        series_support: Sequence[Support] | None = None,
     ) -> None:
         """Store the `data:` config section and the observation support; nothing is fitted yet.
 
@@ -199,6 +200,9 @@ class Preparer:
             cfg: the `data:` section.
             support: the emission family's support (`real`, `count`, `binary`, `categorical`).
             n_categories: number of categories for `categorical` (`None`: `max + 1` with a warning).
+            series_support: per-series supports of a mixed-family (`product` blocks) model; each column is
+                validated against its own support and the observations stay float (`support` is then the first
+                non-real entry). `None`: every series has `support`.
             own_lags: `p > 0` appends the own lags `y_{t-1..t-p}` (after the observation transform and
                 standardization) to the emission covariates as `__lag{l}_{series}`, and masks the first `p`
                 steps and every step with an unobserved lag (autoregressive emissions, `requires_own_lags`).
@@ -211,6 +215,9 @@ class Preparer:
                 f"standardize_observations needs real observations, not support {support!r}",
                 path="data.preparation.standardize_observations",
             )
+        self.series_support = None if series_support is None else tuple(series_support)
+        if self.series_support is not None and support == "real":
+            support = next((s for s in self.series_support if s != "real"), "real")
         self.support = support
         self.n_categories = n_categories
         if own_lags < 0:
@@ -361,6 +368,7 @@ class Preparer:
             prep_stats=stats,
             snapshot_ids=(obs.snapshot_id, *(s.snapshot_id for s in covs)),
             support=self.support,
+            series_support=self.series_support,
             n_categories=frame.n_categories,
             labels=None,
             boundaries=None,
@@ -434,6 +442,8 @@ class Preparer:
         self, y: np.ndarray, mask: np.ndarray, names: Sequence[str]
     ) -> tuple[np.ndarray, int | None]:
         """Check the observations against the support; counts, binary and categorical become `int64`."""
+        if self.series_support is not None:
+            return self._apply_series_support(y, mask, names), None
         support = self.support
         if support == "real":
             return y, None
@@ -468,6 +478,32 @@ class Preparer:
         if bool(np.any((ints >= n_cat) & mask)):
             raise violated((ints >= n_cat) & mask)
         return ints, n_cat
+
+    def _apply_series_support(self, y: np.ndarray, mask: np.ndarray, names: Sequence[str]) -> np.ndarray:
+        """Mixed supports: check each column against its own support; the array stays float."""
+        assert self.series_support is not None
+        if len(self.series_support) != y.shape[1]:
+            raise ConfigError(
+                f"{len(self.series_support)} block supports for {y.shape[1]} observation series",
+                path="model.emission.blocks",
+            )
+        for m, support in enumerate(self.series_support):
+            col = y[mask[:, m], m]
+            if support == "real":
+                continue
+            if support == "categorical":
+                raise ConfigError(
+                    "a categorical series cannot be part of a product", path="model.emission.blocks"
+                )
+            bad = np.abs(col - np.rint(col)) >= 1e-12
+            bad |= col < 0 if support == "count" else ~np.isin(np.rint(col), (0, 1))
+            if bool(bad.any()):
+                row = int(np.flatnonzero(mask[:, m])[int(np.argmax(bad))])
+                raise DataError(
+                    f"{support} support violated at row {row}, series {names[m]}",
+                    path="data.source.observation_columns",
+                )
+        return y
 
     def _check_covariates(self, covs: Sequence[CovariateSeries]) -> None:
         expected = self.cfg.covariates

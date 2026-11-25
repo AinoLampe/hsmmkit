@@ -30,7 +30,7 @@ from hsmmkit.utils.errors import ConfigError
 
 if TYPE_CHECKING:
     from hsmmkit.config.schema import DurationCfg, ProjectConfig
-    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.data.contracts import PreparedDataset, Support
     from hsmmkit.model.transition import TransitionModel
 
 
@@ -109,6 +109,25 @@ def required_own_lags(cfg: ProjectConfig) -> int:
     return int(getattr(emis_cls, "lags_required", lambda _cfg: 0)(cfg.model.emission))
 
 
+def _class_support(name: str, mixture_base: str | None) -> str:
+    """The support a registered emission family declares (the dataclass default of its `support` field)."""
+    cls = EMISSION_FAMILIES.get(mixture_base if name == "mixture" and mixture_base else name)
+    field = getattr(cls, "__dataclass_fields__", {}).get("support")
+    return str(field.default) if field is not None and isinstance(field.default, str) else "real"
+
+
+def required_series_support(cfg: ProjectConfig) -> tuple[Support, ...] | None:
+    """Per-column supports of a `product` emission (`Preparer(..., series_support=...)`), else `None`."""
+    blocks = cfg.model.emission.blocks
+    if cfg.model.emission.family != "product" or blocks is None:
+        return None
+    pairs: list[tuple[int, str]] = []
+    for b in blocks:
+        support = _class_support(b.family, b.mixture.base if b.mixture is not None else None)
+        pairs.extend((int(c), support) for c in (b.columns or []) if not isinstance(c, str))
+    return tuple(cast("Support", s) for _, s in sorted(pairs))
+
+
 def build_model_spec(cfg: ProjectConfig, data: PreparedDataset) -> ModelSpec:
     """Assemble a `ModelSpec` (structure + `param_specs`) from `cfg.model` and `data`'s covariate names.
 
@@ -137,6 +156,11 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
         raise ConfigError(
             "model.emission.mixture goes with family 'mixture' (and only with it)",
             path="model.emission.mixture",
+        )
+    if (m.emission.family == "product") != (m.emission.blocks is not None):
+        raise ConfigError(
+            "model.emission.blocks goes with family 'product' (and only with it)",
+            path="model.emission.blocks",
         )
     emis_cls = EMISSION_FAMILIES.get(m.emission.family)
     if emis_cls is None:
