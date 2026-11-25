@@ -22,6 +22,7 @@ from hsmmkit.model.emission._discrete import (
     eta_spec,
     gamma_spec,
     natural_init,
+    safe_ratio,
 )
 from hsmmkit.model.emission.base import Support
 from hsmmkit.model.params.spec import ParamSpec
@@ -121,7 +122,7 @@ class PoissonFamily(DiscreteBase):
         """`lambda = sum gamma y / sum gamma s` (clipped to `>= 1e-12`), returned as `eta = log lambda`."""
         if not isinstance(stats, dict):
             return None
-        lam = stats["wy"] / stats["w_s"][:, None]
+        lam = safe_ratio(stats["wy"], stats["w_s"][:, None])
         return {"emission.eta": jnp.log(jnp.maximum(lam, CLIP))}
 
     def conjugate_prior(self) -> GammaConjugate:

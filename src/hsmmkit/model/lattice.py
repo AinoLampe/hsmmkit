@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 # Emission blocks that place a state on the observation scale; if all are `fixed` the states are
 # identified by construction (a lattice). Coefficient blocks (`gamma`, `delta`) and `nu` do not count.
-_SCALE_NAMES = ("emission.scale", "emission.sigma", "emission.s", "emission.chol")
+_SCALE_NAMES = ("emission.scale", "emission.sigma", "emission.s", "emission.chol", "emission.eta")
 _IDENTIFYING_EMISSION = frozenset(
     {"emission.mu", "emission.sigma", "emission.mean", "emission.scale", "emission.m", "emission.s"}
 )

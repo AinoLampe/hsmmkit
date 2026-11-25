@@ -15,7 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from hsmmkit.model.conjugate import DirichletConjugate
-from hsmmkit.model.emission._discrete import CLIP, DiscreteBase, check_free, eta_spec, gamma_spec
+from hsmmkit.model.emission._discrete import CLIP, DiscreteBase, check_free, eta_spec, gamma_spec, safe_ratio
 from hsmmkit.model.emission.base import Support
 from hsmmkit.model.params.spec import ParamSpec
 from hsmmkit.plugins import register
@@ -138,7 +138,7 @@ class CategoricalFamily(DiscreteBase):
         """`p = counts / w` clipped to `>= 1e-12`, returned as `eta = log(p[1:] / p[0])`."""
         if not isinstance(stats, dict):
             return None
-        p = jnp.maximum(stats["counts"] / stats["w"][:, None], CLIP)
+        p = jnp.maximum(safe_ratio(stats["counts"], stats["w"][:, None]), CLIP)
         return {"emission.eta": jnp.log(p[:, 1:]) - jnp.log(p[:, :1])}
 
     def conjugate_prior(self) -> DirichletConjugate:

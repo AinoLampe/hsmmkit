@@ -21,6 +21,7 @@ from hsmmkit.model.emission._discrete import (
     eta_spec,
     gamma_spec,
     natural_init,
+    safe_ratio,
 )
 from hsmmkit.model.emission.base import Support
 from hsmmkit.model.params.spec import ParamSpec
@@ -110,7 +111,7 @@ class BernoulliFamily(DiscreteBase):
         """`p = sum gamma y / sum gamma` clipped to `[1e-12, 1 - 1e-12]`, returned as `eta = logit p`."""
         if not isinstance(stats, dict):
             return None
-        p = jnp.clip(stats["wy"] / stats["w"][:, None], CLIP, 1.0 - CLIP)
+        p = jnp.clip(safe_ratio(stats["wy"], stats["w"][:, None]), CLIP, 1.0 - CLIP)
         return {"emission.eta": jnp.log(p) - jnp.log1p(-p)}
 
     def conjugate_prior(self) -> BetaConjugate:

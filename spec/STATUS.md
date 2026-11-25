@@ -90,6 +90,7 @@ Release 0.1.0 is prepared (tag `v0.1.0` is an owner action, see "Blocked / needs
 ## Findings for the owner
 
 ## Follow-ups
+- E11-T04 (review): `n_categories` of the categorical family is fixed by `params.probs.init`; a mismatch with the data's categories is not a build-time `ConfigError` yet (`BuildInputs` has no category count; an out-of-range label gives a NaN log-density): add it with the data-batch work (E12-T01a) or in `Project`. `ProductEmission` does not delegate `m_step` / `conjugate_prior` (E11-T08). `emission.per_series: false` is ignored by the discrete families. `rolling_kmeans`/`random` inits only set location/scale names, so regimes start from the configured `init`.
 - E11-T01 gaps (review): no built-in family has `m_step` yet (the Gaussian M-step lives in `estimation/em.py`), so check 7 only exercises `m_step` on the test family; the zero-data posterior-equals-prior check needs the `PriorFamily` API of E11-T04/E13-T05a (check 7 only asserts `update` exists); check 2 passes silently without `moments` (support only); `pytest_generate_tests` parametrizes over every registered case, so a second test module importing `test_family_contract` repeats them (E11-T02 should add a per-module filter if it adds cases elsewhere).
 - About 50 test modules of `RegimeDetectionAndForecast` needed the finance package and were not carried over.
   The core-relevant scenarios they covered (fit/backtest/bundle/CLI round trips, the product emission on two

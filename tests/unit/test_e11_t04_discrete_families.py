@@ -165,3 +165,49 @@ def test_e11_t04_preparer_rejects_out_of_support_data(support: str, bad: float) 
     )
     with pytest.raises(DataError, match="support violated"):
         Preparer(section, support=support).fit(obs, [], 2).transform(obs, [])  # type: ignore[arg-type]
+
+
+def test_e11_t04_empty_regime_gives_finite_m_steps() -> None:
+    """A regime without posterior mass keeps a finite `eta` (no 0/0)."""
+    zero = jnp.zeros((2,))
+    for fam, stats_d in (
+        (PoissonFamily(), {"w_s": zero, "wy": jnp.zeros((2, 1))}),
+        (BernoulliFamily(), {"w": zero, "wy": jnp.zeros((2, 1))}),
+        (CategoricalFamily(n_categories=3), {"w": zero, "counts": jnp.zeros((2, 3))}),
+    ):
+        assert bool(jnp.isfinite(fam.m_step(stats_d)["emission.eta"]).all())  # type: ignore[index]
+
+
+def test_e11_t04_unsupported_param_keys_are_rejected(tmp_path: Path) -> None:
+    """`constraint`, `prior`, `tie` and `values` are errors rather than silently ignored."""
+    for patch in ({"constraint": "increasing"}, {"prior": {"type": "normal", "sd": 1.0}}, {"tie": "g"}):
+        with pytest.raises(ConfigError):
+            _build(_cfg(tmp_path, "poisson", {"rate": {"mode": "free", "init": [1.0, 2.0], **patch}}))
+
+
+@pytest.mark.parametrize("family", ["poisson", "bernoulli", "categorical"])
+def test_e11_t04_map_fit_runs_and_relabels_by_eta(tmp_path: Path, family: str) -> None:
+    """End to end: a MAP fit of a 2-regime model relabels the regimes by the first `eta` column."""
+    from hsmmkit.config.schema import EstimationSection
+    from hsmmkit.estimation.map import fit
+    from tests.helpers.engine_fixtures import make_dataset
+
+    rng = np.random.default_rng(0)
+    half = 150
+    params = {
+        "poisson": {"rate": {"mode": "free", "init": [2.0, 6.0]}},
+        "bernoulli": {"prob": {"mode": "free", "init": [0.2, 0.8]}},
+        "categorical": {"probs": {"mode": "free", "init": [0.4, 0.3, 0.3]}},
+    }[family]
+    if family == "poisson":
+        y = np.concatenate([rng.poisson(2.0, half), rng.poisson(7.0, half)])
+    elif family == "bernoulli":
+        y = np.concatenate([rng.binomial(1, 0.2, half), rng.binomial(1, 0.8, half)])
+    else:
+        y = np.concatenate([rng.choice(3, half, p=[0.7, 0.2, 0.1]), rng.choice(3, half, p=[0.1, 0.2, 0.7])])
+    spec = _build(_cfg(tmp_path, family, params))
+    data = make_dataset(y.astype(np.float64)[:, None], np.ones(2 * half))
+    est = EstimationSection(restarts=1, init=["random"], max_iter=60, device="cpu")
+    with pytest.warns(UserWarning, match="relabelling"):
+        result = fit(spec, data, est, seed=1)
+    assert np.isfinite(result.loglik)

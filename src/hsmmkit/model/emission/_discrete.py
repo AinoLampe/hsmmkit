@@ -86,8 +86,19 @@ def natural_init(
     return np.tile(arr[:, None], (1, width))
 
 
+def safe_ratio(num: Array, den: Array) -> Array:
+    """`num / den` where `den > 0`, else 0 (an empty regime ends at the clipping floor)."""
+    ok = den > 0
+    return jnp.where(ok, num / jnp.where(ok, den, 1.0), 0.0)
+
+
 def check_free(cfg_param: object, path: str) -> None:
     """The discrete families estimate their parameters freely (`mode: free`) in 0.2.0."""
     mode = getattr(cfg_param, "mode", "free")
     if mode not in ("free",):
         raise ConfigError(f"only mode 'free' is supported, not {mode!r}", path=f"{path}.mode")
+    for key in ("values", "tie", "bounds", "prior", "init_mean_sojourn_steps"):
+        if getattr(cfg_param, key, None) is not None:
+            raise ConfigError(f"'{key}' is not supported for this family", path=f"{path}.{key}")
+    if getattr(cfg_param, "constraint", "none") != "none":
+        raise ConfigError("'constraint' is not supported for this family", path=f"{path}.constraint")
