@@ -74,7 +74,7 @@ class EmissionFamily(Protocol):
 
 
 class BaseEmission:
-    """Mixin with the optional estimation hooks of `EmissionFamily`; each returns `None` (not available).
+    """Mixin with the optional estimation hooks of `EmissionFamily`; each answers `None` (not available).
 
     Families inherit it and override only what they implement; estimators discover capabilities by calling
     the hooks and checking for `None` (never by family name).
