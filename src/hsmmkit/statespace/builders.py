@@ -160,7 +160,7 @@ def _build_steps(spec: ModelSpec) -> StateSpace:
         row_of_state=jnp.asarray(regime_of),
         n_expanded=n_expanded,
         n_states=n_states,
-        order=p + 1,
+        order=1,  # no segment memory rows: `memory_of` holds the step history, `memory_marginals` is trivial
     )
     shifted = (ids % n_states**p) * n_states  # drop the oldest regime, make room for the new one
     exit_targets = shifted[:, None] + np.arange(n_states)[None, :]  # (S, N)

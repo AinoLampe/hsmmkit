@@ -353,3 +353,26 @@ def test_e11_t05_sample_path_follows_the_autoregression() -> None:
     acf1 = np.corrcoef(y[1:, 0], y[:-1, 0])[0, 1]
     assert abs(acf1 - 0.8) < 4 * np.sqrt((1 - 0.8**2) / n)
     assert abs(y.var() - 1 / (1 - 0.64)) < 0.15 * (1 / (1 - 0.64))
+
+
+def test_e11_t05_steps_space_decodes_and_has_trivial_memory_marginals(tmp_path: Path) -> None:
+    """Forward-backward and Viterbi run on the tuple space; `memory_marginals` is the trivial `(T, 1)`."""
+    from hsmmkit.engine.augmented import memory_marginals
+
+    rng = np.random.default_rng(5)
+    y = np.r_[rng.normal(-1, 0.3, 40), rng.normal(2, 0.3, 40)]
+    cfg = parse_project_config(_raw(tmp_path, _emission("mean_adjusted", 2)))
+    data = _prepared(cfg, y)
+    spec = build_model_spec(cfg, data)
+    space = build_expanded(spec)
+    mgr = ParamManager(spec.param_specs)
+    theta = dict(mgr.unflatten(mgr.init_u()))
+    theta["emission.mean"] = jnp.asarray([[-1.0], [2.0]])
+    theta["emission.scale"] = jnp.asarray([[0.4], [0.4]])
+    engine = ExpandedHMMEngine()
+    post = engine.forward_backward(theta, spec, space, data)
+    np.testing.assert_allclose(np.asarray(post.smoothed).sum(axis=1), 1.0, atol=1e-10)
+    assert memory_marginals(post).shape == (80, 1)
+    regimes = np.asarray(space.index.regime_of[engine.viterbi(theta, spec, space, data)])
+    assert (regimes[5:40] == 0).mean() > 0.9
+    assert (regimes[45:] == 1).mean() > 0.9
