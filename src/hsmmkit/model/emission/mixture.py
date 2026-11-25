@@ -127,16 +127,27 @@ class MixtureFamily(BaseEmission):
         base, base_specs = base_cls.from_config(base_cfg, n_states * k, n_series, cov_names)
         if n_series > 1 and not getattr(base, "joint", False):
             base = ProductEmission.of(base, n_series)
+        if base.init_carry() is not None:
+            raise ConfigError(
+                f"family {base_name!r} has a recurrent state and cannot be a mixture base",
+                path="model.emission.mixture.base",
+            )
+        if k == 1:  # the base family, untouched (its own state-axis ordering included)
+            return cls.of(base, 1), tuple(base_specs)
         specs: list[ParamSpec] = []
         ordered: list[str] = []
         for spec in base_specs:
             if spec.constraint == "increasing":
+                if spec.shape != (n_states * k,):
+                    raise ConfigError(
+                        "an increasing mixture parameter needs a single series (or per_series: false)",
+                        path=spec.name,
+                    )
                 specs.append(_row_ordered(spec, n_states, k))
                 ordered.append(spec.name)
             else:
                 specs.append(spec)
-        if k > 1:
-            specs.append(_weights_spec(n_states, k, cfg.params.get("weights")))
+        specs.append(_weights_spec(n_states, k, cfg.params.get("weights")))
         return cls.of(base, k, tuple(ordered)), tuple(specs)
 
     # --- parameter views -----------------------------------------------------------------------------

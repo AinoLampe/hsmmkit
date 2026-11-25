@@ -254,6 +254,9 @@ def _free_mask(spec: ParamSpec) -> np.ndarray:
     return np.array([m == "free" for m in modes])
 
 
+_NO_JITTER_DOMAINS = frozenset({"simplex_ref", "pmf", "increasing", "increasing_positive"})
+
+
 def lattice_jitter(spec: ModelSpec, key: Array) -> Params:
     """Config `init`/lattice values, with `mode == "free"` entries jittered by ~10%.
 
@@ -261,13 +264,19 @@ def lattice_jitter(spec: ModelSpec, key: Array) -> Params:
     multiplicative jitter applied to `value - 2` and shifted back (`2 + (value - 2) * exp(0.1 eps)`),
     since scaling `value` itself can jitter it below the `> 2` floor. Real-domain: additive `0.1 eps
     scale` with `scale = |value|` (or `1.0` at `value == 0`). Simplex-domain (`transition.pi_rows`,
-    `duration.logits`) and `constraint="increasing"` specs are left at their baseline (jitter could
-    break the ordering the `increasing` bijector's inverse requires, or land outside the simplex).
+    `duration.logits`), `constraint="increasing"` specs and the row-ordered mixture domains are left at their
+    baseline (jitter could break the ordering the `increasing` bijector's inverse requires, or leave the
+    simplex).
     """
     theta = _baseline_theta(spec)
     keys = iter(jax.random.split(key, max(len(spec.param_specs), 1) * 2))
     for ps in spec.param_specs:
-        if ps.constraint == "increasing" or ps.domain in ("simplex_ref", "pmf"):
+        if ps.constraint == "increasing" or ps.domain in (
+            "simplex_ref",
+            "pmf",
+            "increasing",
+            "increasing_positive",
+        ):
             continue
         value = theta[ps.name]
         mask = _free_mask(ps)
@@ -303,8 +312,10 @@ def random(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
     s = float(np.std(y_all[:, 0])) / np.sqrt(data.nominal_dt) if not multi else float(s_m.mean())
     keys = iter(jax.random.split(key, max(len(spec.param_specs), 1) * 2 + 4))
 
+    # a mixture's component axis is not a state axis: location/scale keep the configured baseline
+    is_mixture = hasattr(spec.emission, "n_components")
     scale_name = next((sp.name for sp in spec.param_specs if sp.name in _SCALE_NAMES), None)
-    if scale_name is not None:
+    if scale_name is not None and not is_mixture:
         u01 = jax.random.uniform(next(keys), (n,), minval=0.25, maxval=4.0)
         if multi and len(_spec_shape(spec, scale_name)) == 2:
             theta[scale_name] = jnp.sort(u01)[:, None] * jnp.asarray(s_m)[None, :]
@@ -312,7 +323,7 @@ def random(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
             theta[scale_name] = jnp.sort(u01 * s)
 
     loc_name = next((sp.name for sp in spec.param_specs if sp.name in _LOCATION_NAMES), None)
-    if loc_name is not None:
+    if loc_name is not None and not is_mixture:
         if multi and len(_spec_shape(spec, loc_name)) == 2:
             u = jax.random.uniform(next(keys), (n, y_all.shape[1]), minval=-1.0, maxval=1.0)
             theta[loc_name] = u * jnp.asarray(s_m)[None, :]

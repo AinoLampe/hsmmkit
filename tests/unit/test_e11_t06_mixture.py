@@ -278,3 +278,41 @@ def test_e11_t06_hmm_with_mixture_emission_fits_and_post_sort_is_consistent(tmp_
     ll = float(ExpandedHMMEngine().loglik(theta, spec, space, data))
     assert np.isfinite(ll)
     assert abs(ll - res.loglik) <= 1e-9 * abs(ll)
+
+
+def test_e11_t06_k1_keeps_the_base_state_ordering(tmp_path: Path) -> None:
+    """`K = 1` with `constraint: increasing` is the base's own state-axis ordering (review finding)."""
+    params = _gauss_params([0.0, 0.1], [1.0, 2.0], constraint="increasing")
+    fam, specs = _family(tmp_path, _emission("gaussian", 1, params))
+    assert fam.ordered == ()
+    scale = next(s for s in specs if s.name == "emission.scale")
+    assert scale.constraint == "increasing"
+    assert scale.shape == (2,)
+
+
+def test_e11_t06_inits_keep_the_mixture_shapes_and_the_ordering(tmp_path: Path) -> None:
+    """`random` and `lattice_jitter` give every parameter its spec shape and keep rows increasing (review)."""
+    from hsmmkit.estimation.init import lattice_jitter, random
+
+    y = np.random.default_rng(0).normal(size=80)
+    times = np.arange(80).astype("datetime64[D]").astype("datetime64[ns]")
+    cfg = _cfg(
+        tmp_path,
+        _emission(
+            "gaussian",
+            2,
+            _gauss_params([-0.1, 0.1, -0.1, 0.1], [0.5, 0.6, 1.5, 1.6], constraint="increasing"),
+        ),
+    )
+    obs = ObservationSet(("x",), times, y.reshape(-1, 1), "memory", "s")
+    data = Preparer(cfg.data).fit(obs, [], train_end=times[-1]).transform(obs, [])
+    spec = build_model_spec(cfg, data)
+    mgr = ParamManager(spec.param_specs)
+    for init in (random, lattice_jitter):
+        for seed in range(10):
+            key = jax.random.key(seed)
+            theta = init(data, spec, key) if init is random else init(spec, key)
+            for ps in spec.param_specs:
+                assert theta[ps.name].shape == ps.shape, (init.__name__, ps.name)
+            assert bool(jnp.all(jnp.isfinite(mgr.flatten(theta))))
+            assert bool(jnp.all(jnp.diff(theta["emission.scale"], axis=1) > 0))
