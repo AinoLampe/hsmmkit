@@ -830,8 +830,7 @@ def _check_part2_keys(config: ProjectConfig) -> None:
                 + ", ".join(names),
             )
 
-
-def _non_conjugate_components(config: ProjectConfig) -> list[str]:
+    """Components whose family does not override `conjugate_prior()` (VB and MCMC fall back)."""
     """Components whose family does not override `conjugate_prior()` (VB, MCMC: Laplace and NUTS fallbacks)."""
     from hsmmkit.model.emission.base import BaseEmission
 
