@@ -17,6 +17,8 @@ from regimekit.model.params.manager import ParamManager
 from regimekit.utils.errors import ConfigError
 from tests.helpers.finance_config import parse_v1
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "configs"
 _YAML = YAML(typ="safe")
 

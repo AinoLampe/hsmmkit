@@ -23,6 +23,8 @@ from regimekit.persistence.results import read_backtest, write_backtest
 from regimekit.utils.errors import ConfigError, DataError
 from tests.helpers import backtest_fixtures as bf
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 
 def _result(
     log_score: float, crps: float, bic: float, fit_time: float, strategy: bool = True

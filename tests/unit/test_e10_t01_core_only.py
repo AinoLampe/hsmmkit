@@ -64,7 +64,7 @@ def test_e10_t01_pr_workflow_has_a_core_only_job_that_uploads_failing_ids() -> N
 
     doc = YAML(typ="safe").load(ROOT / ".github" / "workflows" / "pr.yml")
     job = doc["jobs"]["core-only"]
-    assert job["continue-on-error"] is True  # required only from E10-T07b
+    assert "continue-on-error" not in job  # required since E10-T07b
     assert any("nox -s core" in str(s.get("run", "")) for s in job["steps"])
     assert any(s.get("uses", "").startswith("actions/upload-artifact") for s in job["steps"])
 

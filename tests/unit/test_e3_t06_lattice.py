@@ -27,6 +27,8 @@ from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition, build_memory_layout
 from regimekit.utils.errors import ConfigError
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 APPENDIX_A = Path(__file__).parent.parent / "fixtures" / "configs" / "appendix_a.yaml"
 
 

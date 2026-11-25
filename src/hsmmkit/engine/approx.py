@@ -1,7 +1,7 @@
 """`ApproxInference`: the approximate-inference plug-in protocol for factorial models (E9-T02, ADR-0008).
 
 Design only: no engine implements it in 0.1.x, and `InferenceEngine.approx()` of the exact engines still
-returns `None`. A future factorial engine returns an `ApproxInference` from `approx()`; callers then run
+gives `None`. A future factorial engine gives an `ApproxInference` from `approx()`; callers then run
 `fit(...)` to obtain per-chain marginals instead of the exact joint `Posterior`. The accepted algorithm
 (structured mean-field) and its complexity are recorded in `docs/adr/0008-approx-inference-plugin.md`.
 """

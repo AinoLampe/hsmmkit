@@ -15,6 +15,8 @@ from regimekit.finance.config import StrategyCfg
 from regimekit.finance.strategies import StrategyHook, make_strategy
 from tests.helpers import backtest_fixtures as bf
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 SHORT = {"initial_train": 100, "refit_every": 30, "horizons": (1,), "restarts": 1, "n_sim": 50}
 STRATEGY_METRICS = ("sharpe", "max_drawdown", "turnover", "hit_rate")
 

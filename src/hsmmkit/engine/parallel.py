@@ -3,7 +3,7 @@
 Forward-backward as two `jax.lax.associative_scan`s over `(S, S)` log-space matrix products
 `M_t = log A_t + ell_t[None, :]` (`t = 1..T-1`): prefix products give the forward messages
 `alpha_t = alpha_0 (x) M_1 (x) ... (x) M_t`, suffix products the backward messages
-`beta_t = M_{t+1} (x) ... (x) M_{T-1} (x) 1`. Depth is `O(log T)` instead of `O(T)`, at the price of
+`beta_t = M_{t+1} (x) ... (x) M_{T-1} (x) 1`. Depth is `O(log T)` instead of `O(T)`, at the cost of
 materializing `(T, S, S)` arrays (only enabled when `T * S^2 <= 5e7`, off by default; useful on GPUs).
 
 Elements are kept as `(E, c)` = `exp(M - c)` with a scalar log-scale `c` per matrix, so products are ordinary

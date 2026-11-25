@@ -1,4 +1,4 @@
-"""Typed exception hierarchy and CLI exit codes (overview §4.4)."""
+"""Typed exception hierarchy (overview §4.4); the CLI maps it to exit codes (`regimekit.cli.app`)."""
 
 from __future__ import annotations
 
@@ -26,21 +26,9 @@ class DataError(RegimekitError):
     """Invalid data contract, shape, or content."""
 
 
-class ProviderError(RegimekitError):
-    """A market-data provider failed to fetch or parse data."""
-
-
 class NumericalError(RegimekitError):
     """A numerical guard (NaN/Inf, disabled x64, missing device, ...) was tripped."""
 
 
 class PersistenceError(RegimekitError):
     """A model bundle failed to save, load, or validate."""
-
-
-EXIT_CODES: dict[type[RegimekitError], int] = {
-    ConfigError: 2,
-    DataError: 3,
-    NumericalError: 4,
-    ProviderError: 5,
-}

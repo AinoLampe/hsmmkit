@@ -18,6 +18,8 @@ from regimekit.finance import FinanceConfig
 from regimekit.utils.errors import ConfigError
 from tests.helpers.engine_fixtures import make_explicit_scenario
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "configs"
 
 

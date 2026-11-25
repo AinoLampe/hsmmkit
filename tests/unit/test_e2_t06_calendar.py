@@ -17,6 +17,8 @@ from regimekit.data.contracts import CovariateSeries, ObservationSet
 from regimekit.utils.clock import is_irregular
 from regimekit.utils.errors import ConfigError, DataError
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 
 def _ns(dates: list[str] | pd.DatetimeIndex) -> np.ndarray:
     return np.asarray(pd.DatetimeIndex(dates).as_unit("ns").values, dtype="datetime64[ns]")

@@ -14,6 +14,8 @@ from regimekit.finance.clocks import TRADING_DAYS_PER_YEAR
 from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from regimekit.utils.errors import ConfigError, DataError
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 T = 1000
 DT = 1.0 / TRADING_DAYS_PER_YEAR
 

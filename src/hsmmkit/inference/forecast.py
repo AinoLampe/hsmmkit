@@ -53,7 +53,7 @@ class ForecastPaths(NamedTuple):
 
     states: Array  # (n_sim, h) int, augmented state index at each future step
     regimes: Array  # (n_sim, h) int
-    returns: Array  # (n_sim, h, M)
+    values: Array  # (n_sim, h, M)
 
 
 def _blocks(
@@ -96,10 +96,10 @@ def _check_state_count(log_alpha_t: Array, space: StateSpace) -> None:
         )
 
 
-def _check_finite(returns: Array) -> None:
+def _check_finite(values: Array) -> None:
     """Public-boundary guard (CLAUDE.md §4): no NaN/Inf may leave the sampler."""
-    if not bool(jnp.all(jnp.isfinite(returns))):
-        raise NumericalError("non-finite value in forecast returns", path="returns")
+    if not bool(jnp.all(jnp.isfinite(values))):
+        raise NumericalError("non-finite value in forecast values", path="values")
 
 
 def _prepend(x: Array) -> Array:
@@ -118,10 +118,10 @@ def _expanded_path(
     z_e: Array,
     s0: Array,
 ) -> tuple[Array, Array, Array]:
-    states, regimes, returns = _simulate_one_path(
+    states, regimes, values = _simulate_one_path(
         key, theta, spec, space, _prepend(dt), _prepend(z_pi), _prepend(z_d), _prepend(z_e), s0
     )
-    return states[1:], regimes[1:], returns[1:]
+    return states[1:], regimes[1:], values[1:]
 
 
 @partial(jax.jit, static_argnames=("spec", "n_sim"))
@@ -171,7 +171,7 @@ def forecast_paths(
         colmap: unified-column -> entry-point mapping of `cov_paths`.
 
     Returns:
-        `ForecastPaths(states (n_sim, h), regimes (n_sim, h), returns (n_sim, h, M))`.
+        `ForecastPaths(states (n_sim, h), regimes (n_sim, h), values (n_sim, h, M))`.
 
     Raises:
         ConfigError: inconsistent shapes or a non-positive `n_sim`.
@@ -233,8 +233,8 @@ def _explicit_path(
 
     carry0 = (j0.astype(jnp.int64), e0.astype(jnp.int64), d0)
     _, (states, regimes) = jax.lax.scan(step, carry0, (z_pi, z_d, jax.random.split(k_steps, h)))
-    returns = spec.emission.sample(k_emit, regimes, dt, theta, z_e)
-    return states, regimes, returns
+    values = spec.emission.sample(k_emit, regimes, dt, theta, z_e)
+    return states, regimes, values
 
 
 @partial(jax.jit, static_argnames=("spec", "n_sim", "nominal_dt"))
@@ -432,7 +432,7 @@ class MonteCarloForecaster:
                 key, fit.params, self.spec, self.space, log_alpha_t, dt_future, n_sim, cov_paths, colmap
             )
 
-        samples = paths.returns  # (n_sim, h, M)
+        samples = paths.values  # (n_sim, h, M)
         regime_probs = jax.nn.one_hot(paths.regimes, self.spec.n_states).mean(axis=0)  # (h, N)
         cum = jnp.cumsum(samples, axis=1)
         levels = tuple(float(q) for q in self.cfg.quantiles)

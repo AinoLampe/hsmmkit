@@ -1,7 +1,7 @@
 """Shared machinery for the explicit-duration families (E3-T04).
 
 An explicit family gives the sojourn pmf `p_i(d)`, `d = 1..D_max`, on a regular grid of step `nominal_dt`
-(clock units: years under `trading`/`calendar`, steps under `steps`, CLAUDE.md §3.1). Continuous
+(clock units: years under a year clock, steps under `steps`, CLAUDE.md §3.1). Continuous
 sojourn laws are discretized as `p(d) = [F(d dt) - F((d-1) dt)] / F(D_max dt)`. The covariate link is
 entry-time: the scale-like parameter is multiplied by `exp(c_i . z_entry)`.
 

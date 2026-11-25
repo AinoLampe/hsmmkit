@@ -12,16 +12,18 @@ import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
-from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.estimation.results import FitResult
 from regimekit.finance import FinanceConfig
+from regimekit.finance.cli import app
 from regimekit.inference.decode import decode
 from regimekit.model.build import build_model_spec
 from regimekit.model.params.manager import ParamManager
 from regimekit.persistence.results import read_prepared
 from regimekit.persistence.store import ModelStore
 from tests.integration.test_e2_t08_fetch import _fetch, _write_csv_project
+
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
 
 _runner = CliRunner()
 

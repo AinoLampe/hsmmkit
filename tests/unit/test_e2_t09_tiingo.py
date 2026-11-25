@@ -15,9 +15,9 @@ from structlog.testing import capture_logs
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "finance"))
 from provider_contract import check_price_contract, check_window_inclusive
 
+from regimekit.finance.errors import ProviderError
 from regimekit.finance.providers import TiingoProvider, get_provider
 from regimekit.finance.providers.tiingo import TiingoQuota
-from regimekit.utils.errors import ProviderError
 
 CASSETTE = Path(__file__).resolve().parents[1] / "fixtures" / "cassettes" / "tiingo" / "SPY.json"
 KEY = "TIINGO-SECRET-KEY-7"

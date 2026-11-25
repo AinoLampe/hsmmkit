@@ -9,7 +9,6 @@ import pytest
 
 from regimekit.data.calendar import align_covariate, build_grid
 from regimekit.data.contracts import CovariateSeries, ObservationSet
-from regimekit.finance.views import price_view
 from regimekit.utils.errors import ConfigError, DataError
 
 DAYS = np.arange("2024-01-01", "2024-01-13", dtype="datetime64[D]").astype(
@@ -116,17 +115,3 @@ def test_e10_t04a_time_less_covariate_needs_the_grid_length_and_matching_stamps(
         align_covariate(dated, _cov(np.arange(12), np.zeros(12)), 1, 1)
     values, _ = align_covariate(dated, _cov(None, np.arange(12.0)), 1, 1)  # row index also on a dated grid
     assert values.shape == (11,)
-
-
-def test_e10_t04a_price_view_reads_the_finance_names_from_meta() -> None:
-    """The finance helper gives the old attribute names; plain data without provider metadata is rejected."""
-    obs = ObservationSet(
-        ("X",), DAYS, np.ones((12, 1)), "csv", "s", {"interval": "1d", "adjusted": True, "note": 1}
-    )
-    view = price_view(obs)
-    assert (view.symbols, view.interval, view.adjusted, view.provider) == (("X",), "1d", True, "csv")
-    assert view.prices is obs.values
-    with pytest.raises(DataError):
-        price_view(_obs(DAYS))
-    with pytest.raises(DataError):
-        price_view(_obs(None))

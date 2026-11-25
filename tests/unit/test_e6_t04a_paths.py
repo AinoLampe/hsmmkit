@@ -17,6 +17,8 @@ from regimekit.utils.errors import ConfigError
 from regimekit.utils.rng import FORECAST_ORIGIN, FORECAST_PATHS, PURPOSE_FORECAST, key_for
 from tests.helpers.objective_fixtures import Case, make_case
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 DT = 1.0 / TRADING_DAYS_PER_YEAR
 FRIDAY = np.datetime64("2024-03-29T00:00:00", "ns")
 
@@ -108,7 +110,7 @@ def test_e6_t04a_h1_regime_distribution_and_mixture_moments() -> None:
     )
     assert out.states.shape == (n_sim, 1)
     assert out.regimes.shape == (n_sim, 1)
-    assert out.returns.shape == (n_sim, 1, 1)
+    assert out.values.shape == (n_sim, 1, 1)
 
     w = _one_step_regime_probs(case, theta, log_alpha)
     freq = np.bincount(np.asarray(out.regimes[:, 0]), minlength=len(w)) / n_sim
@@ -118,7 +120,7 @@ def test_e6_t04a_h1_regime_distribution_and_mixture_moments() -> None:
     m, v = _gbm_moments(theta, DT)
     mean = float(w @ m)
     var = float(w @ v + w @ m**2 - (w @ m) ** 2)
-    y = np.asarray(out.returns[:, 0, 0])
+    y = np.asarray(out.values[:, 0, 0])
     assert abs(y.mean() - mean) <= 3 * np.sqrt(var / n_sim)
     se_var = np.sqrt(np.var((y - y.mean()) ** 2) / n_sim)
     assert abs(y.var() - var) <= 3 * se_var
@@ -140,9 +142,9 @@ def test_e6_t04a_deterministic_per_key_and_shapes_for_longer_horizon() -> None:
         key_for(1, PURPOSE_FORECAST, FORECAST_ORIGIN), theta, case.spec, case.space, log_alpha, dt, 50
     )
     assert a.states.shape == (50, 6)
-    assert a.returns.shape == (50, 6, 1)
-    assert np.array_equal(np.asarray(a.returns), np.asarray(b.returns))
-    assert not np.array_equal(np.asarray(a.returns), np.asarray(c.returns))
+    assert a.values.shape == (50, 6, 1)
+    assert np.array_equal(np.asarray(a.values), np.asarray(b.values))
+    assert not np.array_equal(np.asarray(a.values), np.asarray(c.values))
 
 
 def test_e6_t04a_per_path_transition_covariates_drive_the_first_step() -> None:
@@ -242,7 +244,7 @@ def test_e6_t04a_explicit_geometric_matches_expanded_regime_probabilities() -> N
         key_for(0, PURPOSE_FORECAST, FORECAST_ORIGIN), theta, spec_x, space_x, la_x, dt, n_sim, DT
     )
     assert im.states.shape == (n_sim, h)
-    assert im.returns.shape == (n_sim, h, 1)
+    assert im.values.shape == (n_sim, h, 1)
     assert int(im.states.max()) < n * d_max
 
     for k in range(h):

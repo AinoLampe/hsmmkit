@@ -39,7 +39,7 @@ def compute(work: Path) -> dict[str, dict[str, np.ndarray] | pd.DataFrame]:
     """Run the pipeline in `work` and return the five golden groups."""
     sys.path.insert(0, str(ROOT))
     from examples.synthetic import write_offline_project
-    from regimekit.project import Project
+    from regimekit.finance.project import FinanceProject as Project
 
     config = write_offline_project(work, EXAMPLE, overrides=OVERRIDES)
     project = Project.from_yaml(config, out_dir=work / "runs", offline=False)

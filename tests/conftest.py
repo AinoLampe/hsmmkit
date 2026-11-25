@@ -51,9 +51,9 @@ from hypothesis import HealthCheck, settings  # noqa: E402
 
 import regimekit  # noqa: E402
 
-# Armed after `import regimekit`: until E10-T07b, `regimekit.project` still imports the finance providers
-# (finance_import_allowlist.txt), so the package itself cannot be imported with the finder already active.
-# `install_core_only_finder` drops the finance modules from `sys.modules`; later imports raise.
+# Armed after `import regimekit` (x64 must be on before any array exists). The core no longer imports the
+# finance package (E10-T07b); `install_core_only_finder` also drops finance modules that an earlier
+# import left in `sys.modules`, so that later imports raise.
 if os.environ.get("HSMM_CORE_ONLY") == "1":
     install_core_only_finder()
 

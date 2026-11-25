@@ -21,6 +21,8 @@ from regimekit.utils.rng import key_for
 from tests.helpers.engine_fixtures import DT, make_dataset
 from tests.helpers.two_series import MEAN_SOJOURN_DAYS, MU_STAR, SIGMA_STAR, two_series_config
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 SIGMA_REL_TOL = 0.10  # overview 4.7: sigma <= 10 % relative
 SEEDS = (0, 1, 2)
 SIM_PURPOSE = 1  # RNG purpose id of the simulated path (tests only)

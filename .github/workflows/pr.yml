@@ -53,9 +53,8 @@ jobs:
       - run: uv run nox -s docs
 
   core-only:
-    # Not required until E10-T07b (allow-lists empty); until then it publishes the failing test IDs.
+    # Required since E10-T07b (the allow-lists are gone): the core suite runs with `regimekit.finance` blocked.
     runs-on: ubuntu-latest
-    continue-on-error: true
     env:
       REGIMEKIT_TYPECHECK: "1"
       JAX_PLATFORMS: cpu

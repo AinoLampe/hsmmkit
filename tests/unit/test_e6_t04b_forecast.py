@@ -25,6 +25,8 @@ from tests.helpers.forecast_fixtures import (
 )
 from tests.helpers.objective_fixtures import make_case
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 
 def test_e6_t04b_h1_mean_and_var_match_the_analytic_mixture() -> None:
     """AC1: at h=1 the cumulative mean/var equal the predictive GBM mixture within 3 SE (n_sim=20000)."""

@@ -26,6 +26,8 @@ from regimekit.model.duration.explicit import check_d_max
 from regimekit.model.params import ParamManager
 from regimekit.utils.errors import ConfigError
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 N = 3
 CONTINUOUS = ["gamma", "weibull", "lognormal", "poisson"]
 FAMILIES = {

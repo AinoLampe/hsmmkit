@@ -22,6 +22,8 @@ from regimekit.statespace.builders import build_expanded
 from tests.helpers.engine_fixtures import DT, make_dataset
 from tests.helpers.two_series import SIGMA_STAR, two_series_config
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 T_LEN = 80
 
 

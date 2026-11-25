@@ -15,10 +15,10 @@ import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
-from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.finance import FinanceConfig
+from regimekit.finance.cli import app
 from regimekit.inference.covariate_forecasters import make_forecaster
 from regimekit.inference.forecast import MonteCarloForecaster
 from regimekit.inference.results import ForecastResult
@@ -32,6 +32,8 @@ from regimekit.statespace.builders import build_expanded
 from regimekit.utils.errors import ConfigError, PersistenceError
 from tests.integration.test_e2_t08_fetch import _fetch, _write_csv_project
 from tests.integration.test_e6_t02_decode import _write_model
+
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
 
 _runner = CliRunner()
 

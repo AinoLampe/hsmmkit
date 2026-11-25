@@ -56,7 +56,8 @@ dev = [
 ]
 
 [project.scripts]
-regimekit = "regimekit.cli.app:main"
+regimekit = "regimekit.finance.cli:main"
+regimekit-core = "regimekit.cli.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/regimekit"]

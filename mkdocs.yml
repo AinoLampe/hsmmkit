@@ -58,6 +58,7 @@ nav:
       - Backtesting: guide/backtesting.md
       - Validation: guide/validation.md
       - Python API and CLI: guide/project.md
+      - Core and finance commands: guide/cli.md
       - Examples and tutorial: guide/examples.md
       - Extending: guide/extending.md
       - Troubleshooting: guide/troubleshooting.md

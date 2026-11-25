@@ -16,11 +16,11 @@ from structlog.testing import capture_logs
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "finance"))
 from provider_contract import check_series_contract
 
+from regimekit.finance.errors import ProviderError
 from regimekit.finance.providers import CboeProvider, FredProvider, get_provider
 from regimekit.finance.providers.base import RateLimiter
 from regimekit.finance.providers.cboe import DEFAULT_URLS, parse_cboe_csv
 from regimekit.finance.providers.fred import MAX_REQUESTS_PER_MINUTE, parse_values
-from regimekit.utils.errors import ProviderError
 
 CASSETTES = Path(__file__).resolve().parents[1] / "fixtures" / "cassettes"
 KEY = "FRED-SECRET-KEY-42"

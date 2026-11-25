@@ -104,33 +104,10 @@ def test_e10_t01_scanner_reports_line_and_path_for_engine_price(tmp_path: Path) 
 # --- the real tree ---------------------------------------------------------------------------------
 
 
-def _diff(allowed: set[str], found: set[str]) -> tuple[list[str], list[str]]:
-    """`(new hits, stale entries)`."""
-    return sorted(found - allowed), sorted(allowed - found)
-
-
 def test_e10_t01_every_hit_is_allow_listed_and_no_entry_is_stale() -> None:
-    """AC3: unknown hits fail; allow-list entries that no longer occur fail."""
-    new, stale = _diff(set(_read_allowlist(NEUTRAL_ALLOWLIST)), {entry_of(h) for h in scan_tree()})
-    assert not new, "finance terms in core modules (fix the code, do not grow the list):\n" + "\n".join(new)
-    assert not stale, "stale allow-list entries, remove them:\n" + "\n".join(stale)
-
-
-def test_e10_t01_allow_list_entries_carry_a_removal_ticket() -> None:
-    """Allow list entries carry a removal ticket."""
-    for name in (NEUTRAL_ALLOWLIST, IMPORT_ALLOWLIST):
-        for entry, tag in _read_allowlist(name).items():
-            assert TAG.fullmatch(tag), f"{name.name}: {entry!r} needs a tag E10-T02b..E10-T07b, got {tag!r}"
-
-
-def test_e10_t01_stale_entry_and_new_hit_are_detected() -> None:
-    """Stale entry and new hit are detected."""
-    new, stale = _diff({"engine/base.py:price", "a.py:trading"}, {"a.py:trading", "b.py:symbol"})
-    assert new == ["b.py:symbol"]
-    assert stale == ["engine/base.py:price"]
-
-
-# --- finance imports from the future hsmmkit scope --------------------------------------------------
+    """AC3 (closed by E10-T07b): the core scope has no finance term at all, and there is no allow-list."""
+    hits = [entry_of(h) for h in scan_tree()]
+    assert not hits, "finance terms in core modules (fix the code):\n" + "\n".join(sorted(set(hits)))
 
 
 def _finance_imports(path: Path, package: tuple[str, ...] | None = None) -> list[str]:
@@ -158,15 +135,11 @@ def _scope_python_files() -> list[Path]:
 
 
 def test_e10_t01_no_finance_import_beyond_the_allow_list() -> None:
-    """The core scope (now including `cli/` and `project.py`) imports `regimekit.finance` only as listed."""
-    allowed = _read_allowlist(IMPORT_ALLOWLIST)
+    """The core scope (including `cli/`, `project.py`, `__init__.py`) imports `regimekit.finance` nowhere."""
     found = {
         f"{p.relative_to(SRC).as_posix()}:{m}" for p in _scope_python_files() for m in _finance_imports(p)
     }
-    assert not (found - allowed.keys()), "unlisted finance imports: " + ", ".join(
-        sorted(found - allowed.keys())
-    )
-    assert not (allowed.keys() - found), "stale entries: " + ", ".join(sorted(allowed.keys() - found))
+    assert not found, "finance imports in the core: " + ", ".join(sorted(found))
 
 
 def test_e10_t01_finance_import_scanner_catches_absolute_and_relative(tmp_path: Path) -> None:
@@ -181,5 +154,5 @@ def test_e10_t01_finance_import_scanner_catches_absolute_and_relative(tmp_path: 
 
 @pytest.mark.parametrize("name", ["neutral_names_allowlist.txt", "finance_import_allowlist.txt"])
 def test_e10_t01_allow_list_files_exist(name: str) -> None:
-    """Allow list files exist."""
-    assert (FIXTURES / name).is_file()
+    """E10-T07b deleted both allow-list files; they must not come back."""
+    assert not (FIXTURES / name).exists()

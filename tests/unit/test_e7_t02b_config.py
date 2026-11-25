@@ -13,6 +13,8 @@ from regimekit.config.schema import BacktestCfg
 from regimekit.config.yaml_io import dump_resolved, export_json_schema, load_config
 from regimekit.finance import FinanceConfig
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "configs"
 _YAML = YAML(typ="safe")

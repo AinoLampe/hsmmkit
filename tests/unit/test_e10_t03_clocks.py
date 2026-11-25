@@ -15,6 +15,8 @@ from regimekit.testing.clock_contract import check_clock, fixture_times
 from regimekit.utils.clock import days_to_steps, future_grid, get_clock, parse_clock_options
 from regimekit.utils.errors import ConfigError
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 ROOT = Path(__file__).resolve().parents[2]
 FRIDAY = np.datetime64("2024-01-05T00:00:00", "ns")
 

@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from regimekit.config.schema import ProjectConfig
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +32,7 @@ def test_e8_t04_config_reference_covers_every_section_and_field() -> None:
         assert f"| `{name}` |" in text, name
 
 
+@pytest.mark.finance
 def test_e8_t04_staleness_check_detects_a_modified_page(tmp_path: Path) -> None:
     """The check fails when the page differs: render() output is compared byte for byte."""
     import importlib.util

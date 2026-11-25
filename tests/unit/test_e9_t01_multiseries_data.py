@@ -20,6 +20,8 @@ from regimekit.finance import FinanceConfig, FinanceDataSection
 from regimekit.utils.errors import DataError
 from tests.helpers.two_series import APPENDIX_A
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 N_DAYS = 60
 TIMES = np.asarray(pd.bdate_range("2021-01-04", periods=N_DAYS).as_unit("ns").values, dtype="datetime64[ns]")
 _YAML = YAML(typ="safe")

@@ -16,6 +16,8 @@ from regimekit.model.duration.negbin import NegBinDuration
 from regimekit.model.params import ParamManager
 from regimekit.utils.errors import ConfigError
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 
 def _cfg_module():  # noqa: ANN202
     from regimekit.config import schema

@@ -37,7 +37,7 @@ class ForecastResult:
     origin_time: np.datetime64
     horizon_times: np.ndarray  # (h,)
     regime_probs: Array  # (h, N)
-    samples: Array  # (n_sim, h, M) per-step log-returns
+    samples: Array  # (n_sim, h, M) per-step log-values
     cum_quantiles: Array  # (h, Q, M)
     mean: Array  # (h, M) of cumulative log-return
     var: Array  # (h, M) of cumulative log-return

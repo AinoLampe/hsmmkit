@@ -32,6 +32,8 @@ from regimekit.inference.results import ForecastResult, PosteriorResult
 from regimekit.utils.errors import ConfigError
 from tests.helpers import backtest_fixtures as bf
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 DT = 1.0 / TRADING_DAYS_PER_YEAR
 ROOT = Path(__file__).resolve().parents[2]
 _YAML = YAML(typ="safe")

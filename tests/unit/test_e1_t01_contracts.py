@@ -18,6 +18,8 @@ from regimekit.data.contracts import (
 )
 from regimekit.utils.errors import DataError
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 
 def _times(t: int, start: str = "2020-01-01") -> np.ndarray:
     """Return `t` strictly increasing daily timestamps starting at `start`."""

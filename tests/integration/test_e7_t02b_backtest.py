@@ -20,6 +20,8 @@ from regimekit.evaluation.backtest import run_backtest, schedule_folds
 from regimekit.utils.errors import ConfigError
 from tests.helpers import backtest_fixtures as bf
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 ALL_METRICS = (
     "log_score",
     "log_score_mixture",

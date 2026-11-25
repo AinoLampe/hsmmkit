@@ -1,21 +1,21 @@
-"""`Project`: the Python entry point that mirrors every CLI command (E8-T02).
+"""`Project`: the domain-neutral Python entry point that mirrors every CLI command (E8-T02, E10-T07b).
 
-A `Project` holds a resolved `FinanceConfig` and the directory its relative paths (csv files) resolve
-against. Every method returns its result object and writes nothing unless called with `write=True`;
-the CLI (`cli/app.py`) is a thin wrapper that passes `write=True`. Importing this module triggers no
-network access and no file writes.
-
-This module and `cli/` are the only places allowed to import the finance profile (overview section 4.3).
+A `Project` holds a resolved `ProjectConfig` and the directory its relative paths resolve against. Every
+method returns its result object and writes nothing unless called with `write=True`; the CLI
+(`cli/app.py`) is a thin wrapper that passes `write=True`. Data enters through `load_data`, which reads the
+configured source (`data.source`). An application subclasses `Project` and overrides `config_cls`,
+`_load_raw`, `_hooks`, `_report_sections` and `_extensions` (the finance application: `FinanceProject`).
+Importing this module triggers no network access and no file writes.
 """
 
 from __future__ import annotations
 
 import json
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NamedTuple, cast
+from typing import Any, ClassVar, NamedTuple, Self, cast
 
 import jax.numpy as jnp
 import numpy as np
@@ -24,33 +24,21 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pydantic
 
-from regimekit.config.schema import BacktestCfg
+from regimekit.config.schema import BacktestCfg, ProjectConfig
 from regimekit.config.yaml_io import dump_resolved, load_config
 from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
-from regimekit.data.prepare import Preparer, PrepDiagnostics, prep_stats_to_json
+from regimekit.data.prepare import Preparer, prep_stats_to_json
+from regimekit.data.sources import load_data as load_source_data
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.engine.explicit_duration import ExplicitDurationEngine
 from regimekit.estimation import fit as fit_model
 from regimekit.estimation.report import diagnose
 from regimekit.estimation.results import FitResult
 from regimekit.estimation.selftest import SelftestResult, run_selftest
-from regimekit.evaluation.backtest import run_backtest
+from regimekit.evaluation.backtest import OriginHook, run_backtest
 from regimekit.evaluation.compare import CompareEntry, check_snapshots, comparison_table, render_markdown
 from regimekit.evaluation.report import build_report, versions
 from regimekit.evaluation.results import BacktestResult
-from regimekit.finance import (
-    Cache,
-    DataQualityReport,
-    FetchContext,
-    FinanceConfig,
-    PriceSource,
-    SnapshotPolicy,
-    StrategyHook,
-    build_quality_report,
-    extension_payloads,
-    make_strategy,
-    strategy_section,
-)
 from regimekit.inference.covariate_forecasters import CovariateForecaster, make_forecaster
 from regimekit.inference.decode import decode as decode_posterior
 from regimekit.inference.forecast import MonteCarloForecaster
@@ -68,16 +56,14 @@ from regimekit.persistence.results import (
     write_simulation,
 )
 from regimekit.persistence.store import ModelStore
-from regimekit.plugins import REGISTRY
 from regimekit.statespace.builders import build_expanded, build_explicit
 from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
-from regimekit.utils.errors import ConfigError, DataError, PersistenceError, RegimekitError
+from regimekit.utils.errors import ConfigError, PersistenceError, RegimekitError
 from regimekit.utils.logging import get_logger
 from regimekit.utils.rng import PURPOSE_SIMULATE, key_for
 
 __all__ = [
     "FetchedInputs",
-    "FinanceConfig",
     "Project",
     "SimulationOutput",
     "apply_overrides",
@@ -86,12 +72,11 @@ __all__ = [
 
 
 class FetchedInputs(NamedTuple):
-    """Raw inputs of a run: primary prices, covariate series, and the cache/provider they came through."""
+    """Raw inputs of a run: observations, covariate series and what the source loader left behind."""
 
     obs: ObservationSet
     covs: list[CovariateSeries]
-    cache: Cache
-    primary_name: str
+    context: Any = None  # what the loader left behind (an application's context)
 
 
 @dataclass(frozen=True)
@@ -101,11 +86,11 @@ class SimulationOutput:
     times: np.ndarray
     regimes: np.ndarray
     phases: np.ndarray
-    returns: np.ndarray
+    values: np.ndarray
     segments: list[list[tuple[int, int, int]]]
 
 
-def apply_overrides(config: FinanceConfig, overrides: Mapping[str, object]) -> None:
+def apply_overrides(config: ProjectConfig, overrides: Mapping[str, object]) -> None:
     """Set dotted config keys (`{"project.seed": 7}`) on `config` in place, with validation.
 
     Raises:
@@ -126,7 +111,7 @@ def apply_overrides(config: FinanceConfig, overrides: Mapping[str, object]) -> N
             raise ConfigError(exc.errors()[0]["msg"], path=key) from exc
 
 
-def summary_lines(config: FinanceConfig) -> list[str]:
+def summary_lines(config: ProjectConfig) -> list[str]:
     """The `validate-config` summary: states, engine, families, covariate entry points, warnings."""
     emission_covariates = config.model.emission.covariates
     entry_points = sorted(
@@ -156,11 +141,16 @@ def summary_lines(config: FinanceConfig) -> list[str]:
     ]
 
 
-def _train_end(obs: ObservationSet, backtest: BacktestCfg) -> np.datetime64:
-    """End of the initial training window.
+def _train_end(obs: ObservationSet, backtest: BacktestCfg) -> Any:  # noqa: ANN401  (a timestamp or a step index)
+    """End of the initial training window (the standardization window of `load_data`).
 
-    First timestamp + `initial_train` years (or the row given by `initial_train_steps`), capped at the last.
+    First timestamp + `initial_train` years (or the row given by `initial_train_steps`), capped at the last;
+    time-less data gives a step index.
     """
+    if obs.times is None:
+        n = int(obs.values.shape[0])
+        steps = backtest.initial_train_steps
+        return n - 1 if steps is None else min(steps, n) - 1
     times = obs.require_times()
     last: np.datetime64 = times[-1]
     if backtest.initial_train_steps is not None:
@@ -171,44 +161,7 @@ def _train_end(obs: ObservationSet, backtest: BacktestCfg) -> np.datetime64:
     return min(end, last)
 
 
-def _two_newest_generations(
-    cache: Cache, provider: str, primary: PriceSource
-) -> tuple[ObservationSet, ObservationSet] | None:
-    """The two newest cached generations of the primary request `(newest, previous)`, if both exist."""
-    key = cache.price_key(provider, primary.symbols, primary.interval, primary.adjusted)
-    newest = cache.generations(key)[:2]
-    if len(newest) < 2:
-        return None
-    loaded = [cache.load_prices(key, g.snapshot_id) for g in newest]
-    if loaded[0] is None or loaded[1] is None:  # pragma: no cover  (listed generations exist on disk)
-        return None
-    return loaded[0], loaded[1]
-
-
-def _dropped_rows(diagnostics: PrepDiagnostics | None, completed: bool) -> dict[str, int]:
-    if diagnostics is None:
-        return {}
-    if not completed:  # the policies did not finish: only the missing-price count is known
-        return {"missing_price": diagnostics.missing_rows}
-    return {
-        "missing_price": diagnostics.missing_rows,
-        "warmup": diagnostics.warmup_rows,
-        **{f"covariate:{name}": n for name, n in diagnostics.dropped.items()},
-    }
-
-
-def _check_pinned(config: FinanceConfig, offline: bool) -> None:
-    data = config.data
-    policy = SnapshotPolicy(data.cache.snapshot, data.cache.max_age_days, offline)
-    if policy.pinned is not None and data.covariates:
-        raise ConfigError(
-            "a pinned snapshot id identifies one cache entry and cannot pin covariates; use "
-            "`snapshot: latest` with `--offline` to replay a run with covariates",
-            path="data.cache.snapshot",
-        )
-
-
-def engine_for(config: FinanceConfig, kind: str) -> ExpandedHMMEngine | ExplicitDurationEngine:
+def engine_for(config: ProjectConfig, kind: str) -> ExpandedHMMEngine | ExplicitDurationEngine:
     """The engine `kind` names, configured from `config.estimation` (`chunk_size`/`parallel_scan`)."""
     if kind == "explicit":
         return ExplicitDurationEngine(chunk_size=config.estimation.chunk_size)
@@ -230,7 +183,7 @@ def _read_scenario(path: Path) -> dict[str, np.ndarray]:
 
 
 def covariate_forecaster(
-    config: FinanceConfig, config_dir: Path, dataset: PreparedDataset, scenario: Path | None
+    config: ProjectConfig, config_dir: Path, dataset: PreparedDataset, scenario: Path | None
 ) -> CovariateForecaster | None:
     """The configured covariate forecaster (`scenario` forces one); `None` without covariates."""
     if not dataset.prep_stats.cov_names:
@@ -283,20 +236,21 @@ class Project:
 
     Args:
         config: The validated configuration (apply overrides before constructing, or use `from_yaml`).
-        config_dir: Directory relative provider paths (csv files) and scenario paths resolve against
+        config_dir: Directory relative paths (data files, scenario CSVs) resolve against
             (default: the current directory).
         out_dir: Where `write=True` puts files (default: `config.project.output_dir`).
         offline: Replay the cache without network access.
 
     Attributes:
-        last_quality: The data-quality report of the last `fetch`.
-        last_fetched: The raw inputs of the last `fetch` / `fetch_inputs`.
-        last_data: The prepared dataset of the last `fetch` / `fit`.
+        last_fetched: The raw inputs of the last `load_data` / `load_inputs`.
+        last_data: The prepared dataset of the last `load_data` / `fit`.
     """
+
+    config_cls: ClassVar[type[ProjectConfig]] = ProjectConfig
 
     def __init__(
         self,
-        config: FinanceConfig,
+        config: ProjectConfig,
         *,
         config_dir: Path | str | None = None,
         out_dir: Path | str | None = None,
@@ -307,7 +261,6 @@ class Project:
         self.config_dir = Path(config_dir) if config_dir is not None else Path.cwd()
         self.out_dir = Path(out_dir) if out_dir is not None else Path(config.project.output_dir)
         self.offline = offline
-        self.last_quality: DataQualityReport | None = None
         self.last_fetched: FetchedInputs | None = None
         self.last_data: PreparedDataset | None = None
         self.last_backtest_meta: dict[str, Any] | None = None
@@ -318,11 +271,12 @@ class Project:
         path: Path | str,
         overrides: Mapping[str, object] | None = None,
         *,
+        config_cls: type[ProjectConfig] | None = None,
         out_dir: Path | str | None = None,
         offline: bool = False,
-    ) -> Project:
+    ) -> Self:
         """Load `path`, apply dotted `overrides` (`{"project.seed": 7}`), and wrap the result."""
-        config = cast(FinanceConfig, load_config(path, FinanceConfig))
+        config = load_config(path, config_cls or cls.config_cls)
         apply_overrides(config, overrides or {})
         return cls(config, config_dir=Path(path).resolve().parent, out_dir=out_dir, offline=offline)
 
@@ -340,117 +294,93 @@ class Project:
             dump_resolved(self.config, self.out_dir / "config.resolved.yaml")
         return summary_lines(self.config)
 
-    # --- fetch -------------------------------------------------------------------------------------
+    # --- data --------------------------------------------------------------------------------------
 
-    def fetch_inputs(self, *, offline: bool | None = None) -> FetchedInputs:
-        """Fetch the primary prices and covariates through the cache (no preparation, no writes).
+    def _load_raw(self, obj: Any, offline: bool) -> FetchedInputs:  # noqa: ANN401
+        """Read the observations and covariates of `data.source` (applications override this)."""
+        if offline:
+            get_logger("regimekit.data").debug("offline_ignored", source=self.config.data.source.kind)
+        obs, covs = load_source_data(self.config.data, obj=obj)
+        return FetchedInputs(obs, covs)
 
-        Raises:
-            ConfigError: a pinned snapshot together with covariates.
-            DataError: the primary request returned fewer than two rows.
-            ProviderError: a provider failed.
-        """
+    def load_inputs(self, obj: Any = None, *, offline: bool | None = None) -> FetchedInputs:  # noqa: ANN401
+        """The raw inputs of `data.source` (no preparation, no writes); `obj` for numpy/pandas/xarray."""
         offline = self.offline if offline is None else offline
-        data = self.config.data
-        _check_pinned(self.config, offline)
-        context = FetchContext(data, self.config_dir, offline)
-        source = REGISTRY.get("source", data.source.kind)
-        obs, covs = source.load(data.primary, obj=context)
-        self.last_fetched = FetchedInputs(obs, covs, context.cache, context.primary_name)
+        self.last_fetched = self._load_raw(obj, offline)
         return self.last_fetched
 
-    def fetch(self, *, offline: bool | None = None, write: bool = False) -> PreparedDataset:
-        """Fetch through the cache and prepare; `write=True` writes the dataset, stats, snapshots, quality.
+    def load_data(
+        self,
+        obj: object = None,
+        *,
+        offline: bool | None = None,
+        write: bool = False,
+    ) -> PreparedDataset:
+        """Read `data.source` and prepare it (`Preparer`, standardization window = the initial train window).
 
-        The quality report (`last_quality`, and its files when writing) exists even when preparation
-        fails (e.g. `missing: error`); the error is then re-raised.
+        `write=True` writes `prepared.parquet`, `prep_stats.json` and `provenance.json` (the snapshot ids).
 
         Raises:
-            ConfigError: a pinned `data.cache.snapshot` combined with covariates.
-            DataError: an empty primary request, or preparation failed.
-            ProviderError: a provider failed.
-            PersistenceError: the output directory cannot be written (exit 1, CLAUDE.md section 3.8).
+            ConfigError, DataError: from the source and the preparation.
+            PersistenceError: the output directory cannot be written.
         """
-        offline = self.offline if offline is None else offline
-        config, data_cfg, out_dir = self.config, self.config.data, self.out_dir
-        _check_pinned(config, offline)
-        log = get_logger("regimekit.fetch")
-        outputs = [out_dir / n for n in ("prepared.parquet", "prep_stats.json", "snapshots.json")]
-        if write:
-            try:  # a failed run must not leave an earlier run's dataset next to its own report
-                for stale in outputs:
-                    stale.unlink(missing_ok=True)
-            except OSError as exc:
-                raise PersistenceError(f"cannot clear {out_dir}: {exc}", path=str(out_dir)) from exc
-        fetched = self.fetch_inputs(offline=offline)
-        obs, covs, p = fetched.obs, fetched.covs, data_cfg.primary
-        generations = _two_newest_generations(fetched.cache, fetched.primary_name, p)
-
-        preparer = Preparer(data_cfg)
-        failure: DataError | None = None
-        try:
-            train_end = _train_end(obs, config.evaluation.backtest)
-            dataset = preparer.fit(obs, covs, train_end).transform(obs, covs)
-        except DataError as exc:
-            failure = exc
-        diagnostics = preparer.diagnostics
-        report = build_quality_report(
-            obs,
-            generations=generations,
-            staleness=None if diagnostics is None else diagnostics.staleness,
-            dropped_rows=_dropped_rows(diagnostics, completed=failure is None),
+        fetched = self.load_inputs(obj, offline=offline)
+        obs, covs = fetched.obs, fetched.covs
+        dataset = (
+            Preparer(self.config.data)
+            .fit(obs, covs, _train_end(obs, self.config.evaluation.backtest))
+            .transform(obs, covs)
         )
-        self.last_quality = report
         if write:
+            out = self.out_dir
             try:
-                report.write(out_dir)
+                out.mkdir(parents=True, exist_ok=True)
+                write_prepared(dataset, out / "prepared.parquet")
+                (out / "prep_stats.json").write_text(prep_stats_to_json(dataset.prep_stats), encoding="utf-8")
+                (out / "provenance.json").write_text(
+                    json.dumps({"snapshot_ids": list(dataset.snapshot_ids)}, indent=2), encoding="utf-8"
+                )
             except OSError as exc:
                 raise PersistenceError(
-                    f"cannot write the quality report to {out_dir}: {exc}", path=str(out_dir)
-                ) from exc
-        if failure is not None:
-            raise failure
-
-        if write:
-            snapshots = {
-                "primary": {
-                    "provider": p.provider,
-                    "symbols": list(p.symbols),
-                    "interval": p.interval,
-                    "adjusted": p.adjusted,
-                    "snapshot_id": obs.snapshot_id,
-                },
-                "covariates": [
-                    {"name": c.name, "provider": c.provider, "series": c.series, "snapshot_id": s.snapshot_id}
-                    for c, s in zip(data_cfg.covariates, covs, strict=True)
-                ],
-            }
-            try:
-                write_prepared(dataset, outputs[0])
-                outputs[1].write_text(prep_stats_to_json(dataset.prep_stats), encoding="utf-8")
-                outputs[2].write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
-            except OSError as exc:
-                raise PersistenceError(
-                    f"cannot write the prepared dataset to {out_dir}: {exc}", path=str(out_dir)
+                    f"cannot write the prepared dataset to {out}: {exc}", path=str(out)
                 ) from exc
         self.last_data = dataset
-        log.info("fetch_done", out=str(out_dir) if write else None, rows=int(dataset.times.shape[0]))
+        get_logger("regimekit.data").info(
+            "load_data_done", out=str(self.out_dir) if write else None, rows=int(dataset.times.shape[0])
+        )
         return dataset
+
+    def needs_network(self) -> bool:
+        """Whether loading the data may need the network (then `--offline` forbids loading it again)."""
+        return False
+
+    def _hooks(self, grid: PreparedDataset) -> list[OriginHook]:
+        """The origin hooks a backtest runs by default (none in the core)."""
+        del grid
+        return []
+
+    def _report_sections(self) -> list[Callable[[dict[str, Any]], str]]:
+        """The report sections contributed by the default hooks (none in the core)."""
+        return []
+
+    def _extensions(self) -> dict[str, Any]:
+        """Extension payloads stored in a model bundle (none in the core)."""
+        return {}
 
     # --- fit ---------------------------------------------------------------------------------------
 
     def fit(self, data: PreparedDataset | None = None, *, write: bool = False) -> FitResult:
-        """MAP-fit the configured model to `data` (default: `fetch()`).
+        """MAP-fit the configured model to `data` (default: `load_data()`).
 
         `write=True` saves the bundle `<out_dir>/<name>.rkmodel` and writes `fit_report.json` and
         `config.resolved.yaml`.
 
         Raises:
-            ConfigError, DataError, ProviderError: from the fetch and the model assembly.
+            ConfigError, DataError: from the data loading and the model assembly.
             NumericalError: no restart produced a finite fit.
             PersistenceError: the outputs cannot be written.
         """
-        dataset = data if data is not None else self.fetch()
+        dataset = data if data is not None else self.load_data()
         spec = build_model_spec(self.config, dataset)
         result = fit_model(spec, dataset, self.config.estimation, self.config.project.seed)
         self.last_data = dataset
@@ -492,16 +422,16 @@ class Project:
     # --- save / load -------------------------------------------------------------------------------
 
     def save(self, fit: FitResult, path: Path | str, data: PreparedDataset | None = None) -> Path:
-        """Write `fit` as a model bundle; `data` defaults to the dataset of the last `fit` / `fetch`."""
+        """Write `fit` as a model bundle; `data` defaults to the dataset of the last `fit` / `load_data`."""
         dataset = data if data is not None else self.last_data
         if dataset is None:
             raise ConfigError("saving a model needs the dataset it was fitted on; pass data=", path="data")
-        return ModelStore.save(fit, path, self.config, dataset, extensions=extension_payloads(self.config))
+        return ModelStore.save(fit, path, self.config, dataset, extensions=self._extensions())
 
-    @staticmethod
-    def load(path: Path | str) -> FitResult:
+    @classmethod
+    def load(cls, path: Path | str) -> FitResult:
         """Read a model bundle back as a `FitResult`."""
-        return ModelStore.load(path, FinanceConfig)
+        return ModelStore.load(path, cls.config_cls)
 
     # --- decode / forecast -------------------------------------------------------------------------
 
@@ -584,7 +514,7 @@ class Project:
     ) -> SimulationOutput:
         """Simulate `n_paths` paths of `steps` steps from the configured or a fitted (`params="model"`) model.
 
-        `dt` and the covariates come from the prepared dataset (`data`, default `fetch()`) and cycle
+        `dt` and the covariates come from the prepared dataset (`data`, default `load_data()`) and cycle
         through its rows when `steps` exceeds its length; `time` extends the dataset's times with their
         median spacing.
 
@@ -594,11 +524,11 @@ class Project:
             DataError: preparation of the data failed.
         """
         check_simulate_args(params, steps, n_paths)
-        dataset = data if data is not None else self.fetch()
+        dataset = data if data is not None else self.load_data()
         if params == "model":
             if model is None:
                 raise ConfigError("--params model requires --model DIR", path="--model")
-            fit = model if isinstance(model, FitResult) else ModelStore.load(model, FinanceConfig)
+            fit = model if isinstance(model, FitResult) else ModelStore.load(model, self.config_cls)
             spec, theta = fit.spec, fit.params
         else:
             spec = build_model_spec(self.config, dataset)
@@ -641,7 +571,7 @@ class Project:
             times=sim_times,
             regimes=regimes,
             phases=np.asarray(space.index.phase_of)[np.asarray(result.states)],
-            returns=np.asarray(result.returns),
+            values=np.asarray(result.values),
             segments=segments_of(regimes),
         )
         if write:
@@ -650,7 +580,7 @@ class Project:
                 times=output.times,
                 regimes=output.regimes,
                 phases=output.phases,
-                values=output.returns,
+                values=output.values,
                 segments=output.segments,
             )
         get_logger("regimekit.simulate").info(
@@ -660,24 +590,16 @@ class Project:
 
     # --- backtest / compare ------------------------------------------------------------------------
 
-    def _run_backtest(self, fetched: FetchedInputs, name: str) -> tuple[BacktestResult, dict[str, Any], str]:
+    def _run_backtest(
+        self, fetched: FetchedInputs, name: str, extra_hooks: Sequence[OriginHook] = ()
+    ) -> tuple[BacktestResult, dict[str, Any], str]:
         """Run the walk-forward backtest; returns `(result, meta, report markdown)`."""
         config = self.config
         obs, covs = fetched.obs, fetched.covs
         grid = Preparer(config.data).fit(obs, covs, train_end=obs.require_times()[-1]).transform(obs, covs)
         spec = build_model_spec(config, grid)
         n_free = ParamManager(spec.param_specs).n_free
-        cfg_strategy = config.evaluation.strategy
-        hooks = (
-            []
-            if cfg_strategy is None
-            else [
-                StrategyHook(
-                    make_strategy(cfg_strategy, grid.nominal_dt, int(grid.observations.shape[1])),
-                    cfg_strategy.cost_bps,
-                )
-            ]
-        )
+        hooks = [*self._hooks(grid), *extra_hooks]
         last: dict[str, Any] = {}
 
         def on_fold(fold: object, fitted: FitResult, train: PreparedDataset) -> None:
@@ -703,7 +625,7 @@ class Project:
             "versions": versions(),
             "wall_s": wall,
         }
-        return result, meta, build_report(name, config, result, meta, diagnostics, [strategy_section])
+        return result, meta, build_report(name, config, result, meta, diagnostics, self._report_sections())
 
     def _write_backtest(
         self, result: BacktestResult, meta: dict[str, Any], report: str, out_dir: Path
@@ -711,18 +633,20 @@ class Project:
         write_backtest(result, out_dir, meta)
         _write_text(out_dir / "report.md", report, "the report")
 
-    def backtest(self, data: FetchedInputs | None = None, *, write: bool = False) -> BacktestResult:
-        """Walk-forward backtest on raw inputs `data` (default: `fetch_inputs()`).
+    def backtest(
+        self, data: FetchedInputs | None = None, hooks: Sequence[OriginHook] = (), *, write: bool = False
+    ) -> BacktestResult:
+        """Walk-forward backtest on raw inputs `data` (default: `load_inputs()`) plus `hooks`.
 
-        `write=True` writes metrics, folds, strategy trace, `backtest.json` and `report.md` to `out_dir`.
+        `write=True` writes metrics, folds, the hooks' frames, `backtest.json` and `report.md` to `out_dir`.
         The run's metadata is kept in `last_backtest_meta`.
 
         Raises:
-            ConfigError, DataError, ProviderError, NumericalError: from the fetch and the backtest.
+            ConfigError, DataError, NumericalError: from the data loading and the backtest.
             PersistenceError: outputs cannot be written.
         """
-        fetched = data if data is not None else self.fetch_inputs()
-        result, meta, report = self._run_backtest(fetched, self.config.project.name)
+        fetched = data if data is not None else self.load_inputs()
+        result, meta, report = self._run_backtest(fetched, self.config.project.name, hooks)
         self.last_backtest_meta = meta
         if write:
             self._write_backtest(result, meta, report, self.out_dir)
@@ -734,7 +658,7 @@ class Project:
     @classmethod
     def compare(
         cls,
-        projects: Sequence[Project | FinanceConfig | Path | str],
+        projects: Sequence[Project | ProjectConfig | Path | str],
         *,
         allow_mixed: bool = False,
         reuse: bool = False,
@@ -752,13 +676,13 @@ class Project:
 
         Raises:
             DataError: the configurations use different snapshots and `allow_mixed` is false.
-            ConfigError, ProviderError, NumericalError, PersistenceError: from loading, fetching, running.
+            ConfigError, NumericalError, PersistenceError: from loading the data and running.
         """
         items: list[tuple[str, Project]] = []
         for entry in projects:
             if isinstance(entry, Project):
                 items.append((entry.config.project.name, entry))
-            elif isinstance(entry, FinanceConfig):
+            elif isinstance(entry, ProjectConfig):
                 items.append((entry.project.name, cls(entry, offline=offline)))
             else:
                 path = Path(entry)
@@ -782,7 +706,7 @@ class Project:
             if reuse and (run_dir / BACKTEST_META).exists():
                 snapshots[name] = list(read_backtest(run_dir)[1]["snapshot_ids"])
             else:
-                fetched = proj.fetch_inputs(offline=offline or proj.offline)
+                fetched = proj.load_inputs(offline=offline or proj.offline)
                 snapshots[name] = [fetched.obs.snapshot_id, *(c.snapshot_id for c in fetched.covs)]
             plan.append((name, proj, run_dir, fetched))
         check_snapshots(snapshots, allow_mixed)

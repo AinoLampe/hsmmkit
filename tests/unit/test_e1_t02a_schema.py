@@ -12,6 +12,8 @@ from ruamel.yaml import YAML
 from regimekit.utils.errors import ConfigError
 from tests.helpers.finance_config import parse_v1 as parse_project_config
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "configs"
 _YAML = YAML(typ="safe")
 

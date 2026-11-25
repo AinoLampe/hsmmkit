@@ -15,6 +15,7 @@ from provider_contract import (
     check_window_inclusive,
 )
 
+from regimekit.finance.errors import ProviderError
 from regimekit.finance.providers import (
     CsvProvider,
     get_provider,
@@ -22,7 +23,6 @@ from regimekit.finance.providers import (
     registered_providers,
 )
 from regimekit.finance.providers.base import throttle, with_retries
-from regimekit.utils.errors import ProviderError
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "csv"
 

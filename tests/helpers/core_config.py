@@ -34,10 +34,10 @@ def observations(values: np.ndarray) -> ObservationSet:
     return ObservationSet(("x",), times, values.reshape(-1, 1), "memory", "synthetic")
 
 
-def core_config(tmp_path: Path, *, metrics: tuple[str, ...] = ("log_score", "bic")) -> ProjectConfig:
-    """The shared core config: `gaussian` emission, geometric durations, 3 folds."""
-    raw: dict[str, Any] = {
-        "schema_version": 2,
+def core_raw(tmp_path: Path, *, metrics: tuple[str, ...] = ("log_score", "bic")) -> dict[str, Any]:
+    """The raw dict of the shared core config: `gaussian` emission, geometric durations, 3 folds."""
+    return {
+        "schema_version": 1,
         "project": {"name": "core_demo", "seed": 11, "output_dir": str(tmp_path / "runs")},
         "data": {
             "source": {"kind": "csv", "path": "unused.csv", "observation_columns": ["x"]},
@@ -81,4 +81,8 @@ def core_config(tmp_path: Path, *, metrics: tuple[str, ...] = ("log_score", "bic
         },
         "output": {"write": ["backtest"]},
     }
-    return parse_project_config(raw)
+
+
+def core_config(tmp_path: Path, *, metrics: tuple[str, ...] = ("log_score", "bic")) -> ProjectConfig:
+    """The shared core config (see `core_raw`)."""
+    return parse_project_config(core_raw(tmp_path, metrics=metrics))

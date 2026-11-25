@@ -6,9 +6,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from regimekit.data.prepare import Preparer
 from tests.helpers import backtest_fixtures as bf
+
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
 
 
 def test_e7_t02b_train_start_limits_the_statistics_and_the_recorded_window(tmp_path: Path) -> None:

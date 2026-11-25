@@ -3,7 +3,7 @@
 CLAUDE.md §3.2 places the harness here (not `tests/recovery/harness.py`): it is pure (no pytest, no
 file I/O), so `tests/recovery/test_e5_t05a_recovery.py` (`-m slow`) and E5-T05b's `selftest` CLI both
 import it directly. Six scenarios (concept Appendix D / `E5-T05a` ticket §Context), `N=3`, daily
-(`clock="trading"`) grid, `constraint="increasing"` on `emission.scale` in every scenario (an
+(`recovery_clock()`) grid, `constraint="increasing"` on `emission.scale` in every scenario (an
 identifiability guard, so the MAP fit never needs post-hoc relabelling). Models are assembled by hand
 (`tests/helpers/objective_fixtures.py`'s pattern) since `model/build.py` (CLAUDE.md §3.3) builds from a
 project *config*, not from arbitrary truth parameters.
@@ -14,7 +14,6 @@ free); mean sojourn <= 25% rel; jump probabilities <= 0.15 abs; coefficients sig
 
 from __future__ import annotations
 
-import functools
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
@@ -42,9 +41,10 @@ from regimekit.model.params.priors import DirichletPrior, NormalPrior
 from regimekit.model.params.spec import Mode, ParamSpec
 from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition, build_memory_layout
+from regimekit.plugins import REGISTRY
 from regimekit.statespace.builders import build_expanded, build_explicit
 from regimekit.statespace.index import StateSpace
-from regimekit.utils.clock import get_clock, parse_clock_options
+from regimekit.utils.clock import get_clock
 from regimekit.utils.rng import key_for
 
 if TYPE_CHECKING:
@@ -54,14 +54,28 @@ if TYPE_CHECKING:
 
 # --- truth values shared by every scenario (concept Appendix D worked example) -----------------
 
-RECOVERY_CLOCK = "trading"  # daily grid, parameters in years (clock registry)
+
+def recovery_clock() -> str:
+    """The clock of the recovery grid: the registered year clock with the fewest days per year.
+
+    A daily grid whose parameters are in years: the densest registered calendar (an application's own
+    business-day clock when it is registered, else the core `calendar` clock).
+    """
+    get_clock("steps")  # registers the core clocks
+    years = [
+        (float(clock.days_per_year), name)
+        for name in REGISTRY.names("clock")
+        for clock in [get_clock(name)]
+        if clock.unit == "year" and clock.days_per_year
+    ]
+    return min(years)[1]
 
 
-@functools.cache
 def nominal_dt() -> float:
-    """The daily step of the recovery scenarios, taken from the `RECOVERY_CLOCK` clock (E10-T03)."""
-    clock = get_clock(RECOVERY_CLOCK)
-    return float(clock.dt(None, 1, parse_clock_options(RECOVERY_CLOCK, None))[0])
+    """The daily step of the recovery scenarios, taken from `recovery_clock()` (E10-T03)."""
+    days = get_clock(recovery_clock()).days_per_year
+    assert days is not None  # `recovery_clock` only picks year clocks with a day count
+    return 1.0 / float(days)
 
 
 N_STATES = 3
@@ -315,7 +329,7 @@ def _empty_prepared(t_len: int, y: np.ndarray, dt: jnp.ndarray) -> PreparedDatas
         cov_duration=None,
         cov_emission=None,
         cov_names={"transition": (), "duration": (), "emission": ()},
-        clock="trading",
+        clock=recovery_clock(),
         nominal_dt=nominal_dt(),
         prep_stats=stats,
         snapshot_ids=(),
@@ -368,7 +382,7 @@ def _simulate(scenario: Scenario, spec: ModelSpec, theta: Params, seed: int, t_l
         z_pi,
         z_d,
         None,
-        clock="trading",
+        clock=recovery_clock(),
         nominal_dt=nominal_dt(),
     )
 

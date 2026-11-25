@@ -13,10 +13,12 @@ from click.testing import Result
 from typer.testing import CliRunner
 
 from examples.synthetic import write_offline_project
-from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.finance import FinanceConfig
+from regimekit.finance.cli import app
 from regimekit.persistence.store import FILES
+
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
 
 _runner = CliRunner()
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples" / "configs"

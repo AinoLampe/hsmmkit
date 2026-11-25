@@ -20,6 +20,8 @@ from regimekit.statespace.builders import build_expanded
 from regimekit.utils.errors import PersistenceError
 from tests.helpers import backtest_fixtures as bf
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "bundles"
 
 

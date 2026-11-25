@@ -14,13 +14,15 @@ from click.testing import Result
 from ruamel.yaml import YAML
 from typer.testing import CliRunner
 
-from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.data.contracts import BoundaryConstraints, CovariateSeries, ObservationSet, PreparedDataset
 from regimekit.data.prepare import Preparer, prep_stats_from_json
 from regimekit.finance import FinanceConfig
+from regimekit.finance.cli import app
 from regimekit.finance.quality import build_quality_report
 from regimekit.persistence.results import read_prepared, write_prepared
+
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 _YAML = YAML(typ="safe")

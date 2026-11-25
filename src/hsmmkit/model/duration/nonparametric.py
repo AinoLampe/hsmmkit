@@ -1,6 +1,6 @@
 """Nonparametric sojourn pmf over `1..D_max` (E3-T04): `duration.logits (N, D_max)` on the `pmf` domain.
 
-The `pmf` bijector returns the constrained simplex values, so `theta["duration.logits"]` already holds
+The `pmf` bijector gives the constrained simplex values, so `theta["duration.logits"]` already holds
 the probabilities (the ticket's "softmax" is the bijector itself, cf. `initial.logits`); `log_pmf` is
 their log, renormalized defensively. There is no covariate link.
 """

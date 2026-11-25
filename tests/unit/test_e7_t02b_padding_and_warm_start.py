@@ -26,6 +26,7 @@ def test_e7_t02b_padded_length_is_the_next_multiple_of_256() -> None:
         padded_length(10, multiple=0)
 
 
+@pytest.mark.finance
 def test_e7_t02b_pad_dataset_appends_masked_rows_and_keeps_the_original() -> None:
     """Padded rows: `mask=False`, positive `dt`, zero covariates, increasing times; originals untouched."""
     case = make_case("gbm", "negbin", 1, t_len=200, seed=3, cov_tr=True, cov_du=True, cov_em=True)

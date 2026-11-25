@@ -24,11 +24,11 @@ def test_e6_t01_shapes_and_regime_range() -> None:
 
     assert result.states.shape == (n_paths, 120)
     assert result.regimes.shape == (n_paths, 120)
-    assert result.returns.shape == (n_paths, 120, 1)
+    assert result.values.shape == (n_paths, 120, 1)
     regimes = np.asarray(result.regimes)
     assert regimes.min() >= 0
     assert regimes.max() < case.spec.n_states
-    assert np.all(np.isfinite(np.asarray(result.returns)))
+    assert np.all(np.isfinite(np.asarray(result.values)))
 
 
 def test_e6_t01_same_key_bitwise_identical_different_key_differs() -> None:
@@ -42,7 +42,7 @@ def test_e6_t01_same_key_bitwise_identical_different_key_differs() -> None:
     r3 = simulate_paths(key_for(0, 2), *args, n_paths=6)
 
     assert np.array_equal(np.asarray(r1.states), np.asarray(r2.states))
-    assert np.array_equal(np.asarray(r1.returns), np.asarray(r2.returns))
+    assert np.array_equal(np.asarray(r1.values), np.asarray(r2.values))
     assert not np.array_equal(np.asarray(r1.states), np.asarray(r3.states))
 
 
@@ -85,7 +85,7 @@ def test_e6_t01_non_finite_returns_raise_numerical_error() -> None:
     theta = dict(case.manager.unflatten(case.u0))
     theta["emission.scale"] = jnp.asarray(theta["emission.scale"]) * jnp.inf
 
-    with pytest.raises(NumericalError, match="returns"):
+    with pytest.raises(NumericalError, match="values"):
         simulate_paths(key_for(0, 1), theta, case.spec, case.space, case.data.dt, None, None, None, n_paths=2)
 
 

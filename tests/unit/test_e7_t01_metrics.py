@@ -29,6 +29,8 @@ from regimekit.utils.errors import ConfigError
 from tests.helpers.forecast_fixtures import fit_of
 from tests.helpers.objective_fixtures import make_case
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 APPENDIX_A = Path(__file__).resolve().parents[1] / "fixtures" / "configs" / "appendix_a.yaml"
 DT = 1.0 / TRADING_DAYS_PER_YEAR
 

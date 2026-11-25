@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from regimekit.inference.covariate_forecasters import make_forecaster
 from tests.helpers.forecast_fixtures import fit_of, forecast_cfg, forecaster_for, with_named_covariate
 from tests.helpers.objective_fixtures import make_case
+
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
 
 
 def test_e6_t04b_same_seed_gives_bitwise_identical_samples() -> None:

@@ -14,9 +14,9 @@ from structlog.testing import capture_logs
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "finance"))
 from provider_contract import check_price_contract, check_window_inclusive
 
+from regimekit.finance.errors import ProviderError
 from regimekit.finance.providers import YFinanceProvider, get_provider
 from regimekit.finance.providers.yfinance import INTRADAY_CAP_DAYS, extract_close
-from regimekit.utils.errors import ProviderError
 
 CASSETTES = Path(__file__).resolve().parents[1] / "fixtures" / "cassettes" / "yfinance"
 SYMBOL = "^GDAXI"

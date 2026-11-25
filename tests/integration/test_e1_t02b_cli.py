@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from ruamel.yaml import YAML
 from typer.testing import CliRunner
 
-from regimekit.cli.app import app
+from regimekit.finance.cli import app
+
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
 
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "configs"
 _YAML = YAML(typ="safe")

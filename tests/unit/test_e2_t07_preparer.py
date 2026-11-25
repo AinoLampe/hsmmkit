@@ -20,6 +20,8 @@ from regimekit.finance.config import FinanceCovariateCfg, FinanceDataSection, Fi
 from regimekit.finance.transforms import log_returns
 from regimekit.utils.errors import ConfigError, DataError
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 N_DAYS = 200
 DATES = pd.bdate_range("2021-01-04", periods=N_DAYS)
 TIMES = np.asarray(DATES.as_unit("ns").values, dtype="datetime64[ns]")

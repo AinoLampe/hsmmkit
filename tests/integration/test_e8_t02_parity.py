@@ -21,14 +21,18 @@ from click.testing import Result
 from typer.testing import CliRunner
 
 from regimekit import Project
-from regimekit.cli import app as app_module
-from regimekit.cli.app import _selftest_lines, app
+from regimekit.cli.app import _selftest_lines
 from regimekit.config.yaml_io import load_config
 from regimekit.estimation import selftest as selftest_mod
 from regimekit.finance import FinanceConfig
+from regimekit.finance import cli as app_module
+from regimekit.finance.cli import app
+from regimekit.finance.errors import ProviderError
 from regimekit.persistence.store import ModelStore
-from regimekit.utils.errors import ConfigError, ProviderError
+from regimekit.utils.errors import ConfigError
 from tests.integration.test_e7_t04_cli import _project
+
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
 
 _runner = CliRunner()
 SEED = 7
@@ -295,7 +299,7 @@ def test_e8_t02_importing_project_needs_no_network_and_writes_no_files(tmp_path:
         "socket.getaddrinfo = _blocked\n"
         "socket.create_connection = _blocked\n"
         "from regimekit import Project\n"
-        "assert Project.__name__ == 'Project'\n"
+        "assert Project.__name__ == 'FinanceProject'\n"
     )
     done = subprocess.run(
         [sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True, check=False

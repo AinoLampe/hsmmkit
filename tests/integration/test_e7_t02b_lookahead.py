@@ -22,11 +22,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 from scipy import stats
 
 from regimekit.data.contracts import CovariateSeries, ObservationSet
 from regimekit.evaluation.backtest import run_backtest
 from tests.helpers import backtest_fixtures as bf
+
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
 
 CHEAP = {"metrics": ("log_score",), "n_sim": 100, "horizons": (1,), "restarts": 1}
 

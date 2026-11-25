@@ -35,10 +35,10 @@ def _block(x: Array | None, t: int) -> Array:
     return jnp.zeros((t, 0)) if x is None else x
 
 
-def _check_finite(returns: Array) -> None:
+def _check_finite(values: Array) -> None:
     """Public-boundary guard (CLAUDE.md §4): no NaN/Inf may leave `simulate_paths`."""
-    if not bool(jnp.all(jnp.isfinite(returns))):
-        raise NumericalError("non-finite value in simulated returns", path="returns")
+    if not bool(jnp.all(jnp.isfinite(values))):
+        raise NumericalError("non-finite value in simulated values", path="values")
 
 
 @dataclass(frozen=True)
@@ -47,7 +47,7 @@ class SimResult:
 
     states: Array  # (n_paths, T) int, expanded state index
     regimes: Array  # (n_paths, T) int, regime index
-    returns: Array  # (n_paths, T, M)
+    values: Array  # (n_paths, T, M)
     log_rho: Array  # (S,) initial log-distribution actually used (for tests/diagnostics)
 
 
@@ -62,7 +62,7 @@ def _simulate_one_path(
     z_e: Array,
     init_state: Array,
 ) -> tuple[Array, Array, Array]:
-    """One path: `(states (T,), regimes (T,), returns (T, M))`."""
+    """One path: `(states (T,), regimes (T,), values (T, M))`."""
     t_len = dt.shape[0]
     step_key, emit_key = jax.random.split(key)
 
@@ -83,8 +83,8 @@ def _simulate_one_path(
         states = init_state[None]
 
     regimes = space.index.regime_of[states]
-    returns = spec.emission.sample(emit_key, regimes, dt, theta, z_e)
-    return states, regimes, returns
+    values = spec.emission.sample(emit_key, regimes, dt, theta, z_e)
+    return states, regimes, values
 
 
 @partial(jax.jit, static_argnames=("spec", "n_paths"))
@@ -137,11 +137,11 @@ def simulate_paths(
         init_state = jax.random.categorical(init_key, logits)
     init_state = jnp.asarray(init_state, dtype=space.index.regime_of.dtype)
 
-    states, regimes, returns = _simulate_core(
+    states, regimes, values = _simulate_core(
         key, theta, spec, space, dt, z_pi_b, z_d_b, z_e_b, n_paths, init_state
     )
-    _check_finite(returns)
-    return SimResult(states=states, regimes=regimes, returns=returns, log_rho=log_rho)
+    _check_finite(values)
+    return SimResult(states=states, regimes=regimes, values=values, log_rho=log_rho)
 
 
 def segments_of(regimes: Array | np.ndarray) -> list[list[tuple[int, int, int]]]:
@@ -169,7 +169,7 @@ def simulate_dataset(
     default, matching a dataset that was never run through `Preparer`.
     """
     result = simulate_paths(key, theta, spec, space, dt, z_pi, z_d, z_e, n_paths=1)
-    y = result.returns[0]
+    y = result.values[0]
     t_len = y.shape[0]
     stats = PrepStats(
         cov_mean=np.zeros(0), cov_std=np.ones(0), train_window=("", ""), cov_names=(), transforms={}, lags={}

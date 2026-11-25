@@ -14,6 +14,8 @@ from regimekit.finance import FinanceConfig
 from regimekit.finance.config import migrate_1_to_2
 from regimekit.utils.errors import ConfigError
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "configs"
 
 

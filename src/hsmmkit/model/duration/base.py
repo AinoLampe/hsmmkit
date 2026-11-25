@@ -163,7 +163,7 @@ def rate_spec_from_cfg(
 ) -> ParamSpec:
     """`duration.rate` spec from `ParamCfg`, handling `init_mean_sojourn_steps` via `init_from_mean_sojourn`.
 
-    `init_mean_sojourn_days` needs a clock/`bars_per_day`-aware days->steps conversion that only
+    `init_mean_sojourn_days` needs a clock-aware days->steps conversion that only
     `model/build.py` has (CLAUDE.md §3.3: "`init_mean_sojourn_days` is converted here with
     `days_to_steps`"); callers must pre-convert it to `init_mean_sojourn_steps` before this ticket's
     scope. `init_from_mean_sojourn` is `DurationFamily.init_from_mean_sojourn` (typed as `object`
