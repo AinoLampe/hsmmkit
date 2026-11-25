@@ -43,7 +43,9 @@ class TabularOpts(BaseModel):
         path: file to read (`csv`, `parquet`).
         observation_columns: the observed series, in model order; `M = len(observation_columns)`.
         time_column: timestamp column (parsed as UTC); `None` = time-less data (valid under a `steps` clock).
-        sequence_column: column of sequence ids (consumed from E12-T01a on).
+        sequence_column: column of sequence ids (`ObservationSet.sequence_ids`, E12-T01a).
+        group_column: column holding each sequence's initial-distribution group (`data.sequences.group_by`);
+            kept as `ObservationSet.meta["group_values"]`.
         covariate_columns: columns offered as covariate series.
         dtype: dtype of the observation values.
     """
@@ -54,6 +56,7 @@ class TabularOpts(BaseModel):
     observation_columns: list[str] = Field(default_factory=list)
     time_column: str | None = None
     sequence_column: str | None = None
+    group_column: str | None = None
     covariate_columns: list[str] = Field(default_factory=list)
     dtype: Literal["float64", "int64"] = "float64"
 
@@ -161,6 +164,8 @@ def frame_to_loaded(
         _require_columns(frame, [opts.time_column], "data.source.time_column")
     if opts.sequence_column is not None:
         _require_columns(frame, [opts.sequence_column], "data.source.sequence_column")
+    if opts.group_column is not None:
+        _require_columns(frame, [opts.group_column], "data.sequences.group_by")
     _require_columns(frame, opts.covariate_columns, "data.source.covariate_columns")
 
     try:
@@ -195,6 +200,9 @@ def frame_to_loaded(
         source=source,
         snapshot_id=snapshot_id,
         sequence_ids=sequence_ids,
+        meta={}
+        if opts.group_column is None
+        else {"group_values": frame[opts.group_column].astype(str).tolist()},
     )
     obs.validate()
     cov_times = times if times is not None else np.arange(values.shape[0], dtype=np.int64)

@@ -34,10 +34,10 @@ def _topology_not_full(c: ProjectConfig) -> bool:
 
 
 GATES: dict[str, Gate] = {
-    "data.sequences": (lambda c: c.data.sequences is not None, "E12-T01a"),
+    "data.sequences": (lambda c: c.data.sequences is not None, "E12-T02"),
     "data.source.sequence_column": (
         lambda c: c.data.source.option("sequence_column") is not None,
-        "E12-T01a",
+        "E12-T02",
     ),
     "model.initial_groups": (lambda c: c.model.initial_groups == "per_group", "E12-T02"),
     "model.topology": (_topology_not_full, "E12-T03"),

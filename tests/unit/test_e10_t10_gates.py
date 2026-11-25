@@ -103,7 +103,7 @@ def test_e10_t10_validation_is_not_gated(tmp_path: Path) -> None:
 
 
 def test_e10_t10_appendix_h_build_raises_the_first_gate_in_deterministic_order() -> None:
-    """Appendix H builds into `data.sequences` -> E12-T01a first (the order of `GATES`)."""
+    """Appendix H builds into `data.sequences` -> E12-T02 first (the order of `GATES`)."""
     cfg = parse_project_config(appendix_h())
     paths = [p for p, _ in gates.used_gates(cfg)]
     assert paths[0] == "data.sequences"
@@ -111,7 +111,7 @@ def test_e10_t10_appendix_h_build_raises_the_first_gate_in_deterministic_order()
     with pytest.raises(ConfigError) as info:
         build_model_spec_from(cfg, INPUTS)
     assert info.value.path == "data.sequences"
-    assert "E12-T01a" in str(info.value)
+    assert "E12-T02" in str(info.value)
 
 
 def test_e10_t10_removing_a_row_lets_the_key_through(monkeypatch: pytest.MonkeyPatch) -> None:

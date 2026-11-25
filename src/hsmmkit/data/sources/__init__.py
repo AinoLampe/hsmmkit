@@ -43,7 +43,10 @@ def load_data(data: DataSection, *, obj: Any | None = None) -> tuple[Observation
     """
     kind = data.source.kind
     source = get_source(kind)
-    opts = validate_options(kind, data.source.options(), "data.source")
+    options = data.source.options()
+    if data.sequences is not None and data.sequences.group_by is not None:
+        options["group_column"] = data.sequences.group_by  # tabular sources only (others reject the key)
+    opts = validate_options(kind, options, "data.source")
     assert opts is not None
     obs, available = source.load(opts, obj=obj)
     if obs.times is None and get_clock(data.clock).unit != "step":

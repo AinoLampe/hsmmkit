@@ -58,3 +58,17 @@ Covariates without timestamps are aligned by row; lag and staleness count rows.
 
 `hsmmkit.data.quality` holds the generic checks (duplicated timestamps, index gaps `> 1.5 x` the median
 spacing, `|y - median| > 8 MAD` outliers, covariate staleness). An application adds its own checks on top.
+
+## Several sequences
+
+A data set with `data.source.sequence_column` holds many independent sequences. `Preparer.fit` pools the training
+rows of all sequences for the standardization statistics; `Preparer.transform_batch(obs, covs)` prepares each
+sequence on its own (own lags, lagged covariates and first-step masks never cross a boundary) and returns a
+`SequenceBatch` (first-appearance order of the ids). `data.sequences.bucket_edges` bound the compiled shapes:
+`SequenceBatch.padded()` stacks the sequences into `(B, T_max, ...)` arrays with `T_max` the smallest edge not below
+the longest sequence (else the longest length rounded up to a multiple of the last edge) and `B` padded to the next
+power of two with empty sequences; `valid` marks the real steps and `unpad` returns the per-sequence arrays.
+`data.sequences.group_by` names a source column that is constant within each sequence; it becomes
+`PreparedDataset.group` / `PaddedBatch.group_index` (a separate initial distribution per group, E12-T02).
+Covariates of a multi-sequence set must be row-aligned columns of the source. Fitting a model on `B > 1` sequences
+stays gated until E12-T02 (ADR-0021).
