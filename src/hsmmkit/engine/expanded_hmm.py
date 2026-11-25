@@ -20,7 +20,6 @@ import jax
 import jax.numpy as jnp
 
 from hsmmkit.engine.base import Posterior
-from hsmmkit.model.emission.product import ProductEmission
 from hsmmkit.statespace.builders import initial_log_rho
 from hsmmkit.utils.errors import NumericalError
 from hsmmkit.utils.typing import Array
@@ -69,9 +68,10 @@ def _regime_log_emis(theta: Params, spec: ModelSpec, data: PreparedDataset, dt: 
     # Masked observations contribute zero log-density; sanitize `y` too so a NaN print cannot
     # leak NaN gradients through the untaken branch (double `where`).
     y_safe = jnp.where(mask, y, 0.0)
-    if isinstance(spec.emission, ProductEmission):
+    if hasattr(spec.emission, "log_prob_masked"):  # `ProductEmission`, `MixtureFamily`
         # Multi-series model (E9-T01): each series is masked on its own, the others keep their density.
-        return spec.emission.log_prob_masked(y_safe, mask, dt, theta, z_e)
+        masked: Array = spec.emission.log_prob_masked(y_safe, mask, dt, theta, z_e)
+        return masked
     observed = jnp.all(mask, axis=-1)  # (T,)
     if spec.emission.init_carry() is not None:
         # Recurrent emission state (E9-T03, ADR-0022): the family threads its carry through a scan.

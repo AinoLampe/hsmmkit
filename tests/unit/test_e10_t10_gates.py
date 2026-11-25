@@ -58,8 +58,6 @@ def _case(name: str) -> dict[str, Any]:
         raw["estimation"]["init"] = ["labels"]
     elif name == "model.emission.covariance":
         raw["model"]["emission"]["covariance"] = "full"
-    elif name == "model.emission.mixture":
-        raw["model"]["emission"]["mixture"] = {"components": 2, "base": "gaussian"}
     elif name.startswith("estimation.method="):
         raw["estimation"]["method"] = name.partition("=")[2]
     elif name == "evaluation.cv":

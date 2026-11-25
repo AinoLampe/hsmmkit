@@ -192,8 +192,10 @@ def post_sort_states(theta: Params, spec: ModelSpec, by: str | None = None) -> t
     if by not in theta:
         raise ConfigError(f"cannot sort by {by!r}: not in theta", path=by)
     n = spec.n_states
-    key = np.asarray(theta[by])
+    state_key = getattr(spec.emission, "state_sort_key", None)  # mixtures: component-weighted key per state
+    key = np.asarray(state_key(theta, by) if state_key is not None else theta[by])
     key = key if key.ndim == 1 else key[:, 0]
+    permute = getattr(spec.emission, "permute_state_axis", None)
     perm = np.argsort(key, kind="stable").astype(np.int64)
 
     sorted_theta: dict[str, jnp.ndarray] = {}
@@ -204,7 +206,9 @@ def post_sort_states(theta: Params, spec: ModelSpec, by: str | None = None) -> t
         if name in shared:
             sorted_theta[name] = arr
         elif name.startswith("emission."):
-            sorted_theta[name] = arr[jnp.asarray(perm)]
+            sorted_theta[name] = (
+                permute(name, arr, jnp.asarray(perm)) if permute is not None else arr[jnp.asarray(perm)]
+            )
         elif name == "duration.rate" and spec.duration_conditioning == "pair":
             sorted_theta[name] = arr[jnp.asarray(_pair_rate_permutation(n, perm))]
         elif name.startswith("duration."):

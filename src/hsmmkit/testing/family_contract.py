@@ -64,6 +64,9 @@ class FamilyCase:
         coefficient_names: names of the covariate-coefficient parameters (zeroed by check 5).
         clocks: clocks the family must evaluate under (extensions add theirs).
         n_series: series dimension `M` used by the checks.
+        m_step_check: optional `(case) -> None` replacing the generic stationary-point test of check 7, for a
+            family whose M-step is an EM step at fixed responsibilities (a mixture), not a maximizer of
+            `sum gamma log f`; it must raise `AssertionError` on failure.
         tolerance: overrides `{"logpdf": ..., "roundtrip": ...}`, only with a justification in the case.
     """
 
@@ -76,6 +79,7 @@ class FamilyCase:
     coefficient_names: tuple[str, ...] = ("emission.gamma", "emission.delta")
     clocks: tuple[str, ...] = ("steps", "calendar")
     n_series: int = 2
+    m_step_check: Callable[[FamilyCase], None] | None = None
     tolerance: dict[str, float] = field(default_factory=dict)
 
 
@@ -251,6 +255,13 @@ def check_optional_methods(case: FamilyCase) -> None:
     fam = case.factory()
     y, dt, z = _data(case)
     gamma = jnp.asarray(np.random.default_rng(0).dirichlet(np.ones(N_STATES), size=y.shape[0]))
+    if case.m_step_check is not None:
+        case.m_step_check(case)
+        prior = fam.conjugate_prior()
+        assert prior is None or hasattr(prior, "update"), (
+            f"{case.name}: conjugate_prior() must provide update"
+        )
+        return
     stats = fam.sufficient_stats(y, dt, gamma, z)
     theta_hat = fam.m_step(stats) if stats is not None else None
     if theta_hat is not None:

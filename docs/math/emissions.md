@@ -168,3 +168,26 @@ maps a tuple to its last regime. There is no per-regime density for this form (`
 `fit` records the spectral radius of each regime's companion matrix in `FitResult.diagnostics["ar_spectral_radius"]`
 and warns when it is `≥ 1` (stationarity is a diagnostic, not a constraint). `simulate` draws the autoregression
 recursively (`sample_path`); forecasting an `msar` model (the lags at the origin) is not supported yet.
+
+## Per-state finite mixture `mixture`
+
+`family: mixture`, `mixture: {components: K, base: <family>}` makes each regime's emission a mixture of `K`
+components of any registered base family:
+
+$$f_i(y) = \sum_{k=1}^{K} w_{ik}\, g(y\mid\theta_{ik}),\qquad
+\log f_i = \operatorname{logsumexp}_k\big(\log w_{ik} + \log g(y\mid\theta_{ik})\big),\quad w_i\in\Delta^{K-1}.$$
+
+The base family is built for `N·K` pseudo-states (pseudo-state `i·K + k` is component `k` of regime `i`), so the
+base's own `params` lists have `N·K` entries in state-major order; a list of `K` entries is repeated for every
+regime. With `M > 1` independent series each component is the product over the series (`ProductEmission`) and the
+mixture is over components. `emission.weights (N, K)` has rows on the simplex (`params.weights` sets its init or
+fixes it). `K = 1` is the base family bitwise (no weights, no `logsumexp`).
+
+*Identifiability.* `constraint: increasing` on a base parameter (single series) orders the components **within each
+state** (`emission.<name>` becomes an `(N, K)` parameter whose rows are strictly increasing); label switching between
+the components of one state is therefore impossible. States are relabelled by the weighted mean of the chosen
+parameter. *Estimation hooks.* `sufficient_stats(y, dt, gamma, z, theta=theta)` returns the responsibilities
+`r_{tik} = γ_{ti}\,\mathrm{softmax}_k(\log w_{ik} + \log g_k(y_t))` and the pooled base statistics (they need the current
+`theta`); `m_step` sets `w_{ik} ∝ Σ_t r_{tik}` and applies the base M-step (components of a state are re-sorted when
+an ordering is configured); `conjugate_prior()` is a Dirichlet on `w` times the base prior. A mixture of an
+exposure-scaled family (`scale_by_dt`) is over-dispersed, so its variance is not proportional to `Δ`.
