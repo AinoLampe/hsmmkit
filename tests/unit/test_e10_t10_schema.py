@@ -169,3 +169,27 @@ def test_e10_t10_non_conjugate_components_warn_for_vb_and_mcmc(method: str) -> N
 def test_e10_t10_core_config_class_is_project_config() -> None:
     """The preset parses with the default class."""
     assert isinstance(parse_project_config(appendix_h()), ProjectConfig)
+
+
+def test_e10_t10_scalar_param_init_applies_to_every_state(tmp_path: Path) -> None:
+    """A scalar `init` / `init_mean_sojourn_steps` (Appendix H style) broadcasts to all states at build."""
+    from hsmmkit.model.build import BuildInputs, build_model_spec_from
+
+    raw = core_raw(tmp_path)
+    raw["model"]["emission"]["params"]["mean"]["init"] = 0.001
+    raw["model"]["duration"]["params"]["rate"]["init_mean_sojourn_steps"] = 25.0
+    cfg = parse_project_config(raw)
+    spec = build_model_spec_from(cfg, BuildInputs(n_series=1, cov_names={}, clock="steps", nominal_dt=1.0))
+    assert spec.n_states == 2
+
+
+def test_e10_t10_matrix_entries_and_labels_init_rules() -> None:
+    """The remaining rules: 0/1 matrix entries; a `labels` entry in `estimation.init` needs `data.labels`."""
+    raw = appendix_h()
+    raw["model"]["topology"] = {"matrix": [[0, 2, 0, 0]] + [[1, 0, 0, 0]] * 3}
+    _bad(raw, "model.topology.matrix")
+    raw = appendix_h()
+    del raw["data"]["labels"]
+    for pc in raw["model"]["emission"]["params"].values():
+        pc.pop("init", None)
+    _bad(raw, "estimation.init")

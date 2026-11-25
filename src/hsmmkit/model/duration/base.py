@@ -106,6 +106,8 @@ def broadcast_per_state(values: list[float] | float | str | None, n_states: int)
     if isinstance(values, str):
         raise ConfigError(f"init: {values!r} is not available before E12-T06", path="values")
     arr = np.asarray(values, dtype=np.float64)
+    if arr.ndim == 0:  # one value for every state
+        arr = np.full(n_states, float(arr))
     if arr.shape != (n_states,):
         raise ConfigError(f"expected {n_states} per-state values, got shape {arr.shape}", path="values")
     return arr

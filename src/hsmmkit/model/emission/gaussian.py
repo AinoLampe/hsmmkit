@@ -53,6 +53,8 @@ def _broadcast_per_state(
     if isinstance(values, str):
         raise ConfigError(f"init: {values!r} is not available before E12-T06", path="values")
     arr = np.asarray(values, dtype=np.float64)
+    if arr.ndim == 0:  # one value for every state
+        arr = np.full(n_states, float(arr))
     if arr.shape != (n_states,):
         raise ConfigError(f"expected {n_states} per-state values, got shape {arr.shape}", path="values")
     return arr if flat else np.tile(arr[:, None], (1, n_series))

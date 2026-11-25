@@ -699,9 +699,11 @@ def _warn(config: ProjectConfig, message: str) -> None:
 
 def _named_param_cfgs(config: ProjectConfig) -> list[tuple[str, ParamCfg]]:
     """`(dotted path, ParamCfg)` for every `ParamCfg` in `model.emission.params`/`model.duration.params`."""
-    return [(f"model.emission.params.{key}", pc) for key, pc in config.model.emission.params.items()] + [
-        (f"model.duration.params.{key}", pc) for key, pc in config.model.duration.params.items()
-    ]
+    out = [(f"model.emission.params.{key}", pc) for key, pc in config.model.emission.params.items()]
+    out += [(f"model.duration.params.{key}", pc) for key, pc in config.model.duration.params.items()]
+    for i, ps in enumerate(config.model.duration.per_state or []):
+        out += [(f"model.duration.per_state[{i}].params.{key}", pc) for key, pc in ps.params.items()]
+    return out
 
 
 def _check_param_cfg_consistency(config: ProjectConfig) -> None:
@@ -841,7 +843,7 @@ def _non_conjugate_components(config: ProjectConfig) -> list[str]:
     for kind, name in families:
         entry = next((e for e in REGISTRY.entries(kind) if e.name == name), None)  # type: ignore[arg-type]
         fn = getattr(entry.obj, "conjugate_prior", None) if entry is not None else None
-        if fn is None or fn() is None:
+        if (fn is None or fn() is None) and f"{kind}.{name}" not in out:
             out.append(f"{kind}.{name}")
     return out
 
