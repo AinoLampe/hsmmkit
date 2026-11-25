@@ -10,7 +10,7 @@ import numpy as np
 from hsmmkit.utils.typing import Array
 
 Mode = Literal["free", "fixed", "tied", "bounded", "prior"]
-Domain = Literal["real", "positive", "interval", "simplex_ref", "nu_gt_2", "pmf"]
+Domain = Literal["real", "positive", "interval", "simplex_ref", "nu_gt_2", "pmf", "cholesky"]
 
 
 class Prior(Protocol):

@@ -86,3 +86,21 @@ price of another series masks the returns that need it. Correlated emissions are
 | `z^e_t` | `PreparedDataset.cov_emission` |
 | families | `GBMFamily`, `StudentTFamily` (`EMISSION_FAMILIES` registry in `model/build.py`) |
 | `o_{t,m}` | `PreparedDataset.mask` (`ProductEmission.log_prob_masked`) |
+
+## Gaussian with a full covariance
+
+With `model.emission.covariance: full` the series of one regime are correlated:
+
+$$y_t \mid i \sim \mathcal N\big(m_i(t)\,s(\Delta_t),\; \Sigma_i(t)\,s(\Delta_t)\big),\qquad
+\Sigma_i = L_i L_i^\top,\quad \Sigma_i(t) = e^{2\delta_i^\top z_t} L_i L_i^\top,$$
+
+where `L_i` is lower triangular with a positive diagonal (`softplus` of the unconstrained value) and
+`s(Δ) = Δ` with `scale_by_dt`, else 1. The parameters are `emission.mean (N, M)` and the packed factors
+`emission.chol (N, M(M+1)/2)` (row-major lower triangle; the `cholesky` domain). The Itô correction subtracts
+`½ diag(Σ_i)` from the mean. A scalar prior (`lognormal`) on `chol` acts on the diagonal; `lkj` with `eta`
+is the LKJ prior on the correlation matrix.
+
+Closed-form M-step (no covariates, no Itô): with `n = Σγ`, `w = Σγ s`, `S1 = Σγ y`, `S2 = Σγ y yᵀ / s`:
+`μ = S1 / w`, `Σ = (S2 − μ S1ᵀ − S1 μᵀ + w μ μᵀ) / n` (a relative jitter of `1e-10` is added before the
+Cholesky factorization). The conjugate prior is Normal-Wishart `(m0, κ0, W0, ν0)` (`conjugate_prior()`).
+A step with any missing series is dropped (there is no per-series masking under a joint density).

@@ -8,11 +8,13 @@ states is `ParamManager`'s job, E1-T03b); the other domains are elementwise over
 
 from __future__ import annotations
 
+import math
 from typing import Literal, Protocol
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from hsmmkit.utils.typing import Array, Float
 
@@ -173,6 +175,41 @@ class PmfBijector(eqx.Module):
     def log_det_jac(self, u: Float[Array, " n_minus_1"]) -> Array:  # noqa: F722
         """`slogdet` of the free-coordinate Jacobian (autodiff, cheap: called once per objective)."""
         return _simplex_log_det_jac(u)
+
+
+def lower_diag_mask(k: int) -> np.ndarray:
+    """Boolean mask of the diagonal positions of a packed (row-major) lower triangle of length `k`."""
+    m = round((math.sqrt(8 * k + 1) - 1) / 2)
+    if m * (m + 1) // 2 != k:
+        raise ValueError(f"{k} is not a triangular number M(M+1)/2")
+    rows, cols = np.tril_indices(m)
+    return np.asarray(rows == cols)
+
+
+class CholeskyLowerBijector(eqx.Module):
+    """`cholesky` domain: a packed lower-triangular factor `L` (row-major, `M(M+1)/2` last-axis entries).
+
+    The diagonal is `softplus(u)` (so `L` is a valid Cholesky factor), the off-diagonal entries are the
+    identity. Elementwise over the leading axes; the log-det-Jacobian is the sum of `log_sigmoid(u_kk)`
+    over the diagonal entries.
+    """
+
+    domain: str = eqx.field(static=True, default="cholesky")
+
+    def forward(self, u: Array) -> Array:
+        """`softplus` on the diagonal entries, identity elsewhere."""
+        diag = jnp.asarray(lower_diag_mask(u.shape[-1]))
+        return jnp.where(diag, jax.nn.softplus(u), u)
+
+    def inverse(self, theta: Array) -> Array:
+        """Inverse of the diagonal softplus."""
+        diag = jnp.asarray(lower_diag_mask(theta.shape[-1]))
+        return jnp.where(diag, _inverse_softplus(jnp.where(diag, theta, 1.0)), theta)
+
+    def log_det_jac(self, u: Array) -> Array:
+        """`sum(log_sigmoid(u))` over the diagonal entries."""
+        diag = jnp.asarray(lower_diag_mask(u.shape[-1]))
+        return jnp.sum(jnp.where(diag, jax.nn.log_sigmoid(u), 0.0))
 
 
 class IncreasingBijector(eqx.Module):

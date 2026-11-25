@@ -11,11 +11,74 @@ import math
 
 import jax
 import jax.numpy as jnp
+import jax.scipy.linalg as jsp_linalg
 import jax.scipy.special as jsp_special
+import numpy as np
 
 from hsmmkit.utils.typing import Array
 
 _LOG_2PI = math.log(2.0 * math.pi)
+
+
+# --- Multivariate normal and LKJ -------------------------------------------------------------
+
+
+def packed_size(m: int) -> int:
+    """Length `M(M+1)/2` of a packed (row-major) lower triangle of an `M x M` matrix."""
+    return m * (m + 1) // 2
+
+
+def unpack_lower(packed: Array, m: int) -> Array:
+    """`(..., M(M+1)/2)` packed row-major lower triangle -> `(..., M, M)` lower-triangular matrix."""
+    rows, cols = np.tril_indices(m)
+    out = jnp.zeros((*packed.shape[:-1], m, m), dtype=packed.dtype)
+    return out.at[..., rows, cols].set(packed)
+
+
+def pack_lower(matrix: Array) -> Array:
+    """`(..., M, M)` -> `(..., M(M+1)/2)` row-major lower triangle (inverse of `unpack_lower`)."""
+    rows, cols = np.tril_indices(matrix.shape[-1])
+    return matrix[..., rows, cols]
+
+
+def mvn_logpdf(y: Array, mean: Array, chol: Array) -> Array:
+    """Multivariate normal log-density with covariance `L L^T`.
+
+    Args:
+        y: `(..., M)` points.
+        mean: `(..., M)` means (broadcast against `y`).
+        chol: `(..., M, M)` lower-triangular `L` with positive diagonal (broadcast over the leading axes).
+
+    Returns:
+        `(...)` log-densities `-1/2 [M log 2 pi + 2 sum log diag(L) + |L^-1 (y - mean)|^2]`.
+    """
+    m = y.shape[-1]
+    resid = y - mean
+    batch = jnp.broadcast_shapes(resid.shape[:-1], chol.shape[:-2])
+    resid_b = jnp.broadcast_to(resid, (*batch, m))
+    chol_b = jnp.broadcast_to(chol, (*batch, m, m))
+    x = jax.vmap(lambda c, r: jsp_linalg.solve_triangular(c, r, lower=True))(
+        chol_b.reshape(-1, m, m), resid_b.reshape(-1, m)
+    ).reshape(*batch, m)
+    log_det = jnp.sum(jnp.log(jnp.diagonal(chol_b, axis1=-2, axis2=-1)), axis=-1)
+    return -0.5 * (m * _LOG_2PI + jnp.sum(x**2, axis=-1)) - log_det
+
+
+def lkj_logpdf(corr_chol: Array, eta: float) -> Array:
+    """LKJ log-density of a correlation matrix `R = C C^T` given by its Cholesky factor `C` (`(M, M)`).
+
+    `log p(R) = (eta - 1) log det R - log c_M(eta)` with `log det R = 2 sum log diag(C)` and the
+    normalizing constant of Lewandowski, Kurowicka and Joe (2009, eq. 16); `eta = 1` is uniform on
+    correlation matrices. The density is over `R` (not over `C`).
+    """
+    m = corr_chol.shape[-1]
+    log_c: Array | float = 0.0
+    for k in range(1, m):
+        shape = eta + (m - k - 1) / 2.0
+        log_c += (2.0 * eta - 2.0 + m - k) * (m - k) * math.log(2.0)
+        log_c += (m - k) * (2.0 * jsp_special.gammaln(shape) - jsp_special.gammaln(2.0 * shape))
+    log_det_r = 2.0 * jnp.sum(jnp.log(jnp.diagonal(corr_chol, axis1=-2, axis2=-1)), axis=-1)
+    return (eta - 1.0) * log_det_r - log_c
 
 
 # --- Continuous log-densities ---------------------------------------------------------------

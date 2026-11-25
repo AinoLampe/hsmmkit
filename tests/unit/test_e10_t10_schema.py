@@ -163,7 +163,7 @@ def test_e10_t10_non_conjugate_components_warn_for_vb_and_mcmc(method: str) -> N
     raw = appendix_h()
     raw["estimation"]["method"] = method
     cfg = parse_project_config(raw)
-    assert any("no conjugate prior" in w and "emission.gaussian" in w for w in cfg.warnings)
+    assert any("no conjugate prior" in w and "duration.gamma" in w for w in cfg.warnings)
 
 
 def test_e10_t10_core_config_class_is_project_config() -> None:

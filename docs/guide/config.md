@@ -410,9 +410,10 @@ A single (possibly per-state) parameter's estimation mode and initialization.
 
 | Field | Type | Default |
 |---|---|---|
-| `type` | `'normal' \| 'lognormal' \| 'dirichlet'` | required |
+| `type` | `'normal' \| 'lognormal' \| 'dirichlet' \| 'lkj'` | required |
 | `sd` | `float \| None` | `None` |
 | `alpha` | `float \| None` | `None` |
+| `eta` | `float \| None` | `None` |
 
 ## `estimation.em.tempering`
 

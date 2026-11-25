@@ -17,6 +17,7 @@ import numpy as np
 
 from hsmmkit.model.params.bijectors import (
     Bijector,
+    CholeskyLowerBijector,
     IdentityBijector,
     IncreasingBijector,
     IntervalBijector,
@@ -51,6 +52,8 @@ def _base_bijector(spec: ParamSpec) -> Bijector:
         return NuGt2Bijector()
     if spec.domain == "pmf":
         return PmfBijector()
+    if spec.domain == "cholesky":
+        return CholeskyLowerBijector()
     raise ConfigError(f"unknown domain {spec.domain!r}", path=spec.name)
 
 

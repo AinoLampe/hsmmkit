@@ -17,13 +17,29 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal
 
+import jax
 import jax.numpy as jnp
 import jax.scipy.stats
 import numpy as np
 
-from hsmmkit.model.dists import normal_logpdf, sample_normal
+from hsmmkit.model.dists import (
+    mvn_logpdf,
+    normal_logpdf,
+    pack_lower,
+    packed_size,
+    sample_normal,
+    unpack_lower,
+)
 from hsmmkit.model.emission.base import BaseEmission, Support
-from hsmmkit.model.params import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior, Prior
+from hsmmkit.model.params import (
+    DEFAULT_COEF_PRIOR,
+    CholeskyDiagPrior,
+    DirichletPrior,
+    LkjPrior,
+    LogNormalPrior,
+    NormalPrior,
+    Prior,
+)
 from hsmmkit.model.params.spec import Domain, Mode, ParamSpec
 from hsmmkit.plugins import register
 from hsmmkit.utils.errors import ConfigError
@@ -119,6 +135,106 @@ def _coef_spec(name: str, n_states: int, n_coef: int) -> ParamSpec:
     )
 
 
+def _chol_spec(
+    n_states: int,
+    n_series: int,
+    init: np.ndarray | None,
+    *,
+    mode: Mode | tuple[Mode, ...],
+    prior: Prior | None,
+) -> ParamSpec:
+    """`emission.chol (N, M(M+1)/2)`: packed lower-triangular factors, identity by default."""
+    k = packed_size(n_series)
+    if init is None:
+        eye = pack_lower(jnp.eye(n_series))
+        init = np.tile(np.asarray(eye), (n_states, 1))
+    return ParamSpec(
+        name="emission.chol", shape=(n_states, k), domain="cholesky", mode=mode, init=init, prior=prior
+    )
+
+
+def _chol_spec_from_paramcfg(cfg: ParamCfg, n_states: int, n_series: int) -> ParamSpec:
+    """`params.chol` config -> spec; `init` is one packed factor shared by all states (default identity)."""
+    k = packed_size(n_series)
+    for key in ("values", "tie", "bounds"):
+        if getattr(cfg, key) is not None:
+            raise ConfigError(
+                f"params.chol does not support '{key}'", path=f"model.emission.params.chol.{key}"
+            )
+    if cfg.constraint != "none" or cfg.mode in ("fixed", "tied", "bounded"):
+        raise ConfigError(
+            f"params.chol supports mode 'free' or 'prior' without constraint, not mode {cfg.mode!r} "
+            f"and constraint {cfg.constraint!r}",
+            path="model.emission.params.chol.mode",
+        )
+    init: np.ndarray | None = None
+    if cfg.init is not None:
+        if isinstance(cfg.init, str):
+            raise ConfigError(f"init: {cfg.init!r} is not available before E12-T06", path="values")
+        flat = np.atleast_1d(np.asarray(cfg.init, dtype=np.float64))
+        if flat.shape == (k,):
+            init = np.tile(flat, (n_states, 1))
+        elif flat.shape == (n_states * k,):
+            init = flat.reshape(n_states, k)
+        else:
+            raise ConfigError(
+                f"chol init needs {k} packed entries (or {n_states * k} for every state)",
+                path="model.emission.params.chol.init",
+            )
+    prior: Prior | None = None
+    if cfg.prior is not None:
+        if cfg.prior.type not in ("normal", "lognormal", "lkj"):
+            raise ConfigError(
+                f"prior type {cfg.prior.type!r} is not valid for chol (normal, lognormal or lkj)",
+                path="model.emission.params.chol.prior.type",
+            )
+        if cfg.prior.type == "lkj":
+            prior = LkjPrior(eta=cfg.prior.eta if cfg.prior.eta is not None else 1.0)
+        else:  # a scalar prior acts on the diagonal of L
+            prior = CholeskyDiagPrior(base=_prior_from_cfg(cfg.prior, None))  # type: ignore[arg-type]
+    return _chol_spec(n_states, n_series, init, mode=cfg.mode, prior=prior)
+
+
+@dataclass(frozen=True)
+class NormalWishart:
+    """Normal-Wishart prior `(m0, kappa0, W0, nu0)` on a Gaussian mean and precision (per regime).
+
+    `mean | Sigma ~ N(m0, Sigma / kappa0)`, `Sigma^-1 ~ Wishart(W0, nu0)`. `m0` and `W0` may be `None`
+    (zero mean, identity scale of the observation dimension found in the statistics).
+    """
+
+    kappa0: float = 0.01
+    nu0: float | None = None
+    m0: Array | None = None
+    w0: Array | None = None
+
+    def zero_stats(self, n_states: int, m: int) -> dict[str, Array]:
+        """The statistics of no data (`update(zero_stats)` returns the prior)."""
+        return {
+            "n": jnp.zeros((n_states,)),
+            "w_s": jnp.zeros((n_states,)),
+            "s1": jnp.zeros((n_states, m)),
+            "s2": jnp.zeros((n_states, m, m)),
+        }
+
+    def update(self, stats: dict[str, Array]) -> dict[str, Array]:
+        """Posterior `(m, kappa, W, nu)` per regime from `sufficient_stats` (no `dt` scaling)."""
+        n, s1, s2 = stats["n"], stats["s1"], stats["s2"]
+        m = s1.shape[1]
+        m0 = jnp.zeros((m,)) if self.m0 is None else self.m0
+        w0 = jnp.eye(m) if self.w0 is None else self.w0
+        nu0 = float(m + 2) if self.nu0 is None else self.nu0
+        n_safe = jnp.where(n > 0, n, 1.0)
+        ybar = s1 / n_safe[:, None]
+        scatter = s2 - n[:, None, None] * jnp.einsum("nj,nk->njk", ybar, ybar)
+        diff = ybar - m0
+        kappa = self.kappa0 + n
+        shrink = (self.kappa0 * n / kappa)[:, None, None] * jnp.einsum("nj,nk->njk", diff, diff)
+        w_inv = jnp.linalg.inv(w0)[None] + scatter + shrink
+        mean = (self.kappa0 * m0[None] + s1) / kappa[:, None]
+        return {"m": mean, "kappa": kappa, "W": jnp.linalg.inv(w_inv), "nu": nu0 + n}
+
+
 @register("emission", "gaussian")
 @dataclass(frozen=True)
 class GaussianFamily(BaseEmission):
@@ -136,6 +252,7 @@ class GaussianFamily(BaseEmission):
     support: Support = "real"
     scale_by_dt: bool = False
     ito_correction: bool = False
+    covariance: Literal["diag", "full"] = "diag"
     mean_idx: tuple[int, ...] = ()
     scale_idx: tuple[int, ...] = ()
 
@@ -187,6 +304,8 @@ class GaussianFamily(BaseEmission):
             mode="free",
             init=np.zeros((n_states, n_series)),
         )
+        if self.covariance == "full":
+            return (mean, _chol_spec(n_states, n_series, None, mode="free", prior=None))
         scale = ParamSpec(
             name=self.scale_name(),
             shape=(n_states, n_series),
@@ -205,7 +324,13 @@ class GaussianFamily(BaseEmission):
         cov_names: tuple[str, ...],
     ) -> tuple[GaussianFamily, tuple[ParamSpec, ...]]:
         """Map `model.emission` config to a configured family and its `ParamSpec`s."""
-        for required in (cls.mean_param, cls.scale_param):
+        full = cfg.covariance == "full"
+        if full and cls.fixed_options:
+            raise ConfigError(
+                f"the {cls.name_for_errors()} emission has a diagonal covariance only",
+                path="model.emission.covariance",
+            )
+        for required in (cls.mean_param, "chol" if full else cls.scale_param):
             if required not in cfg.params:
                 raise ConfigError(
                     f"{cls.name_for_errors()} emission requires params.{required}",
@@ -236,11 +361,12 @@ class GaussianFamily(BaseEmission):
             family = cls(
                 scale_by_dt=bool(cfg.scale_by_dt),
                 ito_correction=bool(cfg.ito_correction),
+                covariance=cfg.covariance,
                 mean_idx=mean_idx,
                 scale_idx=scale_idx,
             )
 
-        flat = not cfg.per_series
+        flat = not cfg.per_series and not full
         specs = [
             _spec_from_paramcfg(
                 cls.mean_name(),
@@ -251,14 +377,18 @@ class GaussianFamily(BaseEmission):
                 default_init=0.0,
                 flat=flat,
             ),
-            _spec_from_paramcfg(
-                cls.scale_name(),
-                cfg.params[cls.scale_param],
-                n_states=n_states,
-                n_series=n_series,
-                domain="positive",
-                default_init=cls.default_scale,
-                flat=flat,
+            (
+                _chol_spec_from_paramcfg(cfg.params["chol"], n_states, n_series)
+                if full
+                else _spec_from_paramcfg(
+                    cls.scale_name(),
+                    cfg.params[cls.scale_param],
+                    n_states=n_states,
+                    n_series=n_series,
+                    domain="positive",
+                    default_init=cls.default_scale,
+                    flat=flat,
+                )
             ),
         ]
         for coef, idx in (("gamma", mean_idx), ("delta", scale_idx)):
@@ -309,22 +439,74 @@ class GaussianFamily(BaseEmission):
             return loc * dt_, sigma_t * jnp.sqrt(dt_)
         return loc, sigma_t
 
+    @property
+    def joint(self) -> bool:
+        """`True` when the series are correlated (`full` covariance): no per-series factorization."""
+        return self.covariance == "full"
+
+    def _full_parts(self, dt: Array, theta: dict[str, Array], z: Array | None) -> tuple[Array, Array, Array]:
+        """`full` covariance: `(T, N, M)` mean, `(T, N, M, M)` factor `L~ = e^adj sqrt(s) L`, `(T, N)` scale.
+
+        The covariance of regime `i` at step `t` is `L~ L~^T = e^{2 adj} s L L^T` (`s = dt` with
+        `scale_by_dt`, else 1); the mean is `(mu + gamma z - 1/2 e^{2 adj} diag(L L^T) [Ito]) s`.
+        """
+        mu = theta[self.mean_name()]  # (N, M)
+        n_states, m = mu.shape
+        chol = unpack_lower(theta["emission.chol"], m)  # (N, M, M)
+        t = dt.shape[0]
+        mean_adj = jnp.zeros((t, n_states))
+        if self.mean_idx and "emission.gamma" in theta and z is not None:
+            mean_adj = z[:, jnp.asarray(self.mean_idx)] @ theta["emission.gamma"].T
+        logscale_adj = jnp.zeros((t, n_states))
+        if self.scale_idx and "emission.delta" in theta and z is not None:
+            logscale_adj = z[:, jnp.asarray(self.scale_idx)] @ theta["emission.delta"].T
+        mult = jnp.exp(logscale_adj)  # (T, N)
+        loc = mu[None] + mean_adj[:, :, None]  # (T, N, M)
+        if self.ito_correction:
+            var_diag = jnp.sum(chol**2, axis=-1)  # (N, M): diag(L L^T)
+            loc = loc - 0.5 * (mult**2)[:, :, None] * var_diag[None]
+        if self.scale_by_dt:
+            loc = loc * dt[:, None, None]
+            mult = mult * jnp.sqrt(dt)[:, None]
+        return loc, mult[:, :, None, None] * chol[None], mult
+
+    def _full_marginals(self, dt: Array, theta: dict[str, Array], z: Array | None) -> tuple[Array, Array]:
+        """`(T, N, M)` marginal mean and sd of a `full` covariance density."""
+        loc, chol_t, _ = self._full_parts(dt, theta, z)
+        return loc, jnp.sqrt(jnp.sum(chol_t**2, axis=-1))
+
     def log_prob_series(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
         """`(T, N, M)` per-regime, per-series log-density (E9-T01: `ProductEmission` masks per series)."""
+        if self.joint:
+            raise NotImplementedError("a `full` covariance has no per-series factorization; use `log_prob`")
         mean_t, sd_t = self._mean_sd(dt, theta, z)
         return normal_logpdf(y[:, None, :], mean_t, sd_t)
 
     def log_prob(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
-        """`(T, N)` log-density, summed over the `M` series."""
+        """`(T, N)` log-density, summed over the `M` series (`full`: the joint multivariate density)."""
+        if self.joint:
+            loc, chol_t, _ = self._full_parts(dt, theta, z)
+            return mvn_logpdf(y[:, None, :], loc, chol_t)
         return jnp.sum(self.log_prob_series(y, dt, theta, z), axis=-1)
 
     def cdf(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
-        """`(T, N, M)` per-regime, per-series predictive CDF at `y` (E5-T04's PIT diagnostic)."""
-        mean_t, sd_t = self._mean_sd(dt, theta, z)
+        """`(T, N, M)` per-regime, per-series predictive CDF at `y` (E5-T04's PIT diagnostic).
+
+        With a `full` covariance these are the marginal CDFs of each series.
+        """
+        if self.joint:
+            mean_t, sd_t = self._full_marginals(dt, theta, z)
+        else:
+            mean_t, sd_t = self._mean_sd(dt, theta, z)
         return jax.scipy.stats.norm.cdf((y[:, None, :] - mean_t) / sd_t)
 
     def sample(self, key: Array, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
         """`(T, M)` samples, one draw per step from the active regime's density."""
+        if self.joint:
+            loc, chol_t, _ = self._full_parts(dt, theta, z)
+            idx = jnp.arange(dt.shape[0])
+            eps = jax.random.normal(key, (dt.shape[0], loc.shape[-1]), dtype=loc.dtype)
+            return loc[idx, regime, :] + jnp.einsum("tij,tj->ti", chol_t[idx, regime], eps)
         mean_t, sd_t = self._mean_sd(dt, theta, z)
         t = dt.shape[0]
         idx = jnp.arange(t)
@@ -335,8 +517,11 @@ class GaussianFamily(BaseEmission):
     def moments(
         self, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None
     ) -> tuple[Array, Array]:
-        """Mean and variance `(T, M)` of the active regime's density."""
-        mean_t, sd_t = self._mean_sd(dt, theta, z)
+        """Mean and variance `(T, M)` of the active regime's density (`full`: the marginal variances)."""
+        if self.joint:
+            mean_t, sd_t = self._full_marginals(dt, theta, z)
+        else:
+            mean_t, sd_t = self._mean_sd(dt, theta, z)
         idx = jnp.arange(dt.shape[0])
         return mean_t[idx, regime, :], sd_t[idx, regime, :] ** 2
 
@@ -348,6 +533,37 @@ class GaussianFamily(BaseEmission):
         """Identity: no recursive carry to advance."""
         del y_t, theta
         return carry
+
+    def m_step(self, stats: object) -> dict[str, Array] | None:
+        """Closed-form maximizer for a `full` covariance without covariates and Ito correction.
+
+        `mu = S1 / sum(gamma s)`, `Sigma = (S2 - mu S1^T - S1 mu^T + mu mu^T sum(gamma s)) / n`, returned as
+        `emission.mean` and the Cholesky factor of `Sigma + 1e-10 mean(diag Sigma) I` (`emission.chol`).
+        Anything else: `None`.
+        """
+        if not self.joint or not isinstance(stats, dict) or "s1" not in stats:
+            return None
+        n, w_s, s1, s2 = stats["n"], stats["w_s"], stats["s1"], stats["s2"]
+        mu = s1 / w_s[:, None]
+        outer = jnp.einsum("nj,nk->njk", mu, s1)
+        sigma = (
+            s2 - outer - jnp.swapaxes(outer, -1, -2) + w_s[:, None, None] * jnp.einsum("nj,nk->njk", mu, mu)
+        ) / n[:, None, None]
+        sigma = 0.5 * (sigma + jnp.swapaxes(sigma, -1, -2))
+        jitter = 1e-10 * jnp.mean(jnp.diagonal(sigma, axis1=-2, axis2=-1), axis=-1)  # relative to the scale
+        sigma = sigma + jitter[:, None, None] * jnp.eye(mu.shape[-1])
+        chol = jnp.linalg.cholesky(sigma)
+        return {self.mean_name(): mu, "emission.chol": pack_lower(chol)}
+
+    def conjugate_prior(self) -> NormalWishart | None:
+        """Normal-Wishart prior of a `full` covariance (`None` for the diagonal family).
+
+        Defaults `(m0 = 0, kappa0 = 0.01, W0 = I, nu0 = M + 2)` are weakly informative for standardized
+        data; E13-T05a rescales `W0` by the data scale. Valid without time scaling (`scale_by_dt` false).
+        """
+        if not self.joint or self.scale_by_dt:
+            return None
+        return NormalWishart()
 
     def sufficient_stats(self, y: Array, dt: Array, gamma: Array, z: Array | None = None) -> dict[str, Array]:
         """Weighted sums for the closed-form M-step (E5-T06), covariate-free, single series.
@@ -361,6 +577,16 @@ class GaussianFamily(BaseEmission):
             `(N,)` arrays `w = sum w_t`, `w_dt = sum w_t s_t`, `w_y = sum w_t y_t`,
             `w_y2_dt = sum w_t y_t**2 / s_t`.
         """
+        if self.joint:
+            if self.mean_idx or self.scale_idx or self.ito_correction:
+                return {}  # covariates / Ito: no closed form (ECM fallback), `m_step` answers None
+            s = dt if self.scale_by_dt else jnp.ones_like(dt)
+            return {
+                "n": jnp.sum(gamma, axis=0),  # (N,)
+                "w_s": jnp.sum(gamma * s[:, None], axis=0),  # (N,)
+                "s1": gamma.T @ y,  # (N, M)
+                "s2": jnp.einsum("tn,tj,tk->njk", gamma / s[:, None], y, y),  # (N, M, M)
+            }
         y1 = y[:, 0] if y.ndim == 2 else y
         s = dt if self.scale_by_dt else jnp.ones_like(dt)
         return {
