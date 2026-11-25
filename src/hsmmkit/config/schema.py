@@ -11,6 +11,7 @@ they propagate unwrapped).
 from __future__ import annotations
 
 import importlib
+import itertools
 import warnings as warnings_module
 from pathlib import Path
 from typing import Any, ClassVar, Literal
@@ -48,9 +49,10 @@ def _registered_names(kind: Kind, *, needs: str | None = None) -> list[str]:
     importlib.import_module("hsmmkit.inference.covariate_forecasters")
     importlib.import_module("hsmmkit.estimation.init")
     if kind == "metric":
+        from hsmmkit.config.gates import PLANNED_METRICS
         from hsmmkit.evaluation.metrics.registry import available
 
-        return list(available())
+        return [*available(), *(m for m in PLANNED_METRICS if m not in available())]
     return [e.name for e in REGISTRY.entries(kind) if needs is None or hasattr(e.obj, needs)]
 
 
@@ -142,14 +144,57 @@ class PrepCfg(_Base):
         return value
 
 
+class SequencesCfg(_Base):
+    """`data.sequences:` — how a multi-sequence data set is grouped and padded (E12-T01a on)."""
+
+    group_by: str | None = None
+    bucket_edges: list[int] = Field(default_factory=lambda: [256, 512, 1024, 2048, 4096])
+
+    @field_validator("bucket_edges")
+    @classmethod
+    def _increasing(cls, value: list[int]) -> list[int]:
+        if any(e < 1 for e in value) or any(b <= a for a, b in itertools.pairwise(value)):
+            raise ConfigError(
+                "bucket_edges must be strictly increasing and >= 1", path="data.sequences.bucket_edges"
+            )
+        return value
+
+
+class BoundariesCfg(_Base):
+    """`data.labels.boundaries:` — steps where a regime switch is required / forbidden."""
+
+    must_switch_at: list[int] = Field(default_factory=list)
+    must_not_switch_at: list[int] = Field(default_factory=list)
+
+
+class LabelsCfg(_Base):
+    """`data.labels:` — partial supervision (E12-T06 on)."""
+
+    source: Literal["column", "file"]
+    column: str | None = None
+    path: Path | None = None
+    allowed_sets: bool = False
+    boundaries: BoundariesCfg | None = None
+
+    @model_validator(mode="after")
+    def _source_keys(self) -> LabelsCfg:
+        if self.source == "column" and self.column is None:
+            raise ConfigError("source='column' requires column", path="data.labels.column")
+        if self.source == "file" and self.path is None:
+            raise ConfigError("source='file' requires path", path="data.labels.path")
+        return self
+
+
 class DataSection(_Base):
-    """`data:` — source, clock, covariates, preparation."""
+    """`data:` — source, clock, covariates, preparation, sequences, labels."""
 
     source: SourceCfg
     clock: str = "steps"
     clock_options: dict[str, Any] = Field(default_factory=dict)
     covariates: list[CovariateCfg] = Field(default_factory=list)
     preparation: PrepCfg = Field(default_factory=PrepCfg)
+    sequences: SequencesCfg | None = None
+    labels: LabelsCfg | None = None
 
     def clock_option(self, name: str, default: Any = None) -> Any:  # noqa: ANN401
         """The clock option `name` (`clock_options`), or `default`."""
@@ -204,8 +249,9 @@ class ParamCfg(_Base):
 
     mode: ParamMode
     values: list[float] | None = None
-    init: list[float] | None = None
-    init_mean_sojourn_steps: list[float] | None = None
+    init: list[float] | float | Literal["labels"] | None = None
+    """Initial values per state, or `"labels"` (initialize from `data.labels`; not before E12-T06)."""
+    init_mean_sojourn_steps: list[float] | float | None = None
     bounds: tuple[float, float] | None = None
     constraint: Literal["none", "increasing"] = "none"
     prior: PriorCfg | None = None
@@ -225,6 +271,13 @@ class EmissionCovariates(_Base):
     log_vol: list[str] = Field(default_factory=list)
 
 
+class MixtureCfg(_Base):
+    """`model.emission.mixture:` — `components` copies of the family `base`."""
+
+    components: int = Field(ge=1)
+    base: str
+
+
 class EmissionCfg(_Base):
     """`model.emission:` — emission family, per-parameter configs, covariate links."""
 
@@ -235,8 +288,10 @@ class EmissionCfg(_Base):
     """Declared time scaling of the family (`None`: the family's own); a different value is rejected."""
     ito_correction: bool | None = None
     """`gaussian`: subtract `scale**2 / 2` from the location (`None`: the family's own, `False`)."""
-    covariance: Literal["diag"] = "diag"
+    covariance: Literal["diag", "full"] = "diag"
     """`gaussian`: covariance structure; `full` is not available before E11-T02."""
+    mixture: MixtureCfg | None = None
+    """Per-state finite mixture of `base` components (not available before E11-T06)."""
     per_series: bool = True
     """`True`: own location/scale per series, `(N, M)`; `False`: one per regime, shared."""
 
@@ -246,19 +301,45 @@ class EmissionCfg(_Base):
         return _check_name("emission", value, "model.emission.family", needs="from_config")
 
 
-class DurationCfg(_Base):
-    """`model.duration:` — duration family, minimum sojourns, per-parameter configs."""
+class PerStateDurationCfg(_Base):
+    """`model.duration.per_state[]:` — the duration family of one regime."""
 
     family: str
-    r: list[int] | None = None
-    params: dict[str, ParamCfg]
-    covariates: list[str] = Field(default_factory=list)
-    duration_covariates_at_entry: bool = False
+    params: dict[str, ParamCfg] = Field(default_factory=dict)
 
     @field_validator("family")
     @classmethod
     def _known_family(cls, value: str) -> str:
+        return _check_name("duration", value, "model.duration.per_state.family", needs="from_config")
+
+
+class DurationCfg(_Base):
+    """`model.duration:` — duration family (or one per state), minimum sojourns, per-parameter configs."""
+
+    family: str | None = None
+    r: list[int] | None = None
+    params: dict[str, ParamCfg] = Field(default_factory=dict)
+    covariates: list[str] = Field(default_factory=list)
+    duration_covariates_at_entry: bool = False
+    per_state: list[PerStateDurationCfg] | None = None
+    """One family per regime (`engine: explicit`; not available before E12-T05)."""
+    duration_dependent_jumps: bool = False
+    """Jump probabilities depend on the sojourn length (`engine: explicit`; not before E12-T05)."""
+
+    @field_validator("family")
+    @classmethod
+    def _known_family(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         return _check_name("duration", value, "model.duration.family", needs="from_config")
+
+    @model_validator(mode="after")
+    def _family_or_per_state(self) -> DurationCfg:
+        if (self.family is None) == (self.per_state is None):
+            raise ConfigError("exactly one of family / per_state", path="model.duration.family")
+        if self.per_state is not None and not self.per_state:
+            raise ConfigError("per_state must not be empty", path="model.duration.per_state")
+        return self
 
 
 class TransitionCfg(_Base):
@@ -278,6 +359,21 @@ class LatticeCfg(_Base):
     grids: dict[str, list[float]]
 
 
+class BandedCfg(_Base):
+    """`model.topology: {banded: k}` — jumps only to the `k` next regimes (cyclic distance)."""
+
+    banded: int = Field(ge=1)
+
+
+class MatrixCfg(_Base):
+    """`model.topology: {matrix: [[...]]}` — the allowed jumps as an `N x N` 0/1 matrix (zero diagonal)."""
+
+    matrix: list[list[int]]
+
+
+Topology = Literal["full", "left_to_right", "cyclic"] | BandedCfg | MatrixCfg
+
+
 class ModelSection(_Base):
     """`model:` — state count, engine, initial-distribution mode, families, lattice."""
 
@@ -285,6 +381,9 @@ class ModelSection(_Base):
     engine: Literal["expanded", "explicit"] = "expanded"
     d_max: int | None = None
     initial_state: Literal["uniform", "stationary", "free"] = "uniform"
+    initial_groups: Literal["shared", "per_group"] = "shared"
+    topology: Topology = "full"
+    left_censored: bool = False
     emission: EmissionCfg
     duration: DurationCfg
     transition: TransitionCfg
@@ -294,9 +393,44 @@ class ModelSection(_Base):
 # --- estimation / forecast / evaluation / output ----------------------------------------------
 
 
-class EstimationSection(_Base):
-    """`estimation:` — optimizer, convergence, multi-start, device."""
+class TemperingCfg(_Base):
+    """`tempering:` — deterministic annealing of the E-step (`beta0` rising to 1 in `steps`)."""
 
+    enabled: bool = False
+    beta0: float = Field(default=0.3, gt=0.0, le=1.0)
+    steps: int = Field(default=10, ge=1)
+
+
+class EmCfg(_Base):
+    """`estimation.em:` / `estimation.gem:` — EM options."""
+
+    tempering: TemperingCfg = Field(default_factory=TemperingCfg)
+
+
+class VbCfg(_Base):
+    """`estimation.vb:` — variational Bayes options."""
+
+    prune_below: float = Field(default=0.01, ge=0.0, lt=1.0)
+    max_iter: int = Field(default=500, ge=1)
+
+
+class McmcCfg(_Base):
+    """`estimation.mcmc:` — MCMC options."""
+
+    sampler: Literal["nuts", "gibbs"] = "nuts"
+    chains: int = Field(default=4, ge=1)
+    warmup: int = Field(default=1000, ge=0)
+    draws: int = Field(default=1000, ge=1)
+
+
+class EstimationSection(_Base):
+    """`estimation:` — method, optimizer, convergence, multi-start, device."""
+
+    method: Literal["map", "em", "gem", "vb", "mcmc"] = "map"
+    em: EmCfg | None = None
+    gem: EmCfg | None = None
+    vb: VbCfg | None = None
+    mcmc: McmcCfg | None = None
     optimizer: Literal["lbfgs", "adam"] = "lbfgs"
     max_iter: int = 1000
     tol_f: float = 1.0e-9
@@ -342,7 +476,9 @@ class ForecastSection(_Base):
 
     horizon: int
     n_sim: int
-    covariate_forecaster: CovariateForecasterCfg
+    covariate_forecaster: CovariateForecasterCfg = Field(
+        default_factory=lambda: CovariateForecasterCfg(type="freeze")
+    )
     quantiles: list[float]
 
     @model_validator(mode="after")
@@ -393,12 +529,39 @@ class LabelSource(_Base):
     path: str
 
 
+class CvCfg(_Base):
+    """`evaluation.cv:` — cross-validation over sequences (E14-T01 on)."""
+
+    splitter: Literal["sequence_kfold", "walk_forward"]
+    folds: int = Field(default=5, ge=2)
+    seed: int = 0
+
+
+class GridCfg(_Base):
+    """`evaluation.grid:` — model-selection grid (E14-T02 on)."""
+
+    n_states: list[int] = Field(default_factory=list)
+    r: list[list[int]] = Field(default_factory=list)
+    emission: list[str] = Field(default_factory=list)
+    estimator: list[str] = Field(default_factory=list)
+
+    @field_validator("n_states")
+    @classmethod
+    def _states(cls, value: list[int]) -> list[int]:
+        if any(n < 2 for n in value):
+            raise ConfigError("n_states entries must be >= 2", path="evaluation.grid.n_states")
+        return value
+
+
 class EvaluationSection(_Base):
-    """`evaluation:` — metrics, backtest scheme, optional labels."""
+    """`evaluation:` — metrics, backtest scheme, cross-validation, grid, optional labels."""
 
     metrics: list[str]
-    backtest: BacktestCfg
+    backtest: BacktestCfg | None = None
     labels: LabelSource | None = None
+    cv: CvCfg | None = None
+    grid: GridCfg | None = None
+    boundary_tolerance: int = Field(default=5, ge=0)
 
     @field_validator("metrics")
     @classmethod
@@ -406,6 +569,37 @@ class EvaluationSection(_Base):
         for i, name in enumerate(value):
             _check_name("metric", name, f"evaluation.metrics[{i}]")
         return value
+
+
+class AlertCfg(_Base):
+    """`online.alerts[]:` — hysteresis on a regime probability, or on the remaining duration."""
+
+    regime: int = Field(ge=0)
+    p_on: float | None = Field(default=None, gt=0.0, le=1.0)
+    p_off: float | None = Field(default=None, ge=0.0, lt=1.0)
+    remaining_duration_below: float | None = Field(default=None, gt=0.0)
+
+    @model_validator(mode="after")
+    def _one_kind(self) -> AlertCfg:
+        prob = self.p_on is not None or self.p_off is not None
+        if prob == (self.remaining_duration_below is not None):
+            raise ConfigError(
+                "an alert is {regime, p_on, p_off} or {regime, remaining_duration_below}",
+                path="online.alerts",
+            )
+        if prob:
+            if self.p_on is None or self.p_off is None:
+                raise ConfigError("p_on and p_off are both required", path="online.alerts.p_off")
+            if not self.p_off < self.p_on:
+                raise ConfigError("p_off must be < p_on", path="online.alerts.p_off")
+        return self
+
+
+class OnlineCfg(_Base):
+    """`online:` — streaming filter, fixed-lag smoothing and alerts (E15 on)."""
+
+    lag: int = Field(default=0, ge=0)
+    alerts: list[AlertCfg] = Field(default_factory=list)
 
 
 class OutputSection(_Base):
@@ -449,6 +643,7 @@ class ProjectConfig(_Base):
     forecast: ForecastSection
     evaluation: EvaluationSection
     output: OutputSection
+    online: OnlineCfg | None = None
     warnings: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -459,18 +654,39 @@ class ProjectConfig(_Base):
         _check_transition_order(self)
         _check_generator_mode(self)
         _check_engine_duration_covariates_warning(self)
+        _check_part2_keys(self)
         _resolve_d_max(self)
         return self
+
+    def backtest_cfg(self) -> BacktestCfg:
+        """`evaluation.backtest`, required by the walk-forward commands.
+
+        Raises:
+            ConfigError: the section is absent (`path="evaluation.backtest"`).
+        """
+        if self.evaluation.backtest is None:
+            raise ConfigError("evaluation.backtest is required for a backtest", path="evaluation.backtest")
+        return self.evaluation.backtest
 
     def expected_sojourn_steps(self) -> float | None:
         """Largest initial mean sojourn in steps that the config states (`None` when it states none)."""
         values: list[float] = []
         for pc in self.model.duration.params.values():
             if pc.init_mean_sojourn_steps is not None:
-                values.extend(pc.init_mean_sojourn_steps)
-            elif pc.init is not None and self.data.clock == "steps":
+                values.extend(_as_list(pc.init_mean_sojourn_steps))
+            elif isinstance(pc.init, list) and self.data.clock == "steps":
                 values.extend(pc.init)
+        for ps in (
+            self.model.duration.per_state or []
+        ):  # only the stated mean sojourns (`init` is a shape etc.)
+            for pc in ps.params.values():
+                if pc.init_mean_sojourn_steps is not None:
+                    values.extend(_as_list(pc.init_mean_sojourn_steps))
         return max(values) if values else None
+
+
+def _as_list(value: float | list[float]) -> list[float]:
+    return list(value) if isinstance(value, list) else [value]
 
 
 # --- cross-field rule implementations (kept out of the class body for readability) -----------
@@ -483,9 +699,11 @@ def _warn(config: ProjectConfig, message: str) -> None:
 
 def _named_param_cfgs(config: ProjectConfig) -> list[tuple[str, ParamCfg]]:
     """`(dotted path, ParamCfg)` for every `ParamCfg` in `model.emission.params`/`model.duration.params`."""
-    return [(f"model.emission.params.{key}", pc) for key, pc in config.model.emission.params.items()] + [
-        (f"model.duration.params.{key}", pc) for key, pc in config.model.duration.params.items()
-    ]
+    out = [(f"model.emission.params.{key}", pc) for key, pc in config.model.emission.params.items()]
+    out += [(f"model.duration.params.{key}", pc) for key, pc in config.model.duration.params.items()]
+    for i, ps in enumerate(config.model.duration.per_state or []):
+        out += [(f"model.duration.per_state[{i}].params.{key}", pc) for key, pc in ps.params.items()]
+    return out
 
 
 def _check_param_cfg_consistency(config: ProjectConfig) -> None:
@@ -510,7 +728,7 @@ def _check_per_state_lengths(config: ProjectConfig) -> None:
         for key, pc in params.items():
             for field_name in ("values", "init", "init_mean_sojourn_steps"):
                 value = getattr(pc, field_name)
-                if value is not None and len(value) != n:
+                if isinstance(value, list) and len(value) != n:
                     raise ConfigError(
                         f"{field_name} must have length n_states={n}",
                         path=f"{section_path}.params.{key}.{field_name}",
@@ -565,6 +783,69 @@ def _check_engine_duration_covariates_warning(config: ProjectConfig) -> None:
     if config.model.engine == "explicit" and duration.family == "negbin" and duration.covariates:
         duration.duration_covariates_at_entry = True
         _warn(config, "explicit engine + negbin duration covariates: switching to entry-time evaluation")
+
+
+def _check_part2_keys(config: ProjectConfig) -> None:
+    """Validation rules of the Part II keys (Part II §15.4)."""
+    m = config.model
+    n = m.n_states
+    if (m.duration.per_state is not None) and m.engine != "explicit":
+        raise ConfigError("per_state requires engine: explicit", path="model.duration.per_state")
+    if m.duration.duration_dependent_jumps and m.engine != "explicit":
+        raise ConfigError(
+            "duration_dependent_jumps requires engine: explicit",
+            path="model.duration.duration_dependent_jumps",
+        )
+    if m.duration.per_state is not None and len(m.duration.per_state) != n:
+        raise ConfigError(f"per_state must have length n_states={n}", path="model.duration.per_state")
+    topo = m.topology
+    if isinstance(topo, BandedCfg) and topo.banded >= n:
+        raise ConfigError(f"banded must be < n_states={n}", path="model.topology.banded")
+    if isinstance(topo, MatrixCfg):
+        mat = topo.matrix
+        if len(mat) != n or any(len(row) != n for row in mat):
+            raise ConfigError(f"matrix must be {n} x {n}", path="model.topology.matrix")
+        if any(v not in (0, 1) for row in mat for v in row):
+            raise ConfigError("matrix entries must be 0 or 1", path="model.topology.matrix")
+        if any(mat[i][i] != 0 for i in range(n)):
+            raise ConfigError("matrix must have a zero diagonal", path="model.topology.matrix")
+        absorbing = [i for i, row in enumerate(mat) if not any(row)]
+        if absorbing:
+            _warn(config, f"topology.matrix: states {absorbing} have no outgoing jump (absorbing)")
+    label_inits = [p for p, pc in _named_param_cfgs(config) if pc.init == "labels"]
+    if label_inits and config.data.labels is None:
+        raise ConfigError("init: labels requires data.labels", path=f"{label_inits[0]}.init")
+    if "labels" in config.estimation.init and config.data.labels is None:
+        raise ConfigError("the 'labels' init requires data.labels", path="estimation.init")
+    if config.online is not None:
+        for i, alert in enumerate(config.online.alerts):
+            if alert.regime >= n:
+                raise ConfigError(f"regime must be < n_states={n}", path=f"online.alerts[{i}].regime")
+    if config.estimation.method in ("vb", "mcmc"):
+        names = _non_conjugate_components(config)
+        if names:
+            _warn(
+                config,
+                f"estimation.method={config.estimation.method!r}: no conjugate prior known for "
+                + ", ".join(names),
+            )
+
+
+def _non_conjugate_components(config: ProjectConfig) -> list[str]:
+    """Components whose family has no `conjugate_prior()` (VB / MCMC fall back to Laplace / NUTS)."""
+    _registered_names("emission")
+    out: list[str] = []
+    families = [("emission", config.model.emission.family)]
+    if config.model.duration.family is not None:
+        families.append(("duration", config.model.duration.family))
+    for ps in config.model.duration.per_state or []:
+        families.append(("duration", ps.family))
+    for kind, name in families:
+        entry = next((e for e in REGISTRY.entries(kind) if e.name == name), None)  # type: ignore[arg-type]
+        fn = getattr(entry.obj, "conjugate_prior", None) if entry is not None else None
+        if (fn is None or fn() is None) and f"{kind}.{name}" not in out:
+            out.append(f"{kind}.{name}")
+    return out
 
 
 def _resolve_d_max(config: ProjectConfig) -> None:

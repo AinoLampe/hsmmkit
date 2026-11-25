@@ -44,10 +44,12 @@ def test_e8_t04_release_workflow_checks_the_tag_against_the_package_version() ->
     assert "github.ref_name" in checks[0]["run"]
 
 
-def test_e8_t04_nightly_runs_the_tutorial_notebook() -> None:
-    """The notebook (E8-T03 AC3) executes in CI through `nox -s examples`."""
-    steps = _workflow("nightly.yml")["jobs"]["examples"]["steps"]
-    assert any("nox -s examples" in s.get("run", "") for s in steps)
+def test_e8_t04_nightly_runs_the_downstream_job() -> None:
+    """The finance tutorial notebook moved to `regimekit` (E10-T08); the nightly runs `downstream` instead."""
+    jobs = _workflow("nightly.yml")["jobs"]
+    assert "examples" not in jobs
+    steps = jobs["downstream"]["steps"]
+    assert any("RegimeDetectionAndForecast" in str(s.get("with", {})) for s in steps)
 
 
 def test_e8_t04_semantic_release_is_configured_for_zero_ver_conventional_commits() -> None:

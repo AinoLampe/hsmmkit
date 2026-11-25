@@ -18,6 +18,7 @@ import numpy as np
 from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.model.transition import build_memory_layout
 from hsmmkit.plugins import register
+from hsmmkit.utils.errors import ConfigError
 
 if TYPE_CHECKING:
     from hsmmkit.data.contracts import PreparedDataset
@@ -344,3 +345,9 @@ def random(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
 def _lattice_jitter_init(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
     """`lattice_jitter` under the common `(data, spec, key)` signature of registered init methods."""
     return lattice_jitter(spec, key)
+
+
+@register("init", "labels")
+def _labels_init(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
+    """Initialize from the partial labels (`data.labels`); gated until E12-T06 (`gates.GATES`)."""
+    raise ConfigError("the 'labels' init is not available before E12-T06", path="estimation.init")

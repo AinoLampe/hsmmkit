@@ -2,18 +2,20 @@
 
 The core ships a complete domain-neutral application (`hsmmkit`): `validate-config`, `config-schema`,
 `fit`, `decode`, `forecast`, `simulate`, `backtest`, `compare` and `selftest`, all taking their data from
-`data.source`. An application builds its own app with extra commands and registers its own exit codes (see the
-`hsmmkit` application, an example extension).
+`data.source`. An application builds its own app with extra commands and registers its own exit codes (see
+`regimekit`, an example extension).
 """
 
 from __future__ import annotations
 
+import importlib
 import sys
 import traceback
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -22,6 +24,7 @@ from hsmmkit.config.yaml_io import export_json_schema, load_config
 from hsmmkit.data.contracts import PreparedDataset
 from hsmmkit.estimation.selftest import SelftestResult
 from hsmmkit.persistence.results import read_prepared
+from hsmmkit.presets import get_preset, list_presets, write_preset
 from hsmmkit.project import Project, apply_overrides, check_simulate_args
 from hsmmkit.utils.errors import (
     ConfigError,
@@ -147,6 +150,22 @@ def _selftest_lines(result: SelftestResult) -> list[str]:
     return lines
 
 
+def _import_config_class(dotted: str) -> type[ProjectConfig]:
+    """The `ProjectConfig` subclass at `module.Class`.
+
+    Raises:
+        ConfigError: the module or class does not exist, or is not a `ProjectConfig` subclass.
+    """
+    module, _, cls_name = dotted.rpartition(".")
+    try:
+        cls = getattr(importlib.import_module(module), cls_name)
+    except (ImportError, AttributeError, ValueError) as exc:
+        raise ConfigError(f"cannot import config class '{dotted}': {exc}", path="--config-class") from exc
+    if not (isinstance(cls, type) and issubclass(cls, ProjectConfig)):
+        raise ConfigError(f"'{dotted}' is not a ProjectConfig subclass", path="--config-class")
+    return cls
+
+
 def build_app(
     *,
     name: str,
@@ -188,9 +207,37 @@ def build_app(
             typer.echo(line)
 
     @app.command("config-schema")
-    def config_schema_cmd(out_path: Path) -> None:
-        """Write the JSON-Schema of the configuration to `out_path`."""
-        export_json_schema(out_path, config_cls)
+    def config_schema_cmd(
+        out_path: Path,
+        config_class: Annotated[
+            str | None, typer.Option("--config-class", help="dotted path of a ProjectConfig subclass")
+        ] = None,
+    ) -> None:
+        """Write the JSON-Schema of the configuration (or of `--config-class`) to `out_path`."""
+        with exit_on_error():
+            export_json_schema(out_path, _import_config_class(config_class) if config_class else config_cls)
+
+    presets_app = typer.Typer(help="Preset configurations with synthetic data.", no_args_is_help=True)
+    app.add_typer(presets_app, name="presets")
+
+    @presets_app.command("list")
+    def presets_list_cmd() -> None:
+        """List the registered presets."""
+        for preset in list_presets():
+            typer.echo(f"{preset.name}\t{preset.description}")
+
+    @presets_app.command("show")
+    def presets_show_cmd(name: str) -> None:
+        """Print the YAML of preset NAME."""
+        with exit_on_error():
+            typer.echo(get_preset(name).yaml, nl=False)
+
+    @presets_app.command("write")
+    def presets_write_cmd(name: str, directory: Path, seed: int = 0) -> None:
+        """Write preset NAME (YAML and, if it has one, its synthetic data files) into DIRECTORY."""
+        with exit_on_error():
+            for path in write_preset(name, directory, seed=seed):
+                typer.echo(str(path))
 
     @app.command("fit")
     def fit_cmd(config_path: Path) -> None:

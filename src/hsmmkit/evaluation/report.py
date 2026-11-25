@@ -131,8 +131,7 @@ def build_report(
         f"- versions: hsmmkit {ver.get('hsmmkit', 'n/a')}, python {ver.get('python', 'n/a')}, "
         f"jax {ver.get('jax', 'n/a')}",
         f"- backend: {ver.get('backend', 'n/a')}, x64 {ver.get('x64', 'n/a')}",
-        f"- scheme `{cfg.evaluation.backtest.scheme}`, {len(folds)} folds, "
-        f"horizons {cfg.evaluation.backtest.horizons}",
+        f"- scheme `{cfg.backtest_cfg().scheme}`, {len(folds)} folds, horizons {cfg.backtest_cfg().horizons}",
         "",
         "## Model",
         "",

@@ -328,7 +328,7 @@ class Project:
         obs, covs = fetched.obs, fetched.covs
         dataset = (
             Preparer(self.config.data)
-            .fit(obs, covs, _train_end(obs, self.config.evaluation.backtest))
+            .fit(obs, covs, _train_end(obs, self.config.backtest_cfg()))
             .transform(obs, covs)
         )
         if write:

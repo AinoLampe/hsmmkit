@@ -42,9 +42,10 @@ def _enum_of(schema: dict[str, Any], defs: str, field: str, names: list[str], *,
         if prop is None or not name.endswith(defs):
             continue
         target = prop["items"] if items and "items" in prop else prop
+        nullable = any(option.get("type") == "null" for option in target.get("anyOf", []))
         target.pop("anyOf", None)
-        target["type"] = "string"
-        target["enum"] = names
+        target["type"] = ["string", "null"] if nullable else "string"
+        target["enum"] = [*names, None] if nullable else names
 
 
 def json_schema(config_cls: type[ProjectConfig] = ProjectConfig) -> dict[str, Any]:

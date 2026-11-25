@@ -17,9 +17,9 @@ Progress ledger of the `hsmmkit` repository (restarted by E10-T08). The Part I l
 | E10-T06 | Core `gaussian` emission (diagonal, `M ≥ 1`, `scale_by_dt`, `ito_correction`); `gbm` as a finance alias | M | 8 | E10-T02b | done | e9f3f3b | done in RegimeDetectionAndForecast before the extraction (history: `git log`); commit refers to that repository |
 | E10-T07a | Neutral init naming, walk-forward origin hooks, strategies to finance, bundle v2 | M | 8 | E10-T02b, E10-T03 | done | 3278c1a | done in RegimeDetectionAndForecast before the extraction (history: `git log`); commit refers to that repository |
 | E10-T07b | CLI app factory and `Project`/`FinanceProject` split; neutral-name allow-list empty | M | 8 | E10-T07a, E10-T04b, E10-T05, E10-T06 | done | 4252854 | done in RegimeDetectionAndForecast before the extraction (history: `git log`); commit refers to that repository |
-| E10-T08 | Extract `hsmmkit` repository; release 0.1.0 | M | 9 | E10-T07b | in-progress |  | this extraction (branch main of hsmmkit); see Handoff |
+| E10-T08 | Extract `hsmmkit` repository; release 0.1.0 | M | 9 | E10-T07b | done | 6a2838d | Extracted with history (three filter-repo passes), rename commit, docs/CLAUDE.md/STATUS, pushed as `main`. AC1 not attainable (source history already squashed per ticket, see Follow-ups); AC2 full suite 809 passed + known XLA aborts that pass alone (gradient student_t o2, segmental Viterbi, parallel scan), `nox` lint/types/docs equivalents green locally; AC3 `test_e10_t08_*`; AC4 `downstream` job in `nightly.yml` (red until E10-T09); AC5 wheel built, installed in a fresh venv, `hsmmkit validate-config` on a core config OK; tag/release/TestPyPI are owner actions. Found by the smoke install and fixed here: `beartype` (dev dependency) was imported at import time, now lazy. |
 | E10-T09 | `regimekit` on top of `hsmmkit`; release 0.2.0 | M | 9 | E10-T08 | other-repo |  | RegimeDetectionAndForecast |
-| E10-T10 | Complete schema with feature gates; JSON Schema; presets registry | M | 10 | E10-T08 | todo |  |  |
+| E10-T10 | Complete schema with feature gates; JSON Schema; presets registry | M | 10 | E10-T08 | in-progress |  | branch feat/E10-T10-core-schema-presets; see Spec fixes |
 | E10-T11 | Lazy optional imports, extras, import-time test | S | 10 | E10-T08 | todo |  |  |
 | E11-T01 | `family_contract` suite | M | 10 | E10-T08 | todo |  |  |
 | E11-T02 | Gaussian full covariance | M | 10 | E11-T01 | todo |  |  |
@@ -84,6 +84,7 @@ Release 0.1.0 is prepared (tag `v0.1.0` is an owner action, see "Blocked / needs
 ## Blocked / needs owner
 
 ## Spec fixes
+- E10-T10: Appendix H names metrics that exist only from E14-T03 (`boundary_f1`, `hausdorff`, `covering`, `hamming_matched`, `ari`, `nmi`) and uses scalar per-state `init` / `init_mean_sojourn_steps`, `init: labels` and a `chol` parameter; to make it validate (AC1) the schema accepts the planned metric names (`gates.PLANNED_METRICS`, gated at build, listed in the JSON-Schema enum) and `ParamCfg.init` / `init_mean_sojourn_steps` accept a scalar (broadcast to all states at build) or `"labels"`. `evaluation.backtest` and `forecast.covariate_forecaster` became optional (`ProjectConfig.backtest_cfg()` raises `ConfigError(path="evaluation.backtest")`; default forecaster `freeze`). The generated reference stayed in `docs/guide/config.md` (the ticket says `configuration.md`). The "family support vs data support" check stays where E10-T05 put it (the `Preparer` checks the data against the family support; `BuildInputs` carries no support).
 
 ## Findings for the owner
 
@@ -97,6 +98,8 @@ Release 0.1.0 is prepared (tag `v0.1.0` is an owner action, see "Blocked / needs
   E4-T03a/b commits).
 
 ## Needs CI / network / GPU
+- E10-T10 AC3 (second half): `--config-class regimekit.config.FinanceConfig` validates Appendix A v2 and lists `gbm` needs `regimekit` installed (test `test_e10_t10_regimekit_finance_config_schema_when_installed` is skipped here; runs in `downstream`).
+- E10-T10 follow-up for E12-T05: `per_state[i].params` get the generic param checks (already via `_named_param_cfgs`); `model.left_censored` with `engine: expanded` is accepted silently until E12-T04 decides.
 - GitHub Actions has not run in this repository: `pr.yml`, `nightly.yml` (incl. `downstream`), the coverage gate
   (>= 90 % total, >= 85 % per package), the benchmark baseline comparison and the cross-machine golden check.
 - The `downstream` job is expected red until E10-T09 has merged in `RegimeDetectionAndForecast`.

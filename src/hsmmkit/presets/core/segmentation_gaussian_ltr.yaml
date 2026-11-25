@@ -1,0 +1,84 @@
+schema_version: 1
+project:
+  name: segmentation_gaussian_ltr
+  seed: 7
+  output_dir: runs/segmentation_gaussian_ltr
+  log_level: INFO
+
+data:
+  source:
+    kind: parquet
+    path: data/sensor_windows.parquet
+    observation_columns: [acc_x, acc_y, acc_z]
+    sequence_column: session_id
+    time_column: null
+  clock: steps
+  sequences:
+    group_by: null
+    bucket_edges: [256, 512, 1024, 2048]
+  labels:
+    source: column
+    column: activity
+    allowed_sets: false          # exact labels where present, NaN = unlabelled
+    boundaries: null
+  preparation:
+    observation_transform: null
+    standardize_observations: true
+    missing_observations: mask
+
+model:
+  n_states: 4
+  engine: explicit
+  d_max: 300
+  topology: left_to_right
+  left_censored: true
+  initial_state: free
+  emission:
+    family: gaussian
+    covariance: full
+    scale_by_dt: false
+    params:
+      mean:  {mode: free, init: labels}
+      chol:  {mode: free, init: labels, prior: {type: lognormal, sd: 1.0}}
+  duration:
+    per_state:
+      - {family: gamma,     params: {shape: {mode: free, init: 2.0}, scale: {mode: free, init: 20}}}
+      - {family: gamma,     params: {shape: {mode: free, init: 2.0}, scale: {mode: free, init: 40}}}
+      - {family: geometric, params: {rate:  {mode: free, init_mean_sojourn_steps: 15}}}
+      - {family: nonparametric, params: {pmf: {mode: free, prior: {type: dirichlet, alpha: 0.5}}}}
+    duration_dependent_jumps: false
+  transition:
+    order: 1
+    covariates: []
+    prior: {type: dirichlet, alpha: 1.0}
+
+estimation:
+  method: gem
+  max_iter: 300
+  tol_f: 1.0e-7
+  restarts: 4
+  init: [labels, random]
+  use_priors: true
+  gem:
+    tempering: {enabled: true, beta0: 0.3, steps: 10}
+
+forecast:
+  horizon: 10
+  n_sim: 2000
+  quantiles: [0.1, 0.5, 0.9]
+
+online:
+  lag: 20
+  alerts:
+    - {regime: 3, p_on: 0.8, p_off: 0.5}
+
+evaluation:
+  metrics: [log_score, bic, icl, boundary_f1, hausdorff, covering, hamming_matched, ari, nmi]
+  boundary_tolerance: 5
+  cv:
+    splitter: sequence_kfold
+    folds: 5
+    seed: 7
+
+output:
+  write: [posterior, forecast, cv, report]

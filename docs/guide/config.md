@@ -25,6 +25,7 @@ The whole resolved configuration of the domain-neutral core.
 | `forecast` | `ForecastSection` | required |
 | `evaluation` | `EvaluationSection` | required |
 | `output` | `OutputSection` | required |
+| `online` | `OnlineCfg \| None` | `None` |
 | `warnings` | `list[str]` | `[]` |
 
 ## `project`
@@ -40,7 +41,7 @@ The whole resolved configuration of the domain-neutral core.
 
 ## `data`
 
-`data:` — source, clock, covariates, preparation.
+`data:` — source, clock, covariates, preparation, sequences, labels.
 
 | Field | Type | Default |
 |---|---|---|
@@ -49,6 +50,8 @@ The whole resolved configuration of the domain-neutral core.
 | `clock_options` | `dict[str, Any]` | `{}` |
 | `covariates` | `list[CovariateCfg]` | `[]` |
 | `preparation` | `PrepCfg` | section defaults |
+| `sequences` | `SequencesCfg \| None` | `None` |
+| `labels` | `LabelsCfg \| None` | `None` |
 
 ## `model`
 
@@ -60,6 +63,9 @@ The whole resolved configuration of the domain-neutral core.
 | `engine` | `'expanded' \| 'explicit'` | `'expanded'` |
 | `d_max` | `int \| None` | `None` |
 | `initial_state` | `'uniform' \| 'stationary' \| 'free'` | `'uniform'` |
+| `initial_groups` | `'shared' \| 'per_group'` | `'shared'` |
+| `topology` | `'full' \| 'left_to_right' \| 'cyclic' \| BandedCfg \| MatrixCfg` | `'full'` |
+| `left_censored` | `bool` | `False` |
 | `emission` | `EmissionCfg` | required |
 | `duration` | `DurationCfg` | required |
 | `transition` | `TransitionCfg` | required |
@@ -67,10 +73,15 @@ The whole resolved configuration of the domain-neutral core.
 
 ## `estimation`
 
-`estimation:` — optimizer, convergence, multi-start, device.
+`estimation:` — method, optimizer, convergence, multi-start, device.
 
 | Field | Type | Default |
 |---|---|---|
+| `method` | `'map' \| 'em' \| 'gem' \| 'vb' \| 'mcmc'` | `'map'` |
+| `em` | `EmCfg \| None` | `None` |
+| `gem` | `EmCfg \| None` | `None` |
+| `vb` | `VbCfg \| None` | `None` |
+| `mcmc` | `McmcCfg \| None` | `None` |
 | `optimizer` | `'lbfgs' \| 'adam'` | `'lbfgs'` |
 | `max_iter` | `int` | `1000` |
 | `tol_f` | `float` | `1e-09` |
@@ -91,18 +102,21 @@ The whole resolved configuration of the domain-neutral core.
 |---|---|---|
 | `horizon` | `int` | required |
 | `n_sim` | `int` | required |
-| `covariate_forecaster` | `CovariateForecasterCfg` | required |
+| `covariate_forecaster` | `CovariateForecasterCfg` | section defaults |
 | `quantiles` | `list[float]` | required |
 
 ## `evaluation`
 
-`evaluation:` — metrics, backtest scheme, optional labels.
+`evaluation:` — metrics, backtest scheme, cross-validation, grid, optional labels.
 
 | Field | Type | Default |
 |---|---|---|
 | `metrics` | `list[str]` | required |
-| `backtest` | `BacktestCfg` | required |
+| `backtest` | `BacktestCfg \| None` | `None` |
 | `labels` | `LabelSource \| None` | `None` |
+| `cv` | `CvCfg \| None` | `None` |
+| `grid` | `GridCfg \| None` | `None` |
+| `boundary_tolerance` | `int` | `5` |
 
 ## `output`
 
@@ -111,6 +125,15 @@ The whole resolved configuration of the domain-neutral core.
 | Field | Type | Default |
 |---|---|---|
 | `write` | `list[str]` | required |
+
+## `online`
+
+`online:` — streaming filter, fixed-lag smoothing and alerts (E15 on).
+
+| Field | Type | Default |
+|---|---|---|
+| `lag` | `int` | `0` |
+| `alerts` | `list[AlertCfg]` | `[]` |
 
 ## `data.source`
 
@@ -146,6 +169,43 @@ The whole resolved configuration of the domain-neutral core.
 | `standardize_covariates` | `bool` | `True` |
 | `missing_observations` | `'mask' \| 'drop' \| 'error'` | `'mask'` |
 
+## `data.sequences`
+
+`data.sequences:` — how a multi-sequence data set is grouped and padded (E12-T01a on).
+
+| Field | Type | Default |
+|---|---|---|
+| `group_by` | `str \| None` | `None` |
+| `bucket_edges` | `list[int]` | `[256, 512, 1024, 2048, 4096]` |
+
+## `data.labels`
+
+`data.labels:` — partial supervision (E12-T06 on).
+
+| Field | Type | Default |
+|---|---|---|
+| `source` | `'column' \| 'file'` | required |
+| `column` | `str \| None` | `None` |
+| `path` | `Path \| None` | `None` |
+| `allowed_sets` | `bool` | `False` |
+| `boundaries` | `BoundariesCfg \| None` | `None` |
+
+## `model.topology`
+
+`model.topology: {banded: k}` — jumps only to the `k` next regimes (cyclic distance).
+
+| Field | Type | Default |
+|---|---|---|
+| `banded` | `int` | required |
+
+## `model.topology`
+
+`model.topology: {matrix: [[...]]}` — the allowed jumps as an `N x N` 0/1 matrix (zero diagonal).
+
+| Field | Type | Default |
+|---|---|---|
+| `matrix` | `list[list[int]]` | required |
+
 ## `model.emission`
 
 `model.emission:` — emission family, per-parameter configs, covariate links.
@@ -157,20 +217,23 @@ The whole resolved configuration of the domain-neutral core.
 | `covariates` | `EmissionCovariates` | section defaults |
 | `scale_by_dt` | `bool \| None` | `None` |
 | `ito_correction` | `bool \| None` | `None` |
-| `covariance` | `'diag'` | `'diag'` |
+| `covariance` | `'diag' \| 'full'` | `'diag'` |
+| `mixture` | `MixtureCfg \| None` | `None` |
 | `per_series` | `bool` | `True` |
 
 ## `model.duration`
 
-`model.duration:` — duration family, minimum sojourns, per-parameter configs.
+`model.duration:` — duration family (or one per state), minimum sojourns, per-parameter configs.
 
 | Field | Type | Default |
 |---|---|---|
-| `family` | `str` | required |
+| `family` | `str \| None` | `None` |
 | `r` | `list[int] \| None` | `None` |
-| `params` | `dict[str, ParamCfg]` | required |
+| `params` | `dict[str, ParamCfg]` | `{}` |
 | `covariates` | `list[str]` | `[]` |
 | `duration_covariates_at_entry` | `bool` | `False` |
+| `per_state` | `list[PerStateDurationCfg] \| None` | `None` |
+| `duration_dependent_jumps` | `bool` | `False` |
 
 ## `model.transition`
 
@@ -192,6 +255,34 @@ The whole resolved configuration of the domain-neutral core.
 | Field | Type | Default |
 |---|---|---|
 | `grids` | `dict[str, list[float]]` | required |
+
+## `estimation.em`
+
+`estimation.em:` / `estimation.gem:` — EM options.
+
+| Field | Type | Default |
+|---|---|---|
+| `tempering` | `TemperingCfg` | section defaults |
+
+## `estimation.vb`
+
+`estimation.vb:` — variational Bayes options.
+
+| Field | Type | Default |
+|---|---|---|
+| `prune_below` | `float` | `0.01` |
+| `max_iter` | `int` | `500` |
+
+## `estimation.mcmc`
+
+`estimation.mcmc:` — MCMC options.
+
+| Field | Type | Default |
+|---|---|---|
+| `sampler` | `'nuts' \| 'gibbs'` | `'nuts'` |
+| `chains` | `int` | `4` |
+| `warmup` | `int` | `1000` |
+| `draws` | `int` | `1000` |
 
 ## `forecast.covariate_forecaster`
 
@@ -228,6 +319,47 @@ The whole resolved configuration of the domain-neutral core.
 |---|---|---|
 | `path` | `str` | required |
 
+## `evaluation.cv`
+
+`evaluation.cv:` — cross-validation over sequences (E14-T01 on).
+
+| Field | Type | Default |
+|---|---|---|
+| `splitter` | `'sequence_kfold' \| 'walk_forward'` | required |
+| `folds` | `int` | `5` |
+| `seed` | `int` | `0` |
+
+## `evaluation.grid`
+
+`evaluation.grid:` — model-selection grid (E14-T02 on).
+
+| Field | Type | Default |
+|---|---|---|
+| `n_states` | `list[int]` | `[]` |
+| `r` | `list[list[int]]` | `[]` |
+| `emission` | `list[str]` | `[]` |
+| `estimator` | `list[str]` | `[]` |
+
+## `online.alerts`
+
+`online.alerts[]:` — hysteresis on a regime probability, or on the remaining duration.
+
+| Field | Type | Default |
+|---|---|---|
+| `regime` | `int` | required |
+| `p_on` | `float \| None` | `None` |
+| `p_off` | `float \| None` | `None` |
+| `remaining_duration_below` | `float \| None` | `None` |
+
+## `data.labels.boundaries`
+
+`data.labels.boundaries:` — steps where a regime switch is required / forbidden.
+
+| Field | Type | Default |
+|---|---|---|
+| `must_switch_at` | `list[int]` | `[]` |
+| `must_not_switch_at` | `list[int]` | `[]` |
+
 ## `model.emission.params`
 
 A single (possibly per-state) parameter's estimation mode and initialization.
@@ -236,8 +368,8 @@ A single (possibly per-state) parameter's estimation mode and initialization.
 |---|---|---|
 | `mode` | `'free' \| 'fixed' \| 'tied' \| 'bounded' \| 'prior'` | required |
 | `values` | `list[float] \| None` | `None` |
-| `init` | `list[float] \| None` | `None` |
-| `init_mean_sojourn_steps` | `list[float] \| None` | `None` |
+| `init` | `list[float] \| float \| 'labels' \| None` | `None` |
+| `init_mean_sojourn_steps` | `list[float] \| float \| None` | `None` |
 | `bounds` | `tuple[float, float] \| None` | `None` |
 | `constraint` | `'none' \| 'increasing'` | `'none'` |
 | `prior` | `PriorCfg \| None` | `None` |
@@ -254,6 +386,24 @@ A single (possibly per-state) parameter's estimation mode and initialization.
 | `drift` | `list[str]` | `[]` |
 | `log_vol` | `list[str]` | `[]` |
 
+## `model.emission.mixture`
+
+`model.emission.mixture:` — `components` copies of the family `base`.
+
+| Field | Type | Default |
+|---|---|---|
+| `components` | `int` | required |
+| `base` | `str` | required |
+
+## `model.duration.per_state`
+
+`model.duration.per_state[]:` — the duration family of one regime.
+
+| Field | Type | Default |
+|---|---|---|
+| `family` | `str` | required |
+| `params` | `dict[str, ParamCfg]` | `{}` |
+
 ## `model.transition.prior`
 
 `prior:` — a named prior distribution and its parameters.
@@ -263,3 +413,13 @@ A single (possibly per-state) parameter's estimation mode and initialization.
 | `type` | `'normal' \| 'lognormal' \| 'dirichlet'` | required |
 | `sd` | `float \| None` | `None` |
 | `alpha` | `float \| None` | `None` |
+
+## `estimation.em.tempering`
+
+`tempering:` — deterministic annealing of the E-step (`beta0` rising to 1 in `steps`).
+
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `False` |
+| `beta0` | `float` | `0.3` |
+| `steps` | `int` | `10` |

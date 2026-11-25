@@ -331,7 +331,7 @@ def run_backtest(
         DataError: the per-fold preparation changes the grid.
         NumericalError: a non-finite fit, filter or forecast.
     """
-    bt = cfg.evaluation.backtest
+    bt = cfg.backtest_cfg()
     horizons = sorted(set(bt.horizons))
     n_sim = bt.n_sim if bt.n_sim is not None else cfg.forecast.n_sim
     metrics = resolve(list(cfg.evaluation.metrics))
