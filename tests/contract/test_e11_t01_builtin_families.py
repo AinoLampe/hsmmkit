@@ -9,7 +9,7 @@ from scipy import stats
 
 from hsmmkit.model.emission.gaussian import GaussianFamily
 from hsmmkit.model.emission.product import ProductEmission
-from hsmmkit.model.emission.student_t import StudentTFamily
+from hsmmkit.model.emission.student_t import MultivariateStudentT, StudentTFamily
 from hsmmkit.testing import family_contract
 from hsmmkit.testing.family_contract import (  # noqa: F401
     FamilyCase,
@@ -174,5 +174,62 @@ family_contract.register_case(
         data_factory=_real_data,
         scipy_logpdf=_full_ref,
         covariate_factory=lambda: GaussianFamily(covariance="full", mean_idx=(0,), scale_idx=(0,)),
+    )
+)
+
+
+def _mvt_theta(key: jax.Array, n: int, m: int, k: int) -> dict[str, jax.Array]:
+    theta = _full_theta(key, n, m, k)
+    theta["emission.nu"] = jnp.array([6.0, 12.0][:n])
+    return theta
+
+
+def _mvt_diag_theta(key: jax.Array, n: int, m: int, k: int) -> dict[str, jax.Array]:
+    theta = _gauss_theta(key, n, m, k)
+    return {
+        "emission.mean": theta["emission.mean"],
+        "emission.scale": theta["emission.scale"],
+        "emission.nu": jnp.array([6.0, 12.0][:n]),
+        **{k_: v for k_, v in theta.items() if k_ in ("emission.gamma", "emission.delta")},
+    }
+
+
+def _mvt_ref(y: jax.Array, dt: jax.Array, theta: dict[str, jax.Array], z: jax.Array | None) -> np.ndarray:
+    del dt, z
+    from hsmmkit.model.dists import unpack_lower
+
+    m = y.shape[1]
+    out = []
+    for i in range(theta["emission.mean"].shape[0]):
+        if "emission.chol" in theta:
+            chol = np.asarray(unpack_lower(theta["emission.chol"], m))[i]
+            cov = chol @ chol.T
+        else:
+            cov = np.diag(np.asarray(theta["emission.scale"])[i] ** 2)
+        mvt = stats.multivariate_t(
+            np.asarray(theta["emission.mean"][i]), cov, df=float(theta["emission.nu"][i])
+        )
+        out.append(mvt.logpdf(np.asarray(y)))
+    return np.stack(out, axis=1)
+
+
+family_contract.register_case(
+    FamilyCase(
+        name="student_t-mv-diag",
+        factory=lambda: MultivariateStudentT(covariance="diag"),
+        theta_factory=_mvt_diag_theta,
+        data_factory=_real_data,
+        scipy_logpdf=_mvt_ref,
+        covariate_factory=lambda: MultivariateStudentT(covariance="diag", mean_idx=(0,), scale_idx=(0,)),
+    )
+)
+family_contract.register_case(
+    FamilyCase(
+        name="student_t-mv-full",
+        factory=lambda: MultivariateStudentT(covariance="full"),
+        theta_factory=_mvt_theta,
+        data_factory=_real_data,
+        scipy_logpdf=_mvt_ref,
+        covariate_factory=lambda: MultivariateStudentT(covariance="full", mean_idx=(0,), scale_idx=(0,)),
     )
 )

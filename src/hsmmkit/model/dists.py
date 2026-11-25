@@ -41,6 +41,37 @@ def pack_lower(matrix: Array) -> Array:
     return matrix[..., rows, cols]
 
 
+def _whiten(y: Array, mean: Array, chol: Array) -> tuple[Array, Array]:
+    """`(|L^-1 (y - mean)|^2, sum log diag L)` with broadcasting over the leading axes."""
+    m = y.shape[-1]
+    resid = y - mean
+    batch = jnp.broadcast_shapes(resid.shape[:-1], chol.shape[:-2])
+    resid_b = jnp.broadcast_to(resid, (*batch, m))
+    chol_b = jnp.broadcast_to(chol, (*batch, m, m))
+    x = jax.vmap(lambda c, r: jsp_linalg.solve_triangular(c, r, lower=True))(
+        chol_b.reshape(-1, m, m), resid_b.reshape(-1, m)
+    ).reshape(*batch, m)
+    log_det = jnp.sum(jnp.log(jnp.diagonal(chol_b, axis1=-2, axis2=-1)), axis=-1)
+    return jnp.sum(x**2, axis=-1), log_det
+
+
+def mvt_logpdf(y: Array, loc: Array, chol: Array, nu: Array) -> Array:
+    """Multivariate Student-t log-density with scale matrix `L L^T` and `nu` degrees of freedom.
+
+    `log f = lgamma((nu+M)/2) - lgamma(nu/2) - M/2 log(nu pi) - log|L| - (nu+M)/2 log(1 + q/nu)` with
+    `q = |L^-1 (y - loc)|^2`; `nu` broadcasts against the leading axes.
+    """
+    m = y.shape[-1]
+    q, log_det = _whiten(y, loc, chol)
+    return (
+        jsp_special.gammaln((nu + m) / 2.0)
+        - jsp_special.gammaln(nu / 2.0)
+        - 0.5 * m * jnp.log(nu * math.pi)
+        - log_det
+        - 0.5 * (nu + m) * jnp.log1p(q / nu)
+    )
+
+
 def mvn_logpdf(y: Array, mean: Array, chol: Array) -> Array:
     """Multivariate normal log-density with covariance `L L^T`.
 
@@ -52,16 +83,8 @@ def mvn_logpdf(y: Array, mean: Array, chol: Array) -> Array:
     Returns:
         `(...)` log-densities `-1/2 [M log 2 pi + 2 sum log diag(L) + |L^-1 (y - mean)|^2]`.
     """
-    m = y.shape[-1]
-    resid = y - mean
-    batch = jnp.broadcast_shapes(resid.shape[:-1], chol.shape[:-2])
-    resid_b = jnp.broadcast_to(resid, (*batch, m))
-    chol_b = jnp.broadcast_to(chol, (*batch, m, m))
-    x = jax.vmap(lambda c, r: jsp_linalg.solve_triangular(c, r, lower=True))(
-        chol_b.reshape(-1, m, m), resid_b.reshape(-1, m)
-    ).reshape(*batch, m)
-    log_det = jnp.sum(jnp.log(jnp.diagonal(chol_b, axis1=-2, axis2=-1)), axis=-1)
-    return -0.5 * (m * _LOG_2PI + jnp.sum(x**2, axis=-1)) - log_det
+    q, log_det = _whiten(y, mean, chol)
+    return -0.5 * (y.shape[-1] * _LOG_2PI + q) - log_det
 
 
 def lkj_logpdf(corr_chol: Array, eta: float) -> Array:
