@@ -83,7 +83,7 @@ def test_e6_t01_non_finite_returns_raise_numerical_error() -> None:
     """CLAUDE.md §4 invariant 5: a non-finite sample must not leave `simulate_paths`."""
     case = make_case("gbm", "geometric", 1, t_len=20, seed=4)
     theta = dict(case.manager.unflatten(case.u0))
-    theta["emission.sigma"] = jnp.asarray(theta["emission.sigma"]) * jnp.inf
+    theta["emission.scale"] = jnp.asarray(theta["emission.scale"]) * jnp.inf
 
     with pytest.raises(NumericalError, match="returns"):
         simulate_paths(key_for(0, 1), theta, case.spec, case.space, case.data.dt, None, None, None, n_paths=2)

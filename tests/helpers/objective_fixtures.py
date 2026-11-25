@@ -19,7 +19,7 @@ from regimekit.engine.explicit_duration import ExplicitDurationEngine
 from regimekit.model.duration.gamma import GammaDuration
 from regimekit.model.duration.geometric import GeometricDuration
 from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gbm import GBMFamily, _coef_spec
+from regimekit.model.emission.gaussian import GaussianFamily, _coef_spec
 from regimekit.model.emission.student_t import StudentTFamily
 from regimekit.model.params import ParamManager, ParamSpec
 from regimekit.model.params.priors import DirichletPrior, LogNormalPrior, NormalPrior
@@ -74,12 +74,12 @@ def make_case(
     cov_e = (0,) if cov_em else ()
     cov_d = (0,) if cov_du else ()
     emis = (
-        GBMFamily(drift_idx=cov_e, logvol_idx=cov_e)
+        GaussianFamily(scale_by_dt=True, ito_correction=True, mean_idx=cov_e, scale_idx=cov_e)
         if emission == "gbm"
-        else StudentTFamily(loc_idx=cov_e, logscale_idx=cov_e)
+        else StudentTFamily(scale_by_dt=True, loc_idx=cov_e, logscale_idx=cov_e)
     )
     specs: list[ParamSpec] = list(emis.param_specs(n, 1, ()))
-    scale_name = "emission.sigma" if emission == "gbm" else "emission.s"
+    scale_name = "emission.scale" if emission == "gbm" else "emission.s"
     if priors:
         specs = [
             _with_mode(s, LogNormalPrior(mean_log=float(np.log(0.2)), sd=1.0)) if s.name == scale_name else s

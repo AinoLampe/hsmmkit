@@ -71,7 +71,7 @@ def fit(
     adds one *extra* restart, last, with `init_strategy == "warm_start"`; the `cfg.restarts` regular
     restarts and their keys are unchanged.
     If no per-state emission location/scale spec identifies the labelling (`has_identifiability_guard`),
-    the winner is relabelled by ascending `emission.sigma` (`post_sort_states`) with a warning.
+    the winner is relabelled by ascending `emission.scale` (`post_sort_states`) with a warning.
     """
     jax_setup(cfg.device)
     manager = ParamManager(spec.param_specs)
@@ -129,7 +129,8 @@ def fit(
     u = best.u
     if not has_identifiability_guard(spec):
         scale_name = next(
-            (name for name in theta if name in ("emission.sigma", "emission.s")), "emission.sigma"
+            (name for name in theta if name in ("emission.scale", "emission.sigma", "emission.s")),
+            "emission.scale",
         )
         warnings.warn(
             f"no identifiability guard (no fixed or ordered emission location/scale spec): "

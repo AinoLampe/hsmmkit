@@ -104,8 +104,8 @@ def test_e7_t01_log_score_mixture_equals_the_analytic_mixture_density() -> None:
     base = forecast_of_samples(np.zeros((4, 1, 1)))
     fc = ForecastResult(**{**base.__dict__, "regime_probs": jnp.asarray(w[None, :])})
     y = 0.004
-    mu = np.asarray(fit.params["emission.mu"]).reshape(-1)
-    sigma = np.asarray(fit.params["emission.sigma"]).reshape(-1)
+    mu = np.asarray(fit.params["emission.mean"]).reshape(-1)
+    sigma = np.asarray(fit.params["emission.scale"]).reshape(-1)
     density = np.sum(w * stats.norm.pdf(y, (mu - 0.5 * sigma**2) * DT, sigma * np.sqrt(DT)))
     got = metric("log_score_mixture")(forecast=fc, fit=fit, realized=np.asarray([[y]]), dt_next=DT, horizon=1)
     assert got == pytest.approx(float(np.log(density)), abs=1e-8)
@@ -304,8 +304,8 @@ def test_e7_t01_log_score_mixture_with_exact_weights_matches_an_independent_comp
     np.testing.assert_allclose(exact, reference, atol=1e-12)
 
     y = 0.003
-    mu = np.asarray(fit.params["emission.mu"]).reshape(-1)
-    sigma = np.asarray(fit.params["emission.sigma"]).reshape(-1)
+    mu = np.asarray(fit.params["emission.mean"]).reshape(-1)
+    sigma = np.asarray(fit.params["emission.scale"]).reshape(-1)
     density = np.sum(reference * stats.norm.pdf(y, (mu - 0.5 * sigma**2) * DT, sigma * np.sqrt(DT)))
     cfg = ForecastSection(
         horizon=1,

@@ -40,8 +40,8 @@ def test_e6_t04b_h1_mean_and_var_match_the_analytic_mixture() -> None:
         @ np.exp(np.asarray(log_a))
         @ np.asarray(case.space.index.collapse)
     )
-    mu = np.asarray(fit.params["emission.mu"]).reshape(-1)
-    sigma = np.asarray(fit.params["emission.sigma"]).reshape(-1)
+    mu = np.asarray(fit.params["emission.mean"]).reshape(-1)
+    sigma = np.asarray(fit.params["emission.scale"]).reshape(-1)
     m, v = (mu - 0.5 * sigma**2) * DT, sigma**2 * DT
     mean = float(w @ m)
     var = float(w @ v + w @ m**2 - (w @ m) ** 2)

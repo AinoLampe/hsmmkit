@@ -81,7 +81,7 @@ def test_e5_t03_rollvol_kmeans_recovers_sigma_and_ordering() -> None:
     data = dataclasses.replace(case.data, observations=jnp.asarray(y[:, None]))
 
     theta = rollvol_kmeans(data, case.spec, key_for(0, 1))
-    sigma_hat = np.asarray(theta["emission.sigma"])
+    sigma_hat = np.asarray(theta["emission.scale"])
 
     assert sigma_hat.shape == (2,)
     assert sigma_hat[0] < sigma_hat[1]  # correct ordering: low-vol regime first

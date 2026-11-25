@@ -73,8 +73,8 @@ def test_e6_t04a_future_grid_rejects_bad_arguments(h: int, bars: int) -> None:
 
 
 def _gbm_moments(theta: dict[str, jax.Array], dt: float) -> tuple[np.ndarray, np.ndarray]:
-    mu = np.asarray(theta["emission.mu"]).reshape(-1)
-    sigma = np.asarray(theta["emission.sigma"]).reshape(-1)
+    mu = np.asarray(theta["emission.mean"]).reshape(-1)
+    sigma = np.asarray(theta["emission.scale"]).reshape(-1)
     return (mu - 0.5 * sigma**2) * dt, sigma**2 * dt
 
 

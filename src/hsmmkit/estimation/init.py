@@ -26,8 +26,8 @@ if TYPE_CHECKING:
     from regimekit.model.spec import ModelSpec
     from regimekit.utils.typing import Array
 
-_LOCATION_NAMES = frozenset({"emission.mu", "emission.m"})
-_SCALE_NAMES = frozenset({"emission.sigma", "emission.s"})
+_LOCATION_NAMES = frozenset({"emission.mean", "emission.mu", "emission.m"})
+_SCALE_NAMES = frozenset({"emission.scale", "emission.sigma", "emission.s"})
 _COEFFICIENT_NAMES = frozenset({"emission.gamma", "emission.delta", "duration.c", "transition.b"})
 _ROLL_WINDOW = 21
 _KMEANS_ITERS = 20

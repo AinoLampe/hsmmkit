@@ -22,7 +22,7 @@ def reference_inputs(
     """`(log_rho, log_trans, log_dur_pmf, log_emis)` for `ref_hsmm` (constant pmf/jump, nominal `dt`)."""
     d, th, spec = sc.data, sc.theta, sc.spec
     y = np.asarray(d.observations)[:, 0]
-    mu, sig = np.asarray(th["emission.mu"]), np.asarray(th["emission.sigma"])
+    mu, sig = np.asarray(th["emission.mean"]), np.asarray(th["emission.scale"])
     dt = d.nominal_dt
     log_emis = norm.logpdf(y[:, None], (mu - 0.5 * sig**2) * dt, sig * np.sqrt(dt))
     if mask is not None:

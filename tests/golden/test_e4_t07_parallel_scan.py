@@ -112,7 +112,7 @@ def test_e4_t07_parallel_scan_long_sharp_sequence_agrees_on_everything_that_matt
 
     sc = make_scenario(3, [2, 3, 2], 1, 2000, seed=0)
     sigma = np.array([0.05, 0.2, 0.8])
-    theta = {**sc.theta, "emission.sigma": jnp.asarray(sigma)}
+    theta = {**sc.theta, "emission.scale": jnp.asarray(sigma)}
     rng = np.random.default_rng(0)
     regime = np.repeat(rng.integers(0, 3, size=41), 50)[:2000]
     y = rng.normal(0.0, sigma[regime] * np.sqrt(DT))

@@ -14,7 +14,7 @@ from regimekit.config.schema import EmissionCfg, LatticeCfg, ParamCfg
 from regimekit.config.yaml_io import load_config
 from regimekit.finance import FinanceConfig
 from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.lattice import (
     apply_ordering,
     build,
@@ -35,24 +35,24 @@ APPENDIX_A = Path(__file__).parent.parent / "fixtures" / "configs" / "appendix_a
 
 def test_e3_t06_grid_product_yields_expected_value_table() -> None:
     """`mu x sigma` = 3 x 2 -> 6 states, `mu` slowest, exactly the Cartesian product."""
-    lattice = build({"mu": [-0.3, 0.0, 0.2], "sigma": [0.15, 0.35]})
+    lattice = build({"mean": [-0.3, 0.0, 0.2], "scale": [0.15, 0.35]})
     assert lattice.n_states == 6
-    np.testing.assert_array_equal(lattice.values["mu"], [-0.3, -0.3, 0.0, 0.0, 0.2, 0.2])
-    np.testing.assert_array_equal(lattice.values["sigma"], [0.15, 0.35, 0.15, 0.35, 0.15, 0.35])
-    pairs = set(zip(lattice.values["mu"], lattice.values["sigma"], strict=True))
+    np.testing.assert_array_equal(lattice.values["mean"], [-0.3, -0.3, 0.0, 0.0, 0.2, 0.2])
+    np.testing.assert_array_equal(lattice.values["scale"], [0.15, 0.35, 0.15, 0.35, 0.15, 0.35])
+    pairs = set(zip(lattice.values["mean"], lattice.values["scale"], strict=True))
     assert pairs == set(itertools.product([-0.3, 0.0, 0.2], [0.15, 0.35]))
 
 
 def test_e3_t06_to_param_cfgs_are_fixed_and_drive_gbm_specs() -> None:
-    """`to_param_cfgs` gives `mode="fixed"` configs whose values survive `GBMFamily.from_config`."""
-    lattice = build({"mu": [-0.3, 0.0, 0.2], "sigma": [0.15, 0.35]})
+    """`to_param_cfgs` gives `mode="fixed"` configs whose values survive `GaussianFamily.from_config`."""
+    lattice = build({"mean": [-0.3, 0.0, 0.2], "scale": [0.15, 0.35]})
     cfgs = lattice.to_param_cfgs()
-    assert {k: c.mode for k, c in cfgs.items()} == {"mu": "fixed", "sigma": "fixed"}
-    emission = EmissionCfg(family="gbm", params=cfgs)
-    _, specs = GBMFamily.from_config(emission, 6, 1, ())
+    assert {k: c.mode for k, c in cfgs.items()} == {"mean": "fixed", "scale": "fixed"}
+    emission = EmissionCfg(family="gaussian", scale_by_dt=True, ito_correction=True, params=cfgs)
+    _, specs = GaussianFamily.from_config(emission, 6, 1, ())
     by_name = {s.name: s for s in specs}
-    np.testing.assert_array_equal(by_name["emission.mu"].value[:, 0], lattice.values["mu"])
-    np.testing.assert_array_equal(by_name["emission.sigma"].value[:, 0], lattice.values["sigma"])
+    np.testing.assert_array_equal(by_name["emission.mean"].value[:, 0], lattice.values["mean"])
+    np.testing.assert_array_equal(by_name["emission.scale"].value[:, 0], lattice.values["scale"])
     assert ParamManager(specs).n_free == 0
 
 
@@ -60,9 +60,9 @@ def test_e3_t06_to_param_cfgs_are_fixed_and_drive_gbm_specs() -> None:
     ("grids", "needle"),
     [
         ({}, "at least one"),
-        ({"mu": []}, "empty"),
-        ({"mu": [0.1, 0.1]}, "duplicate"),
-        ({"mu": [float("nan")]}, "finite"),
+        ({"mean": []}, "empty"),
+        ({"mean": [0.1, 0.1]}, "duplicate"),
+        ({"mean": [float("nan")]}, "finite"),
     ],
 )
 def test_e3_t06_bad_grids_raise_with_path(grids: dict[str, list[float]], needle: str) -> None:
@@ -82,7 +82,7 @@ def test_e3_t06_validate_lattice_checks_n_states_equals_product() -> None:
             "model": cfg.model.model_copy(
                 update={
                     "n_states": 6,
-                    "lattice": LatticeCfg(grids={"mu": [-0.3, 0.0, 0.2], "sigma": [0.15, 0.35]}),
+                    "lattice": LatticeCfg(grids={"mean": [-0.3, 0.0, 0.2], "scale": [0.15, 0.35]}),
                 }
             )
         }
@@ -100,34 +100,36 @@ def test_e3_t06_validate_lattice_checks_n_states_equals_product() -> None:
 def test_e3_t06_increasing_constraint_gives_increasing_sigma_for_random_u() -> None:
     """A GBM spec built with `constraint: increasing` maps any `u` to strictly increasing `sigma`."""
     emission = EmissionCfg(
-        family="gbm",
+        family="gaussian",
+        scale_by_dt=True,
+        ito_correction=True,
         params={
-            "mu": ParamCfg(mode="free"),
-            "sigma": ParamCfg(mode="free", constraint="increasing"),
+            "mean": ParamCfg(mode="free"),
+            "scale": ParamCfg(mode="free", constraint="increasing"),
         },
     )
-    _, specs = GBMFamily.from_config(emission, 4, 1, ())
+    _, specs = GaussianFamily.from_config(emission, 4, 1, ())
     manager = ParamManager(specs)
     rng = np.random.default_rng(0)
     for _ in range(50):
         u = jnp.asarray(rng.normal(scale=3.0, size=manager.n_free))
-        sigma = np.asarray(manager.unflatten(u)["emission.sigma"]).ravel()
+        sigma = np.asarray(manager.unflatten(u)["emission.scale"]).ravel()
         assert np.all(np.diff(sigma) > 0)
 
 
 def test_e3_t06_apply_ordering_wires_increasing_and_squeezes_single_series() -> None:
     """`apply_ordering` on the default `(N, 1)` sigma spec gives an `(N,)` increasing spec."""
-    specs = GBMFamily().param_specs(3, 1, ())
-    ordered = apply_ordering(specs, "emission.sigma")
+    specs = GaussianFamily(scale_by_dt=True, ito_correction=True).param_specs(3, 1, ())
+    ordered = apply_ordering(specs, "emission.scale")
     by_name = {s.name: s for s in ordered}
-    assert by_name["emission.sigma"].constraint == "increasing"
-    assert by_name["emission.sigma"].shape == (3,)
-    assert by_name["emission.mu"].constraint == "none"
+    assert by_name["emission.scale"].constraint == "increasing"
+    assert by_name["emission.scale"].shape == (3,)
+    assert by_name["emission.mean"].constraint == "none"
     manager = ParamManager(ordered)
     rng = np.random.default_rng(1)
     for _ in range(20):
         sigma = np.asarray(
-            manager.unflatten(jnp.asarray(rng.normal(scale=2.0, size=manager.n_free)))["emission.sigma"]
+            manager.unflatten(jnp.asarray(rng.normal(scale=2.0, size=manager.n_free)))["emission.scale"]
         )
         assert np.all(np.diff(sigma) > 0)
 
@@ -135,10 +137,14 @@ def test_e3_t06_apply_ordering_wires_increasing_and_squeezes_single_series() -> 
 def test_e3_t06_apply_ordering_rejects_multi_series_and_unknown_names() -> None:
     """Ordering across `M > 1` series and unknown spec names are `ConfigError`s with the spec name."""
     with pytest.raises(ConfigError, match="single series") as info:
-        apply_ordering(GBMFamily().param_specs(3, 2, ()), "emission.sigma")
-    assert info.value.path == "emission.sigma"
+        apply_ordering(
+            GaussianFamily(scale_by_dt=True, ito_correction=True).param_specs(3, 2, ()), "emission.scale"
+        )
+    assert info.value.path == "emission.scale"
     with pytest.raises(ConfigError, match="no parameter spec"):
-        apply_ordering(GBMFamily().param_specs(3, 1, ()), "emission.nope")
+        apply_ordering(
+            GaussianFamily(scale_by_dt=True, ito_correction=True).param_specs(3, 1, ()), "emission.nope"
+        )
 
 
 # --- identifiability guard --------------------------------------------------------------------------
@@ -150,7 +156,7 @@ def _model_spec(
     return ModelSpec(
         n_states=n_states,
         n_series=1,
-        emission=GBMFamily(),
+        emission=GaussianFamily(scale_by_dt=True, ito_correction=True),
         duration=GeometricDuration(),
         transition=JumpTransition(),
         order=order,
@@ -164,17 +170,20 @@ def _model_spec(
 
 def test_e3_t06_identifiability_guard_cases() -> None:
     """Guard is on for `increasing`, and for an all-fixed lattice; off for plain free specs."""
-    free = GBMFamily().param_specs(3, 1, ())
+    free = GaussianFamily(scale_by_dt=True, ito_correction=True).param_specs(3, 1, ())
     assert not has_identifiability_guard(_model_spec(free))
-    assert has_identifiability_guard(_model_spec(apply_ordering(free, "emission.sigma")))
+    assert has_identifiability_guard(_model_spec(apply_ordering(free, "emission.scale")))
 
-    lattice = build({"mu": [-0.3, 0.0, 0.2], "sigma": [0.15]})
-    emission = EmissionCfg(family="gbm", params=lattice.to_param_cfgs())
-    _, fixed_specs = GBMFamily.from_config(emission, 3, 1, ())
+    lattice = build({"mean": [-0.3, 0.0, 0.2], "scale": [0.15]})
+    emission = EmissionCfg(
+        family="gaussian", scale_by_dt=True, ito_correction=True, params=lattice.to_param_cfgs()
+    )
+    _, fixed_specs = GaussianFamily.from_config(emission, 3, 1, ())
     assert has_identifiability_guard(_model_spec(fixed_specs))
 
     mixed = tuple(
-        replace(s, mode="fixed", value=np.full(s.shape, 0.1)) if s.name == "emission.mu" else s for s in free
+        replace(s, mode="fixed", value=np.full(s.shape, 0.1)) if s.name == "emission.mean" else s
+        for s in free
     )
     assert not has_identifiability_guard(_model_spec(mixed))  # sigma still free
     assert not has_identifiability_guard(_model_spec(()))  # nothing to identify with
@@ -193,8 +202,8 @@ def _random_theta(
 ) -> dict[str, jnp.ndarray]:
     n_rows = build_memory_layout(n_states, order).tuples.shape[0]
     theta: dict[str, jnp.ndarray] = {
-        "emission.mu": jnp.asarray(rng.normal(size=(n_states, 1))),
-        "emission.sigma": jnp.asarray(rng.permutation(np.linspace(0.1, 0.5, n_states))[:, None]),
+        "emission.mean": jnp.asarray(rng.normal(size=(n_states, 1))),
+        "emission.scale": jnp.asarray(rng.permutation(np.linspace(0.1, 0.5, n_states))[:, None]),
         "duration.rate": jnp.asarray(
             rng.uniform(0.05, 0.5, size=(n_states * (n_states - 1) if pair else n_states,))
         ),
@@ -227,14 +236,14 @@ def test_e3_t06_post_sort_sorts_sigma_and_permutes_blocks_consistently(
     family = JumpTransition(cov_idx=(0, 1) if covariates else ())
     spec = _model_spec((), n_states=n_states, order=order, conditioning="pair" if pair else "current")
 
-    sorted_theta, perm = post_sort_states(theta, spec, by="emission.sigma")
+    sorted_theta, perm = post_sort_states(theta, spec, by="emission.scale")
 
-    old_sigma = np.asarray(theta["emission.sigma"])[:, 0]
-    new_sigma = np.asarray(sorted_theta["emission.sigma"])[:, 0]
+    old_sigma = np.asarray(theta["emission.scale"])[:, 0]
+    new_sigma = np.asarray(sorted_theta["emission.scale"])[:, 0]
     assert np.all(np.diff(new_sigma) > 0)
     np.testing.assert_array_equal(new_sigma, old_sigma[perm])
     np.testing.assert_array_equal(
-        np.asarray(sorted_theta["emission.mu"]), np.asarray(theta["emission.mu"])[perm]
+        np.asarray(sorted_theta["emission.mean"]), np.asarray(theta["emission.mean"])[perm]
     )
     assert sorted(perm.tolist()) == list(range(n_states))
 
@@ -264,7 +273,7 @@ def test_e3_t06_post_sort_of_sorted_theta_is_identity() -> None:
     """Already-ascending sigma gives the identity permutation and unchanged arrays."""
     rng = np.random.default_rng(0)
     theta = _random_theta(rng, 3, 1, covariates=True, pair=False)
-    theta["emission.sigma"] = jnp.asarray([[0.1], [0.2], [0.3]])
+    theta["emission.scale"] = jnp.asarray([[0.1], [0.2], [0.3]])
     spec = _model_spec((), n_states=3)
     sorted_theta, perm = post_sort_states(theta, spec)
     np.testing.assert_array_equal(perm, [0, 1, 2])
@@ -327,9 +336,9 @@ def test_e3_t06_guard_ignores_free_nu_and_coefficients_when_location_scale_fixed
     """Documented deviation: fixed mu/sigma with free `nu`/`gamma` still counts as identified."""
     specs = tuple(
         replace(s, mode="fixed", value=np.full(s.shape, 0.2))
-        if s.name in ("emission.mu", "emission.sigma")
+        if s.name in ("emission.mean", "emission.scale")
         else s
-        for s in GBMFamily().param_specs(3, 1, ())
+        for s in GaussianFamily(scale_by_dt=True, ito_correction=True).param_specs(3, 1, ())
     )
     from regimekit.model.params.spec import ParamSpec
 

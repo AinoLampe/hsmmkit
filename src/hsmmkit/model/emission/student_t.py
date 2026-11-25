@@ -1,4 +1,4 @@
-"""Student-t emission: heavy-tailed per-state log-returns scaled by `dt`, with covariate links (E3-T02).
+"""Student-t emission: heavy-tailed per-state observations scaled by `dt`, with covariate links (E3-T02).
 
 `y_t | i ~ m_i(t) * dt_t + s_i(t) * sqrt(dt_t) * t_{nu_i}` with `nu_i > 2` and
 
@@ -6,13 +6,13 @@
     log s_i(t) = log s_i + delta_i . z^e_t      (log-scale link)
 
 `s_i` is a *scale*, not the standard deviation: `sd = s * sqrt(nu / (nu - 2))` (per unit `sqrt(dt)`).
-`m_i` is the per-clock-unit location of the log-return itself (no `-sigma^2 / 2` term, unlike GBM).
+`m_i` is the per-clock-unit location itself (no Itô term, unlike `gaussian(ito_correction=True)`).
 Parameters are in clock units (CLAUDE.md §3.1); no code here branches on the clock name.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 import jax.numpy as jnp
@@ -21,7 +21,7 @@ import numpy as np
 
 from regimekit.model.dists import sample_student_t, student_t_logpdf
 from regimekit.model.emission.base import Support
-from regimekit.model.emission.gbm import _coef_spec, _spec_from_paramcfg
+from regimekit.model.emission.gaussian import _coef_spec, _spec_from_paramcfg
 from regimekit.model.params.spec import ParamSpec
 from regimekit.plugins import register
 from regimekit.utils.errors import ConfigError
@@ -44,11 +44,15 @@ class StudentTFamily:
     """
 
     name: str = "student_t"
-    native_time: Literal["continuous", "discrete"] = "continuous"
+    native_time: Literal["continuous", "discrete"] = field(default="discrete", init=False)
     support: Support = "real"
-    scale_by_dt: bool = True
+    scale_by_dt: bool = False
     loc_idx: tuple[int, ...] = ()
     logscale_idx: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        """`native_time` follows `scale_by_dt`."""
+        object.__setattr__(self, "native_time", "continuous" if self.scale_by_dt else "discrete")
 
     # Parameters that carry a series axis `(N, M)`, or `(N,)` when shared across series (`ProductEmission`).
     series_param_names: ClassVar[tuple[str, ...]] = ("emission.m", "emission.s")
@@ -156,7 +160,9 @@ class StudentTFamily:
                 )
             else:
                 specs.append(_coef_spec(f"emission.{name}", n_states, len(idx)))
-        return cls(loc_idx=loc_idx, logscale_idx=logscale_idx), tuple(specs)
+        return cls(scale_by_dt=bool(cfg.scale_by_dt), loc_idx=loc_idx, logscale_idx=logscale_idx), tuple(
+            specs
+        )
 
     # --- protocol: numerics ------------------------------------------------------------------
 
@@ -179,9 +185,12 @@ class StudentTFamily:
         if self.logscale_idx and "emission.delta" in theta and z is not None:
             logscale_adj = z[:, jnp.asarray(self.logscale_idx)] @ theta["emission.delta"].T  # (T, N)
 
-        dt_ = dt[:, None, None]
-        loc_t = (m2[None, :, :] + loc_adj[:, :, None]) * dt_
-        scale_t = jnp.exp(jnp.log(s2)[None, :, :] + logscale_adj[:, :, None]) * jnp.sqrt(dt_)
+        loc_t = m2[None, :, :] + loc_adj[:, :, None]
+        scale_t = jnp.exp(jnp.log(s2)[None, :, :] + logscale_adj[:, :, None])
+        if self.scale_by_dt:
+            dt_ = dt[:, None, None]
+            loc_t = loc_t * dt_
+            scale_t = scale_t * jnp.sqrt(dt_)
         return loc_t, scale_t, theta["emission.nu"]
 
     def log_prob_series(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:

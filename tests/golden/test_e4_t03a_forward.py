@@ -22,7 +22,7 @@ def reference_inputs(
     d, sp, th = sc.data, sc.space, sc.theta
     y, dt = np.asarray(d.observations)[:, 0], np.asarray(d.dt)
     t_len = y.shape[0]
-    mu, sig = np.asarray(th["emission.mu"]), np.asarray(th["emission.sigma"])
+    mu, sig = np.asarray(th["emission.mean"]), np.asarray(th["emission.scale"])
     mean = (mu[None, :] - 0.5 * sig[None, :] ** 2) * dt[:, None]
     sd = sig[None, :] * np.sqrt(dt)[:, None]
     log_emis_n = norm.logpdf(y[:, None], mean, sd)  # (T, N)

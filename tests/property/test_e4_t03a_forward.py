@@ -78,8 +78,8 @@ def test_e4_t03a_uniform_initial_puts_zero_mass_beyond_phase_one() -> None:
 def _grad_case() -> tuple[Scenario, ModelSpec, ParamManager]:
     sc = make_scenario(2, [2, 2], 1, 30, seed=11)
     specs = (
-        ParamSpec("emission.mu", (2,), "real", "free", init=np.array([0.05, -0.02])),
-        ParamSpec("emission.sigma", (2,), "positive", "free", init=np.array([0.15, 0.4])),
+        ParamSpec("emission.mean", (2,), "real", "free", init=np.array([0.05, -0.02])),
+        ParamSpec("emission.scale", (2,), "positive", "free", init=np.array([0.15, 0.4])),
         ParamSpec("duration.rate", (2,), "positive", "free", init=np.array([5.0, 12.0])),
         ParamSpec("transition.pi_rows", (2, 1), "simplex_ref", "fixed", value=np.ones((2, 1))),
     )
@@ -113,7 +113,7 @@ def test_e4_t03a_jit_compiles_once_across_parameter_values() -> None:
     ENGINE.forward(sc.theta, sc.spec, sc.space, sc.data)
     before = expanded_hmm._forward_core._cache_size()
     th2 = dict(sc.theta)
-    th2["emission.mu"] = sc.theta["emission.mu"] + 0.01
+    th2["emission.mean"] = sc.theta["emission.mean"] + 0.01
     ENGINE.forward(th2, sc.spec, sc.space, sc.data)
     assert expanded_hmm._forward_core._cache_size() == before
 
@@ -122,7 +122,7 @@ def test_e4_t03a_non_finite_loglik_raises_numerical_error() -> None:
     """Guard outside jit: a NaN parameter yields `NumericalError`, not a NaN return."""
     sc = make_scenario(2, [1, 1], 1, 10, seed=0)
     bad = dict(sc.theta)
-    bad["emission.mu"] = jnp.array([jnp.nan, 0.0])
+    bad["emission.mean"] = jnp.array([jnp.nan, 0.0])
     with pytest.raises(NumericalError):
         ENGINE.loglik(bad, sc.spec, sc.space, sc.data)
 
@@ -136,6 +136,6 @@ def test_e4_t03a_nan_parameter_propagates_as_nan_under_jit() -> None:
     """A NaN inside the scan is not silently turned into -inf (it reaches `loglik` as NaN)."""
     sc = make_scenario(2, [2, 1], 1, 10, seed=0)
     bad = dict(sc.theta)
-    bad["emission.mu"] = jnp.array([jnp.nan, 0.0])
+    bad["emission.mean"] = jnp.array([jnp.nan, 0.0])
     _, loglik = expanded_hmm._forward_core(bad, sc.spec, sc.space, sc.data)
     assert bool(jnp.isnan(loglik))

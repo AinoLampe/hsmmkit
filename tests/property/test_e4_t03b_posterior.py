@@ -111,7 +111,7 @@ def test_e4_t03b_non_finite_output_raises_numerical_error() -> None:
     """AC6: a NaN parameter raises `NumericalError` at the public boundary."""
     sc = make_scenario(2, [2, 1], 1, 12, seed=0)
     bad = dict(sc.theta)
-    bad["emission.mu"] = jnp.array([jnp.nan, 0.0])
+    bad["emission.mean"] = jnp.array([jnp.nan, 0.0])
     with pytest.raises(NumericalError):
         ENGINE.forward_backward(bad, sc.spec, sc.space, sc.data)
 

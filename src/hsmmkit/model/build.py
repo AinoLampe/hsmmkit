@@ -130,6 +130,12 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
             f"scale_by_dt={m.emission.scale_by_dt} contradicts the family's own ({emission.scale_by_dt})",
             path="model.emission.scale_by_dt",
         )
+    ito = getattr(emission, "ito_correction", None)
+    if m.emission.ito_correction is not None and ito is not None and m.emission.ito_correction != ito:
+        raise ConfigError(
+            f"ito_correction={m.emission.ito_correction} contradicts the family's own ({ito})",
+            path="model.emission.ito_correction",
+        )
     if n_series > 1:  # per-series masks and shared parameters (E9-T01); M = 1 keeps the bare family
         emission = ProductEmission.of(emission, n_series)
 

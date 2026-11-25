@@ -14,7 +14,7 @@ from scipy.stats import t as student_t
 from regimekit.data.contracts import PreparedDataset
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine, _regime_log_emis
 from regimekit.model.build import build_model_spec
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.emission.product import ProductEmission
 from regimekit.model.emission.student_t import StudentTFamily
 from regimekit.model.params import ParamManager
@@ -33,14 +33,14 @@ def _data(m: int = 2, seed: int = 0, mask: np.ndarray | None = None) -> Prepared
 
 def _gbm_theta() -> dict[str, jnp.ndarray]:
     return {
-        "emission.mu": jnp.asarray([[0.08, 0.05], [-0.10, -0.05]]),
-        "emission.sigma": jnp.asarray(SIGMA_STAR),
+        "emission.mean": jnp.asarray([[0.08, 0.05], [-0.10, -0.05]]),
+        "emission.scale": jnp.asarray(SIGMA_STAR),
     }
 
 
 def _scipy_log_prob(y: np.ndarray, theta: dict[str, jnp.ndarray]) -> np.ndarray:
     """`(T, N, M)` GBM log-density from scipy, one series at a time (independent of the family code)."""
-    mu, sigma = np.asarray(theta["emission.mu"]), np.asarray(theta["emission.sigma"])
+    mu, sigma = np.asarray(theta["emission.mean"]), np.asarray(theta["emission.scale"])
     mean = (mu - 0.5 * sigma**2) * DT  # (N, M)
     sd = sigma * np.sqrt(DT)
     return norm.logpdf(y[:, None, :], loc=mean[None], scale=sd[None])
@@ -51,7 +51,7 @@ def _scipy_log_prob(y: np.ndarray, theta: dict[str, jnp.ndarray]) -> np.ndarray:
 
 def test_e9_t01_product_delegates_the_family_protocol() -> None:
     """The wrapper reports the base family's identity and layout, and equals the base when unmasked."""
-    base = GBMFamily()
+    base = GaussianFamily(scale_by_dt=True, ito_correction=True)
     prod = ProductEmission.of(base, n_series=2)
     assert (prod.name, prod.native_time, prod.support, prod.scale_by_dt) == (
         base.name,
@@ -60,7 +60,9 @@ def test_e9_t01_product_delegates_the_family_protocol() -> None:
         base.scale_by_dt,
     )
     assert [s.shape for s in prod.param_specs(2, 2, ())] == [s.shape for s in base.param_specs(2, 2, ())]
-    assert hash(prod) == hash(ProductEmission.of(GBMFamily(), n_series=2))
+    assert hash(prod) == hash(
+        ProductEmission.of(GaussianFamily(scale_by_dt=True, ito_correction=True), n_series=2)
+    )
 
     y = jnp.asarray(_data().observations)
     theta = _gbm_theta()
@@ -75,10 +77,10 @@ def test_e9_t01_product_delegates_the_family_protocol() -> None:
 def test_e9_t01_log_prob_is_the_sum_of_per_series_densities_bitwise(family: str) -> None:
     """`log_prob == sum_m log_prob_series[..., m]` bit for bit, so `M = 1` results cannot move."""
     if family == "gbm":
-        fam: GBMFamily | StudentTFamily = GBMFamily()
+        fam: GaussianFamily | StudentTFamily = GaussianFamily(scale_by_dt=True, ito_correction=True)
         theta = _gbm_theta()
     else:
-        fam = StudentTFamily()
+        fam = StudentTFamily(scale_by_dt=True)
         theta = {
             "emission.m": jnp.asarray([[0.08, 0.05], [-0.10, -0.05]]),
             "emission.s": jnp.asarray(SIGMA_STAR),
@@ -97,7 +99,7 @@ def test_e9_t01_log_prob_is_the_sum_of_per_series_densities_bitwise(family: str)
 
 def test_e9_t01_masking_series_2_leaves_series_1_intact() -> None:
     """AC3: at a step where series 2 is masked the row equals series 1's own density (scipy, 1e-10)."""
-    prod = ProductEmission.of(GBMFamily(), n_series=2)
+    prod = ProductEmission.of(GaussianFamily(scale_by_dt=True, ito_correction=True), n_series=2)
     theta = _gbm_theta()
     data = _data(seed=5)
     y = np.asarray(data.observations)
@@ -122,7 +124,7 @@ def test_e9_t01_masking_series_2_leaves_series_1_intact() -> None:
 
 def test_e9_t01_student_t_masked_density_matches_scipy() -> None:
     """The per-series masking is family-agnostic: Student-t against scipy (1e-10)."""
-    fam = StudentTFamily()
+    fam = StudentTFamily(scale_by_dt=True)
     prod = ProductEmission.of(fam, n_series=2)
     theta = {
         "emission.m": jnp.asarray([[0.08, 0.05], [-0.10, -0.05]]),
@@ -169,12 +171,12 @@ def test_e9_t01_loglik_ignores_a_series_that_is_masked_everywhere() -> None:
 
     man2 = ParamManager(spec2.param_specs)
     theta2 = dict(man2.unflatten(man2.init_u()))
-    theta2["emission.mu"] = jnp.asarray([[0.08, 7.0], [-0.10, -3.0]])
-    theta2["emission.sigma"] = jnp.asarray(SIGMA_STAR)
+    theta2["emission.mean"] = jnp.asarray([[0.08, 7.0], [-0.10, -3.0]])
+    theta2["emission.scale"] = jnp.asarray(SIGMA_STAR)
     theta1 = dict(theta2)
-    theta1["emission.mu"], theta1["emission.sigma"] = (
-        theta2["emission.mu"][:, :1],
-        theta2["emission.sigma"][:, :1],
+    theta1["emission.mean"], theta1["emission.scale"] = (
+        theta2["emission.mean"][:, :1],
+        theta2["emission.scale"][:, :1],
     )
 
     eng = ExpandedHMMEngine()
@@ -221,10 +223,10 @@ def test_e9_t01_build_wraps_only_multi_series_models() -> None:
     spec1 = build_model_spec(two_series_config(symbols=("A",)), _data(1))
     assert isinstance(spec2.emission, ProductEmission)
     assert spec2.emission.n_series == 2
-    assert isinstance(spec2.emission.base, GBMFamily)
-    assert isinstance(spec1.emission, GBMFamily)
+    assert isinstance(spec2.emission.base, GaussianFamily)
+    assert isinstance(spec1.emission, GaussianFamily)
     shapes = {s.name: s.shape for s in spec2.param_specs}
-    assert shapes["emission.mu"] == shapes["emission.sigma"] == (2, 2)
+    assert shapes["emission.mean"] == shapes["emission.scale"] == (2, 2)
 
 
 def test_e9_t01_per_series_false_shares_parameters_across_series() -> None:
@@ -232,13 +234,13 @@ def test_e9_t01_per_series_false_shares_parameters_across_series() -> None:
     data = _data(2)
     spec = build_model_spec(two_series_config(per_series=False), data)
     shapes = {s.name: s.shape for s in spec.param_specs}
-    assert shapes["emission.mu"] == shapes["emission.sigma"] == (2,)
+    assert shapes["emission.mean"] == shapes["emission.scale"] == (2,)
     free_shared = ParamManager(spec.param_specs).n_free
     free_own = ParamManager(build_model_spec(two_series_config(), data).param_specs).n_free
     assert free_own - free_shared == 4  # mu and sigma lose one column of two regimes each
 
     prod = spec.emission
-    theta = {"emission.mu": jnp.asarray([0.08, -0.10]), "emission.sigma": jnp.asarray([0.2, 0.4])}
+    theta = {"emission.mean": jnp.asarray([0.08, -0.10]), "emission.scale": jnp.asarray([0.2, 0.4])}
     dt = jnp.full((T_LEN,), DT)
     y = jnp.asarray(data.observations)
     got = np.asarray(prod.log_prob_series(y, dt, theta, None))  # type: ignore[attr-defined]
@@ -254,14 +256,14 @@ def test_e9_t01_increasing_sigma_needs_a_shared_parameter_for_several_series() -
     from regimekit.utils.errors import ConfigError
 
     cfg = two_series_config(per_series=True)
-    cfg.model.emission.params["sigma"] = cfg.model.emission.params["sigma"].model_copy(
+    cfg.model.emission.params["scale"] = cfg.model.emission.params["scale"].model_copy(
         update={"constraint": "increasing"}
     )
     with pytest.raises(ConfigError):
         build_model_spec(cfg, _data(2))
     cfg_shared = two_series_config(per_series=False)
-    cfg_shared.model.emission.params["sigma"] = cfg_shared.model.emission.params["sigma"].model_copy(
+    cfg_shared.model.emission.params["scale"] = cfg_shared.model.emission.params["scale"].model_copy(
         update={"constraint": "increasing"}
     )
     spec = build_model_spec(cfg_shared, _data(2))
-    assert {s.name: s.shape for s in spec.param_specs}["emission.sigma"] == (2,)
+    assert {s.name: s.shape for s in spec.param_specs}["emission.scale"] == (2,)

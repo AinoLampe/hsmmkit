@@ -8,7 +8,7 @@ import pytest
 
 from regimekit.model.duration.geometric import GeometricDuration
 from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition
 from regimekit.statespace.builders import build_expanded, initial_log_rho
@@ -26,7 +26,7 @@ def _spec(
     return ModelSpec(
         n_states=n_states,
         n_series=1,
-        emission=GBMFamily(),
+        emission=GaussianFamily(scale_by_dt=True, ito_correction=True),
         duration=duration,  # type: ignore[arg-type]
         transition=JumpTransition(mode=mode),  # type: ignore[arg-type]
         order=order,

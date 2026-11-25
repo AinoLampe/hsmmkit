@@ -104,7 +104,7 @@ def test_e5_t01_a_crafted_u_that_overflows_is_caught_by_check_finite() -> None:
     names = case.manager.names()
     u = case.u0
     for i, name in enumerate(names):
-        if name.startswith("emission.sigma"):
+        if name.startswith("emission.scale"):
             u = u.at[i].set(jnp.inf)  # sigma = +inf in every regime
     value, grad = objective.value_and_grad(u)
     assert not (np.isfinite(float(value)) and np.all(np.isfinite(np.asarray(grad))))

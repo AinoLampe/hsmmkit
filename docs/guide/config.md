@@ -168,6 +168,8 @@ Finance preparation defaults: log-returns of the prices, rows with a missing pri
 | `params` | `dict[str, FinanceParamCfg]` | required |
 | `covariates` | `EmissionCovariates` | section defaults |
 | `scale_by_dt` | `bool \| None` | `None` |
+| `ito_correction` | `bool \| None` | `None` |
+| `covariance` | `'diag'` | `'diag'` |
 | `per_series` | `bool` | `True` |
 
 ## `model.duration`
@@ -269,10 +271,12 @@ A parameter config that may state its initial mean sojourn in days.
 
 ## `model.emission.covariates`
 
-`model.emission.covariates:` — which covariates drive drift vs. log-volatility.
+`model.emission.covariates:` — which covariates drive the location and the log-scale.
 
 | Field | Type | Default |
 |---|---|---|
+| `mean` | `list[str]` | `[]` |
+| `log_scale` | `list[str]` | `[]` |
 | `drift` | `list[str]` | `[]` |
 | `log_vol` | `list[str]` | `[]` |
 

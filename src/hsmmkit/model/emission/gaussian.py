@@ -1,18 +1,20 @@
-"""GBM emission: per-state Gaussian log-returns scaled by `dt`, with covariate links (E3-T01).
+"""Gaussian emission with a diagonal covariance (E10-T06, FR-EM01 diag part, FR-EM06).
 
-`y_t | i ~ N((mu_i(t) - sigma_i(t)**2 / 2) * dt_t, sigma_i(t)**2 * dt_t)` with
+    y_t | i ~ N( m_i(t) s(dt_t),  diag(sigma_i(t)**2) s(dt_t) ),   s(dt) = dt if scale_by_dt else 1
 
-    mu_i(t)     = mu_i + gamma_i . z^e_t          (drift link)
-    log sigma_i(t) = log sigma_i + delta_i . z^e_t  (log-vol link)
+    m_i(t)        = mu_i + gamma_i . z^e_t - (sigma_i(t)**2 / 2 if ito_correction else 0)
+    log sigma_i(t) = log sigma_i + delta_i . z^e_t
 
-Parameters are in clock units (CLAUDE.md §3.1): annualized under `trading`/`calendar`, per step
-under `steps` (`dt == 1`, so the density is simply `N(mu_i - sigma_i**2 / 2, sigma_i**2)`) -- no
-code here branches on the clock name.
+With the defaults (`scale_by_dt=False`, `ito_correction=False`) this is the plain per-step Gaussian
+`N(mean_i, scale_i**2)`. With `scale_by_dt=True, ito_correction=True` the operations are the ones of the
+Part I GBM density, in the same order (a finance application registers that case as `gbm`).
+
+Parameters are in clock units (CLAUDE.md §3.1); no code here branches on the clock name.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 import jax.numpy as jnp
@@ -113,50 +115,82 @@ def _coef_spec(name: str, n_states: int, n_coef: int) -> ParamSpec:
     )
 
 
-@register("emission", "gbm")
+@register("emission", "gaussian")
 @dataclass(frozen=True)
-class GBMFamily:
-    """Per-state geometric Brownian motion emission (Gaussian log-returns).
+class GaussianFamily:
+    """Per-state Gaussian emission with diagonal covariance and optional covariate links.
 
-    `drift_idx`/`logvol_idx` select, by column, which entries of the `(T, K_e)` emission
-    covariate block `z` feed the drift/log-vol links (built by `from_config`).
+    `mean_idx`/`scale_idx` select, by column, which entries of the `(T, K_e)` emission covariate block `z`
+    feed the mean / log-scale links (built by `from_config`).
+
+    The class attributes name the family's vocabulary, so that a subclass (the finance `gbm`) keeps its own
+    parameter and config names on top of the same numerics.
     """
 
-    name: str = "gbm"
-    native_time: Literal["continuous", "discrete"] = "continuous"
+    name: str = "gaussian"
+    native_time: Literal["continuous", "discrete"] = field(default="discrete", init=False)
     support: Support = "real"
-    scale_by_dt: bool = True
-    drift_idx: tuple[int, ...] = ()
-    logvol_idx: tuple[int, ...] = ()
+    scale_by_dt: bool = False
+    ito_correction: bool = False
+    mean_idx: tuple[int, ...] = ()
+    scale_idx: tuple[int, ...] = ()
 
-    # Parameters that carry a series axis `(N, M)`, or `(N,)` when shared across series (`ProductEmission`).
-    series_param_names: ClassVar[tuple[str, ...]] = ("emission.mu", "emission.sigma")
+    # Names of the family's parameters / config keys; subclasses override them.
+    mean_param: ClassVar[str] = "mean"
+    scale_param: ClassVar[str] = "scale"
+    mean_cov_key: ClassVar[str] = "mean"
+    scale_cov_key: ClassVar[str] = "log_scale"
+    default_scale: ClassVar[float] = 1.0
+    fixed_options: ClassVar[bool] = False
+    """`True`: `scale_by_dt` and `ito_correction` are the class defaults and the config cannot change them."""
+
+    def __post_init__(self) -> None:
+        """`native_time` follows `scale_by_dt`."""
+        object.__setattr__(self, "native_time", "continuous" if self.scale_by_dt else "discrete")
+
+    @classmethod
+    def name_for_errors(cls) -> str:
+        """The family's registry name, for messages."""
+        return str(cls.__dataclass_fields__["name"].default)
+
+    @classmethod
+    def mean_name(cls) -> str:
+        """Full name of the location parameter (`emission.mean`)."""
+        return f"emission.{cls.mean_param}"
+
+    @classmethod
+    def scale_name(cls) -> str:
+        """Full name of the scale parameter (`emission.scale`)."""
+        return f"emission.{cls.scale_param}"
+
+    @property
+    def series_param_names(self) -> tuple[str, ...]:
+        """Parameters that carry a series axis `(N, M)`, or `(N,)` when shared across series."""
+        return (self.mean_name(), self.scale_name())
 
     # --- protocol: parameter layout ---------------------------------------------------------
 
     def param_specs(self, n_states: int, n_series: int, cov_names: tuple[str, ...]) -> tuple[ParamSpec, ...]:
-        """Default (config-free) specs: `mu`/`sigma` only, both free.
+        """Default (config-free) specs: location and scale only, both free.
 
-        The real, config-driven mapping (modes, values, priors, covariate links) is
-        `GBMFamily.from_config` (CLAUDE.md §3.3's "every family gets a `from_config`" pattern);
-        `param_specs` exists to satisfy `EmissionFamily` for callers with no project config.
+        The config-driven mapping (modes, values, priors, covariate links) is `from_config`.
         """
         del cov_names
-        mu = ParamSpec(
-            name="emission.mu",
+        mean = ParamSpec(
+            name=self.mean_name(),
             shape=(n_states, n_series),
             domain="real",
             mode="free",
             init=np.zeros((n_states, n_series)),
         )
-        sigma = ParamSpec(
-            name="emission.sigma",
+        scale = ParamSpec(
+            name=self.scale_name(),
             shape=(n_states, n_series),
             domain="positive",
             mode="free",
-            init=np.full((n_states, n_series), 0.1),
+            init=np.full((n_states, n_series), self.default_scale),
         )
-        return (mu, sigma)
+        return (mean, scale)
 
     @classmethod
     def from_config(
@@ -165,98 +199,111 @@ class GBMFamily:
         n_states: int,
         n_series: int,
         cov_names: tuple[str, ...],
-    ) -> tuple[GBMFamily, tuple[ParamSpec, ...]]:
-        """Map `model.emission` config to a configured `GBMFamily` and its `ParamSpec`s."""
+    ) -> tuple[GaussianFamily, tuple[ParamSpec, ...]]:
+        """Map `model.emission` config to a configured family and its `ParamSpec`s."""
+        for required in (cls.mean_param, cls.scale_param):
+            if required not in cfg.params:
+                raise ConfigError(
+                    f"{cls.name_for_errors()} emission requires params.{required}",
+                    path=f"model.emission.params.{required}",
+                )
+        covs = cfg.covariates
+        for foreign in {"mean", "log_scale", "drift", "log_vol"} - {cls.mean_cov_key, cls.scale_cov_key}:
+            if getattr(covs, foreign):
+                raise ConfigError(
+                    f"the {cls.name_for_errors()} emission takes the covariate keys "
+                    f"'{cls.mean_cov_key}' and '{cls.scale_cov_key}', not '{foreign}'",
+                    path=f"model.emission.covariates.{foreign}",
+                )
+        mean_cov = getattr(covs, cls.mean_cov_key)
+        scale_cov = getattr(covs, cls.scale_cov_key)
         try:
-            drift_idx = tuple(cov_names.index(c) for c in cfg.covariates.drift)
+            mean_idx = tuple(cov_names.index(c) for c in mean_cov)
         except ValueError as exc:
-            raise ConfigError(str(exc), path="model.emission.covariates.drift") from exc
+            raise ConfigError(str(exc), path=f"model.emission.covariates.{cls.mean_cov_key}") from exc
         try:
-            logvol_idx = tuple(cov_names.index(c) for c in cfg.covariates.log_vol)
+            scale_idx = tuple(cov_names.index(c) for c in scale_cov)
         except ValueError as exc:
-            raise ConfigError(str(exc), path="model.emission.covariates.log_vol") from exc
+            raise ConfigError(str(exc), path=f"model.emission.covariates.{cls.scale_cov_key}") from exc
 
-        family = cls(drift_idx=drift_idx, logvol_idx=logvol_idx)
+        if cls.fixed_options:
+            family = cls(mean_idx=mean_idx, scale_idx=scale_idx)
+        else:
+            family = cls(
+                scale_by_dt=bool(cfg.scale_by_dt),
+                ito_correction=bool(cfg.ito_correction),
+                mean_idx=mean_idx,
+                scale_idx=scale_idx,
+            )
 
+        flat = not cfg.per_series
         specs = [
             _spec_from_paramcfg(
-                "emission.mu",
-                cfg.params["mu"],
+                cls.mean_name(),
+                cfg.params[cls.mean_param],
                 n_states=n_states,
                 n_series=n_series,
                 domain="real",
                 default_init=0.0,
-                flat=not cfg.per_series,
+                flat=flat,
             ),
             _spec_from_paramcfg(
-                "emission.sigma",
-                cfg.params["sigma"],
+                cls.scale_name(),
+                cfg.params[cls.scale_param],
                 n_states=n_states,
                 n_series=n_series,
                 domain="positive",
-                default_init=0.1,
-                flat=not cfg.per_series,
+                default_init=cls.default_scale,
+                flat=flat,
             ),
         ]
-        if drift_idx:
-            if "gamma" in cfg.params:
+        for coef, idx in (("gamma", mean_idx), ("delta", scale_idx)):
+            if not idx:
+                continue
+            if coef in cfg.params:
                 specs.append(
                     _spec_from_paramcfg(
-                        "emission.gamma",
-                        cfg.params["gamma"],
+                        f"emission.{coef}",
+                        cfg.params[coef],
                         n_states=n_states,
-                        n_series=len(drift_idx),
+                        n_series=len(idx),
                         domain="real",
                         default_init=0.0,
                     )
                 )
             else:
-                specs.append(_coef_spec("emission.gamma", n_states, len(drift_idx)))
-        if logvol_idx:
-            if "delta" in cfg.params:
-                specs.append(
-                    _spec_from_paramcfg(
-                        "emission.delta",
-                        cfg.params["delta"],
-                        n_states=n_states,
-                        n_series=len(logvol_idx),
-                        domain="real",
-                        default_init=0.0,
-                    )
-                )
-            else:
-                specs.append(_coef_spec("emission.delta", n_states, len(logvol_idx)))
+                specs.append(_coef_spec(f"emission.{coef}", n_states, len(idx)))
         return family, tuple(specs)
 
     # --- protocol: numerics ------------------------------------------------------------------
 
     def _mean_sd(self, dt: Array, theta: dict[str, Array], z: Array | None) -> tuple[Array, Array]:
-        """`(T, N, M)` mean and sd of the per-step, per-regime log-return density."""
-        mu = theta["emission.mu"]
-        sigma = theta["emission.sigma"]
+        """`(T, N, M)` mean and sd of the per-step, per-regime density."""
+        mu = theta[self.mean_name()]
+        sigma = theta[self.scale_name()]
         mu2 = mu[:, None] if mu.ndim == 1 else mu  # (N, M)
         sigma2 = sigma[:, None] if sigma.ndim == 1 else sigma  # (N, M)
-        n_states, n_series = mu2.shape
+        n_states = mu2.shape[0]
         t = dt.shape[0]
 
-        drift_adj = jnp.zeros((t, n_states))
-        if self.drift_idx and "emission.gamma" in theta and z is not None:
-            z_drift = z[:, jnp.asarray(self.drift_idx)]  # (T, K_drift)
-            drift_adj = z_drift @ theta["emission.gamma"].T  # (T, N)
+        mean_adj = jnp.zeros((t, n_states))
+        if self.mean_idx and "emission.gamma" in theta and z is not None:
+            z_mean = z[:, jnp.asarray(self.mean_idx)]  # (T, K_mean)
+            mean_adj = z_mean @ theta["emission.gamma"].T  # (T, N)
 
-        logvol_adj = jnp.zeros((t, n_states))
-        if self.logvol_idx and "emission.delta" in theta and z is not None:
-            z_logvol = z[:, jnp.asarray(self.logvol_idx)]  # (T, K_logvol)
-            logvol_adj = z_logvol @ theta["emission.delta"].T  # (T, N)
+        logscale_adj = jnp.zeros((t, n_states))
+        if self.scale_idx and "emission.delta" in theta and z is not None:
+            z_scale = z[:, jnp.asarray(self.scale_idx)]  # (T, K_logscale)
+            logscale_adj = z_scale @ theta["emission.delta"].T  # (T, N)
 
-        mu_t = mu2[None, :, :] + drift_adj[:, :, None]  # (T, N, M)
-        sigma_t = jnp.exp(jnp.log(sigma2)[None, :, :] + logvol_adj[:, :, None])  # (T, N, M)
+        mu_t = mu2[None, :, :] + mean_adj[:, :, None]  # (T, N, M)
+        sigma_t = jnp.exp(jnp.log(sigma2)[None, :, :] + logscale_adj[:, :, None])  # (T, N, M)
 
-        dt_ = dt[:, None, None]
-        mean_t = (mu_t - 0.5 * sigma_t**2) * dt_
-        sd_t = sigma_t * jnp.sqrt(dt_)
-        del n_series
-        return mean_t, sd_t
+        loc = mu_t - 0.5 * sigma_t**2 if self.ito_correction else mu_t
+        if self.scale_by_dt:
+            dt_ = dt[:, None, None]
+            return loc * dt_, sigma_t * jnp.sqrt(dt_)
+        return loc, sigma_t
 
     def log_prob_series(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
         """`(T, N, M)` per-regime, per-series log-density (E9-T01: `ProductEmission` masks per series)."""
@@ -282,11 +329,11 @@ class GBMFamily:
         return sample_normal(key, mean_sel, sd_sel, shape=mean_sel.shape)
 
     def init_carry(self) -> object:
-        """GBM has no path-dependent state."""
+        """No path-dependent state."""
         return None
 
     def step_carry(self, carry: object, y_t: Array, theta: dict[str, Array]) -> object:
-        """Identity: GBM has no recursive carry to advance."""
+        """Identity: no recursive carry to advance."""
         del y_t, theta
         return carry
 
@@ -294,18 +341,19 @@ class GBMFamily:
         """Weighted sums for the closed-form M-step (E5-T06), covariate-free, single series.
 
         `y (T, 1)` (or `(T,)`), `dt (T,)`, `gamma (T, N)` regime weights (zero at unobserved steps).
-        With `m_i = mu_i - sigma_i**2 / 2` the maximum-likelihood estimates are
-        `m_i = w_y / w_dt` and `sigma_i**2 = (w_y2_dt - 2 m_i w_y + m_i**2 w_dt) / w`, then `mu_i = m_i +
-        sigma_i**2 / 2` (the pair `(m, sigma)` is a bijective reparameterization of `(mu, sigma)`).
+        With `s = dt` if `scale_by_dt` else `1` and `m_i = mean_i - scale_i**2 / 2` (Itô) or `mean_i`, the
+        maximum-likelihood estimates are `m_i = w_y / w_s` and
+        `scale_i**2 = (w_y2_s - 2 m_i w_y + m_i**2 w_s) / w`.
 
         Returns:
-            `(N,)` arrays `w = sum w_t`, `w_dt = sum w_t dt_t`, `w_y = sum w_t y_t`,
-            `w_y2_dt = sum w_t y_t**2 / dt_t`.
+            `(N,)` arrays `w = sum w_t`, `w_dt = sum w_t s_t`, `w_y = sum w_t y_t`,
+            `w_y2_dt = sum w_t y_t**2 / s_t`.
         """
         y1 = y[:, 0] if y.ndim == 2 else y
+        s = dt if self.scale_by_dt else jnp.ones_like(dt)
         return {
             "w": jnp.sum(gamma, axis=0),
-            "w_dt": jnp.sum(gamma * dt[:, None], axis=0),
+            "w_dt": jnp.sum(gamma * s[:, None], axis=0),
             "w_y": jnp.sum(gamma * y1[:, None], axis=0),
-            "w_y2_dt": jnp.sum(gamma * (y1**2 / dt)[:, None], axis=0),
+            "w_y2_dt": jnp.sum(gamma * (y1**2 / s)[:, None], axis=0),
         }

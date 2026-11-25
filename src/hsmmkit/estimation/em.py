@@ -1,16 +1,17 @@
-"""EM (Baum-Welch) cross-check for the covariate-free GBM / geometric-or-negbin model (E5-T06, v1.x).
+"""EM (Baum-Welch) cross-check for the covariate-free Gaussian / geometric-or-negbin model (E5-T06, v1.x).
 
-Scope (anything else raises `ConfigError`): `GBMFamily` without covariate links, a single series, the
-expanded engine, `transition.order == 1` with `JumpTransition` (`transition.pi_rows`, no covariates), a
-geometric or negative-binomial phase duration (`duration.rate`, no covariates), `initial: uniform`, and a
-regular time grid. Parameters in `prior` mode are estimated by maximum likelihood (EM ignores priors).
+Scope (anything else raises `ConfigError`): `GaussianFamily` (or an alias) without covariate links, a
+single series, the expanded engine, `transition.order == 1` with `JumpTransition`
+(`transition.pi_rows`, no covariates), a geometric or negative-binomial phase duration (`duration.rate`,
+no covariates), `initial: uniform`, and a regular time grid. Parameters in `prior` mode are estimated by
+maximum likelihood (EM ignores priors).
 
 E-step: `forward_backward` gives the smoothed posterior; the expected transition counts `Xi = sum_t xi_t`,
 `xi_t(s, s') = alpha_{t-1}(s) A_t(s, s') ell_t(s') beta_t(s') / L`, are summed in one `lax.scan` as an
 `(S, S)` matrix (never `(T, S, S)`).
 
 M-step (closed form):
-* emission: `GBMFamily.sufficient_stats` -> `m_i = w_y / w_dt`, `sigma_i^2 = (...) / w`,
+* emission: `GaussianFamily.sufficient_stats` -> `m_i = w_y / w_dt`, `sigma_i^2 = (...) / w`,
   `mu_i = m_i + sigma_i^2 / 2`;
 * advance probability per regime `a_i = (expected advance + exit counts) / (those + expected stay counts)`
   summed over the regime's phases, `rate_i = -log(1 - a_i) / dt`;
@@ -33,7 +34,7 @@ from regimekit.engine.expanded_hmm import ExpandedHMMEngine, _regime_log_emis
 from regimekit.estimation.init import observed_rows, rollvol_kmeans
 from regimekit.model.duration.geometric import GeometricDuration
 from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.params.manager import ParamManager
 from regimekit.model.transition import JumpTransition
 from regimekit.statespace.builders import build_expanded
@@ -52,7 +53,7 @@ if TYPE_CHECKING:
 _COVARIATE_PARAMS = frozenset(
     {"emission.gamma", "emission.delta", "duration.c", "transition.a", "transition.b"}
 )
-_REQUIRED = ("emission.mu", "emission.sigma", "duration.rate", "transition.pi_rows")
+_REQUIRED = ("duration.rate", "transition.pi_rows")
 MONOTONE_SLACK = 1e-8  # relative loglik decrease tolerated before `debug` raises (rounding)
 
 
@@ -78,23 +79,23 @@ class EMResult:
 
 
 def check_em_supported(spec: ModelSpec, data: PreparedDataset) -> None:
-    """Raise `ConfigError` unless `spec` is the covariate-free GBM / geometric-or-negbin jump model."""
-    if not isinstance(spec.emission, GBMFamily):
+    """Raise `ConfigError` unless `spec` is the covariate-free Gaussian / geometric-or-negbin jump model."""
+    if not isinstance(spec.emission, GaussianFamily):
         raise ConfigError(
-            f"EM supports the gbm emission family only, got {type(spec.emission).__name__}",
+            f"EM supports the gaussian emission family only, got {type(spec.emission).__name__}",
             path="model.emission.family",
         )
     names = {s.name for s in spec.param_specs}
-    if spec.emission.drift_idx or spec.emission.logvol_idx or (names & _COVARIATE_PARAMS):
+    if spec.emission.mean_idx or spec.emission.scale_idx or (names & _COVARIATE_PARAMS):
         raise ConfigError("EM does not support covariates", path="model.emission.covariates")
     if getattr(spec.duration, "cov_idx", ()) or getattr(spec.transition, "cov_idx", ()):
         raise ConfigError("EM does not support covariates", path="model.duration.covariates")
     if spec.duration_conditioning != "current":
         raise ConfigError("EM supports duration_conditioning 'current' only", path="model.transition")
-    if any(s.name == "emission.sigma" and s.constraint == "increasing" for s in spec.param_specs):
+    if any(s.name == spec.emission.scale_name() and s.constraint == "increasing" for s in spec.param_specs):
         raise ConfigError(
-            "EM does not keep an 'increasing' sigma ordering; use a free sigma (MAP applies the ordering)",
-            path="model.emission.params.sigma",
+            "EM does not keep an 'increasing' scale ordering; use a free scale (MAP applies the ordering)",
+            path=f"model.emission.params.{spec.emission.scale_param}",
         )
     if spec.engine != "expanded" or spec.order != 1 or spec.initial != "uniform" or spec.n_series != 1:
         raise ConfigError(
@@ -107,12 +108,13 @@ def check_em_supported(spec: ModelSpec, data: PreparedDataset) -> None:
         raise ConfigError(
             "EM supports geometric/negbin durations with a jump transition", path="model.duration"
         )
-    missing = [n for n in _REQUIRED if n not in names]
+    required = (spec.emission.mean_name(), spec.emission.scale_name(), *_REQUIRED)
+    missing = [n for n in required if n not in names]
     if missing:
         raise ConfigError(f"EM needs the parameters {missing}", path="model")
     for s in spec.param_specs:
         modes = (s.mode,) if isinstance(s.mode, str) else s.mode
-        if s.name in _REQUIRED and any(m not in ("free", "prior") for m in modes):
+        if s.name in required and any(m not in ("free", "prior") for m in modes):
             raise ConfigError(f"EM estimates free parameters only, {s.name} has mode {s.mode!r}", path=s.name)
     dt = np.asarray(data.dt)
     if is_irregular(dt) or not np.allclose(dt, dt[0], rtol=1e-9, atol=0.0):
@@ -163,7 +165,9 @@ def _m_step(
 
     # emission
     gamma = (smoothed @ idx.collapse) * jnp.all(data.mask, axis=-1)[:, None]  # (T, N), observed steps only
-    st = spec.emission.sufficient_stats(data.observations, data.dt, gamma)
+    emis = spec.emission
+    assert isinstance(emis, GaussianFamily)
+    st = emis.sufficient_stats(data.observations, data.dt, gamma)
     assert isinstance(st, dict)
     if not bool(jnp.all(st["w"] > 0)):
         raise NumericalError(
@@ -172,9 +176,10 @@ def _m_step(
     m = st["w_y"] / st["w_dt"]
     var = (st["w_y2_dt"] - 2.0 * m * st["w_y"] + m**2 * st["w_dt"]) / st["w"]
     if not bool(jnp.all(var > 0)):
-        raise NumericalError("degenerate (zero) variance in an EM M-step", path="emission.sigma")
-    new["emission.sigma"] = jnp.sqrt(var).reshape(shapes["emission.sigma"])
-    new["emission.mu"] = (m + 0.5 * var).reshape(shapes["emission.mu"])
+        raise NumericalError("degenerate (zero) variance in an EM M-step", path=emis.scale_name())
+    mean_name, scale_name = emis.mean_name(), emis.scale_name()
+    new[scale_name] = jnp.sqrt(var).reshape(shapes[scale_name])
+    new[mean_name] = (m + 0.5 * var if emis.ito_correction else m).reshape(shapes[mean_name])
 
     # advance probability and jump rows from the expected transition counts
     xi_np = np.asarray(xi)
@@ -232,7 +237,7 @@ def em_fit(
         debug: raise `NumericalError` if the log-likelihood decreases (beyond rounding).
 
     Raises:
-        ConfigError: unsupported model (covariates, non-GBM, explicit engine, ...).
+        ConfigError: unsupported model (covariates, non-Gaussian, explicit engine, ...).
         NumericalError: a non-finite log-likelihood, or a decrease under `debug`.
     """
     check_em_supported(spec, data)

@@ -12,7 +12,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition, build_memory_layout
 from regimekit.statespace.builders import build_expanded, initial_log_rho
@@ -22,7 +22,7 @@ def _spec(n_states: int, order: int, duration: object, initial: str = "uniform")
     return ModelSpec(
         n_states=n_states,
         n_series=1,
-        emission=GBMFamily(),
+        emission=GaussianFamily(scale_by_dt=True, ito_correction=True),
         duration=duration,  # type: ignore[arg-type]
         transition=JumpTransition(),
         order=order,

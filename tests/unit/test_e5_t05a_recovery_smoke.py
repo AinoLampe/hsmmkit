@@ -43,9 +43,9 @@ def test_e5_t05a_recovery_run_scenario_well_formed(name: str) -> None:
 
 
 def test_e5_t05a_recovery_mu_fixed_scenario_has_no_mu_checks() -> None:
-    """Scenario 6 (`fixed_drift`): `emission.mu` is fixed, so no `mu` tolerance check is emitted."""
+    """Scenario 6 (`fixed_drift`): `emission.mean` is fixed, so no `mu` tolerance check is emitted."""
     report = run_scenario("fixed_drift", seed=0, t_len=_SMOKE_T)
-    assert not any(c.name.startswith("emission.mu") for c in report.checks)
+    assert not any(c.name.startswith("emission.mean") for c in report.checks)
 
 
 def test_e5_t05a_recovery_empirical_se_fills_in_missing_hessian() -> None:
@@ -55,7 +55,7 @@ def test_e5_t05a_recovery_empirical_se_fills_in_missing_hessian() -> None:
     """
     suite = run_recovery_suite("explicit_gamma", seeds=(0, 1), t_len=_SMOKE_T)
     assert len(suite.reports) == 2
-    mu_checks = [c for r in suite.reports for c in r.checks if c.name.startswith("emission.mu")]
+    mu_checks = [c for r in suite.reports for c in r.checks if c.name.startswith("emission.mean")]
     assert mu_checks
     assert all(c.evaluated for c in mu_checks)
     assert all(c.se is not None for c in mu_checks)
@@ -83,8 +83,8 @@ def test_e5_t05a_recovery_t_len_env_var_used_when_not_passed(monkeypatch: pytest
 def _report(seed: int, failing: set[str], skip_mu: bool = False) -> RecoveryReport:
     """A fabricated report with one check per category; the categories in `failing` fail."""
     names = {
-        "sigma": "emission.sigma[0]",
-        "mu": "emission.mu[0]",
+        "sigma": "emission.scale[0]",
+        "mu": "emission.mean[0]",
         "mean_sojourn": "mean_sojourn[0]",
         "jump": "pi[0->1](r=0)",
         "coefficient": "transition.b[0]",
@@ -100,8 +100,8 @@ def test_e5_t05a_recovery_check_categories() -> None:
     """Check names map to the Appendix D tolerance categories."""
     cats = {c.name: c.category for c in _report(0, set()).checks}
     assert cats == {
-        "emission.sigma[0]": "sigma",
-        "emission.mu[0]": "mu",
+        "emission.scale[0]": "sigma",
+        "emission.mean[0]": "mu",
         "mean_sojourn[0]": "mean_sojourn",
         "pi[0->1](r=0)": "jump",
         "transition.b[0]": "coefficient",

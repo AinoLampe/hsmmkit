@@ -127,7 +127,7 @@ def test_e10_t02b_unknown_emission_family_lists_registered_names() -> None:
     with pytest.raises(ConfigError) as err:
         parse_project_config(raw, FinanceConfig)
     assert err.value.path == "model.emission.family"
-    assert "gbm (regimekit.core)" in str(err.value)
+    assert "gbm (regimekit.finance)" in str(err.value)
     assert "student_t (regimekit.core)" in str(err.value)
 
 
@@ -199,7 +199,7 @@ def test_e10_t02b_json_schema_export_contains_registered_names_as_enums(tmp_path
     out = tmp_path / "schema.json"
     export_json_schema(out, FinanceConfig)
     defs = json.loads(out.read_text(encoding="utf-8"))["$defs"]
-    assert defs["FinanceEmissionCfg"]["properties"]["family"]["enum"] == ["gbm", "student_t"]
+    assert defs["FinanceEmissionCfg"]["properties"]["family"]["enum"] == ["gaussian", "gbm", "student_t"]
     assert "nonparametric" in defs["FinanceDurationCfg"]["properties"]["family"]["enum"]
     assert defs["CovariateForecasterCfg"]["properties"]["type"]["enum"] == [
         "ar",

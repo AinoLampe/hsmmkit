@@ -3,7 +3,7 @@
 CLAUDE.md §3.2 places the harness here (not `tests/recovery/harness.py`): it is pure (no pytest, no
 file I/O), so `tests/recovery/test_e5_t05a_recovery.py` (`-m slow`) and E5-T05b's `selftest` CLI both
 import it directly. Six scenarios (concept Appendix D / `E5-T05a` ticket §Context), `N=3`, daily
-(`clock="trading"`) grid, `constraint="increasing"` on `emission.sigma` in every scenario (an
+(`clock="trading"`) grid, `constraint="increasing"` on `emission.scale` in every scenario (an
 identifiability guard, so the MAP fit never needs post-hoc relabelling). Models are assembled by hand
 (`tests/helpers/objective_fixtures.py`'s pattern) since `model/build.py` (CLAUDE.md §3.3) builds from a
 project *config*, not from arbitrary truth parameters.
@@ -36,7 +36,7 @@ from regimekit.estimation.results import FitResult
 from regimekit.inference.simulate import simulate_dataset
 from regimekit.model.duration.gamma import GammaDuration
 from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.params.manager import ParamManager, Params
 from regimekit.model.params.priors import DirichletPrior, NormalPrior
 from regimekit.model.params.spec import Mode, ParamSpec
@@ -158,7 +158,7 @@ def _build_spec_and_truth(scenario: Scenario) -> tuple[ModelSpec, Params]:
     mu_mode: Mode = "fixed" if scenario.mu_fixed else "free"
     specs.append(
         ParamSpec(
-            name="emission.mu",
+            name="emission.mean",
             shape=(n, 1),
             domain="real",
             mode=mu_mode,
@@ -168,7 +168,7 @@ def _build_spec_and_truth(scenario: Scenario) -> tuple[ModelSpec, Params]:
     )
     specs.append(
         ParamSpec(
-            name="emission.sigma",
+            name="emission.scale",
             shape=(n,),
             domain="positive",
             mode="free",
@@ -176,9 +176,9 @@ def _build_spec_and_truth(scenario: Scenario) -> tuple[ModelSpec, Params]:
             constraint="increasing",
         )
     )
-    theta["emission.mu"] = jnp.asarray(MU_STAR[:, None])
-    theta["emission.sigma"] = jnp.asarray(SIGMA_STAR)
-    emis = GBMFamily()
+    theta["emission.mean"] = jnp.asarray(MU_STAR[:, None])
+    theta["emission.scale"] = jnp.asarray(SIGMA_STAR)
+    emis = GaussianFamily(scale_by_dt=True, ito_correction=True)
 
     # duration: phase negbin (expanded engine) or explicit gamma (explicit engine).
     dur: NegBinDuration | GammaDuration
@@ -388,9 +388,9 @@ class ParamCheck:
     @property
     def category(self) -> str:
         """Tolerance category (concept Appendix D row): sigma, mu, mean_sojourn, jump or coefficient."""
-        if self.name.startswith("emission.sigma"):
+        if self.name.startswith(("emission.scale", "emission.sigma")):
             return "sigma"
-        if self.name.startswith("emission.mu"):
+        if self.name.startswith(("emission.mean", "emission.mu")):
             return "mu"
         if self.name.startswith("mean_sojourn"):
             return "mean_sojourn"
@@ -426,13 +426,13 @@ class RecoveryReport:
 
 
 def _sigma_checks(theta_hat: Params) -> list[ParamCheck]:
-    hat = np.asarray(theta_hat["emission.sigma"])
+    hat = np.asarray(theta_hat["emission.scale"])
     out = []
     for i in range(N_STATES):
         rel = abs(hat[i] - SIGMA_STAR[i]) / SIGMA_STAR[i]
         out.append(
             ParamCheck(
-                f"emission.sigma[{i}]",
+                f"emission.scale[{i}]",
                 float(SIGMA_STAR[i]),
                 float(hat[i]),
                 None,
@@ -445,8 +445,8 @@ def _sigma_checks(theta_hat: Params) -> list[ParamCheck]:
 
 
 def _mu_checks(theta_hat: Params, se: dict[str, np.ndarray] | None) -> list[ParamCheck]:
-    hat = np.asarray(theta_hat["emission.mu"]).reshape(-1)
-    se_mu = None if se is None else np.asarray(se.get("emission.mu")).reshape(-1)
+    hat = np.asarray(theta_hat["emission.mean"]).reshape(-1)
+    se_mu = None if se is None else np.asarray(se.get("emission.mean")).reshape(-1)
     out = []
     for i in range(N_STATES):
         se_i = None if se_mu is None else float(se_mu[i])
@@ -454,7 +454,7 @@ def _mu_checks(theta_hat: Params, se: dict[str, np.ndarray] | None) -> list[Para
         passed = se_i is not None and abs(hat[i] - MU_STAR[i]) <= SE_MULT * se_i
         out.append(
             ParamCheck(
-                f"emission.mu[{i}]",
+                f"emission.mean[{i}]",
                 float(MU_STAR[i]),
                 float(hat[i]),
                 se_i,

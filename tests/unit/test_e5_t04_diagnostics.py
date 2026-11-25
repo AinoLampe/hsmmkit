@@ -17,7 +17,7 @@ from regimekit.estimation.report import diagnose, std_errors
 from regimekit.estimation.results import FitResult
 from regimekit.inference.simulate import simulate_dataset
 from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.params.manager import ParamManager, Params
 from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition
@@ -55,7 +55,7 @@ def _four_state_case(
 ) -> tuple[ModelSpec, StateSpace, InferenceEngine, PreparedDataset, Params, Array]:
     """A 4-state GBM/geometric model where states 2, 3 fit the (2-state-like) data very poorly."""
     n = 4
-    emis = GBMFamily()
+    emis = GaussianFamily(scale_by_dt=True, ito_correction=True)
     dur = GeometricDuration()
     trans = JumpTransition()
     emis_specs = list(emis.param_specs(n, 1, ()))
@@ -64,8 +64,8 @@ def _four_state_case(
 
     mu = np.array([[0.0], [0.0], [10.0], [-10.0]])
     sigma = np.array([[0.15], [0.15], [5.0], [5.0]])
-    emis_specs = [dataclasses.replace(s, init=mu) if s.name == "emission.mu" else s for s in emis_specs]
-    emis_specs = [dataclasses.replace(s, init=sigma) if s.name == "emission.sigma" else s for s in emis_specs]
+    emis_specs = [dataclasses.replace(s, init=mu) if s.name == "emission.mean" else s for s in emis_specs]
+    emis_specs = [dataclasses.replace(s, init=sigma) if s.name == "emission.scale" else s for s in emis_specs]
 
     spec = ModelSpec(
         n_states=n,
@@ -135,7 +135,7 @@ def test_e5_t04_ordering_check_flags_shuffled_sigma() -> None:
     """AC1: a shuffled (non-ascending) sigma sets `ordering_check=False` and flags label-switching risk."""
     spec, space, engine, data, theta, u0 = _four_state_case(t_len=60)
     theta = dict(theta)
-    theta["emission.sigma"] = jnp.asarray(theta["emission.sigma"])[::-1]
+    theta["emission.scale"] = jnp.asarray(theta["emission.scale"])[::-1]
 
     fit = _fake_fit(spec, theta, u0, [{"objective": 1.0, "loglik": -1.0}])
     diag = diagnose(fit, spec, space, engine, data)
@@ -157,7 +157,7 @@ def test_e5_t04_pit_true_model_passes_wrong_sigma_fails() -> None:
     assert diag_true["pit_ks_pvalue"]["value"] > 0.05
 
     theta_wrong = dict(theta_true)
-    theta_wrong["emission.sigma"] = jnp.asarray(theta_true["emission.sigma"]) * 5.0
+    theta_wrong["emission.scale"] = jnp.asarray(theta_true["emission.scale"]) * 5.0
     fit_wrong = _fake_fit(case.spec, theta_wrong, case.u0, [{"objective": 1.0, "loglik": -1.0}])
     diag_wrong = diagnose(fit_wrong, case.spec, case.space, case.engine, data)
     assert diag_wrong["pit_ks_pvalue"]["value"] < 0.01

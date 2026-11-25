@@ -64,8 +64,8 @@ def test_e4_t05_p_matches_appendix_b_n_free() -> None:
             init=np.full((n, n - 1), 1.0 / (n - 1)),
         ),
         ParamSpec(name="duration.rate", shape=(n,), domain="positive", mode="free", init=np.ones(n)),
-        ParamSpec(name="emission.mu", shape=(n,), domain="real", mode="free", init=np.ones(n)),
-        ParamSpec(name="emission.sigma", shape=(n,), domain="positive", mode="free", init=np.ones(n)),
+        ParamSpec(name="emission.mean", shape=(n,), domain="real", mode="free", init=np.ones(n)),
+        ParamSpec(name="emission.scale", shape=(n,), domain="positive", mode="free", init=np.ones(n)),
     )
     p = ParamManager(specs).n_free
     assert p == 20

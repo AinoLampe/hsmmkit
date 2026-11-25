@@ -79,7 +79,7 @@ def test_e7_t02b_padding_rows_no_longer_bias_the_data_driven_init() -> None:
     biased = rollvol_kmeans(padded, case.spec, key)
     for name in plain:
         np.testing.assert_array_equal(np.asarray(via_observed[name]), np.asarray(plain[name]), err_msg=name)
-    assert not np.allclose(np.asarray(biased["emission.sigma"]), np.asarray(plain["emission.sigma"]))
+    assert not np.allclose(np.asarray(biased["emission.scale"]), np.asarray(plain["emission.scale"]))
 
 
 def _cfg(restarts: int = 1) -> EstimationSection:

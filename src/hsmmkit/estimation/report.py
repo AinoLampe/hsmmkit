@@ -40,7 +40,7 @@ OCCUPANCY_WARN_THRESHOLD = 0.02
 DISPERSION_WARN_THRESHOLD = 0.01
 _PIT_EPS = 1e-6
 
-_SCALE_NAMES = ("emission.sigma", "emission.s")
+_SCALE_NAMES = ("emission.scale", "emission.sigma", "emission.s")
 
 
 def _entry(value: object, warning: str | None = None) -> dict[str, object]:

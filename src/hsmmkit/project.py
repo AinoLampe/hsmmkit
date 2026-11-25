@@ -123,7 +123,18 @@ def summary_lines(config: FinanceConfig) -> list[str]:
         {ep for cov in config.data.covariates for ep in cov.use_in}
         | ({"transition"} if config.model.transition.covariates else set())
         | ({"duration"} if config.model.duration.covariates else set())
-        | ({"emission"} if emission_covariates.drift or emission_covariates.log_vol else set())
+        | (
+            {"emission"}
+            if any(
+                (
+                    emission_covariates.mean,
+                    emission_covariates.log_scale,
+                    emission_covariates.drift,
+                    emission_covariates.log_vol,
+                )
+            )
+            else set()
+        )
     )
     return [
         f"n_states: {config.model.n_states}",

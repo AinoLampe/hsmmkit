@@ -205,8 +205,14 @@ class ParamCfg(_Base):
 
 
 class EmissionCovariates(_Base):
-    """`model.emission.covariates:` — which covariates drive drift vs. log-volatility."""
+    """`model.emission.covariates:` — which covariates drive the location and the log-scale.
 
+    `mean` / `log_scale` are the keys of the `gaussian` family; `drift` / `log_vol` those of the finance
+    `gbm` family and of `student_t`.
+    """
+
+    mean: list[str] = Field(default_factory=list)
+    log_scale: list[str] = Field(default_factory=list)
     drift: list[str] = Field(default_factory=list)
     log_vol: list[str] = Field(default_factory=list)
 
@@ -219,8 +225,12 @@ class EmissionCfg(_Base):
     covariates: EmissionCovariates = Field(default_factory=EmissionCovariates)
     scale_by_dt: bool | None = None
     """Declared time scaling of the family (`None`: the family's own); a different value is rejected."""
+    ito_correction: bool | None = None
+    """`gaussian`: subtract `scale**2 / 2` from the location (`None`: the family's own, `False`)."""
+    covariance: Literal["diag"] = "diag"
+    """`gaussian`: covariance structure; `full` is not available before E11-T02."""
     per_series: bool = True
-    """`True`: own `mu`/`sigma` (`m`/`s`) per series, `(N, M)`; `False`: one per regime, shared."""
+    """`True`: own location/scale per series, `(N, M)`; `False`: one per regime, shared."""
 
     @field_validator("family")
     @classmethod
@@ -516,10 +526,9 @@ def _check_covariate_cross_references(config: ProjectConfig) -> None:
         _require(name, "transition", "model.transition.covariates")
     for name in config.model.duration.covariates:
         _require(name, "duration", "model.duration.covariates")
-    for name in config.model.emission.covariates.drift:
-        _require(name, "emission", "model.emission.covariates.drift")
-    for name in config.model.emission.covariates.log_vol:
-        _require(name, "emission", "model.emission.covariates.log_vol")
+    for key in ("mean", "log_scale", "drift", "log_vol"):
+        for name in getattr(config.model.emission.covariates, key):
+            _require(name, "emission", f"model.emission.covariates.{key}")
 
 
 def _check_transition_order(config: ProjectConfig) -> None:

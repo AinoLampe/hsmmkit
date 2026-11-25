@@ -74,7 +74,7 @@ def test_e5_t03_no_guard_warns_and_sorts_by_sigma() -> None:
     with pytest.warns(UserWarning, match="identifiability guard"):
         result = fit(case.spec, case.data, cfg, seed=2)
 
-    sigma = np.asarray(result.params["emission.sigma"])
+    sigma = np.asarray(result.params["emission.scale"])
     assert np.all(np.diff(sigma) >= 0)
 
 

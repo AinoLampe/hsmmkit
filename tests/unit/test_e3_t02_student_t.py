@@ -9,12 +9,12 @@ import pytest
 from scipy import stats
 
 from regimekit.config.schema import EmissionCfg
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.emission.student_t import StudentTFamily
 from regimekit.model.params import ParamManager
 from regimekit.utils.errors import ConfigError
 
-FAMILY = StudentTFamily()
+FAMILY = StudentTFamily(scale_by_dt=True)
 
 
 def _theta(m: np.ndarray, s: np.ndarray, nu: np.ndarray) -> dict[str, jax.Array]:
@@ -85,10 +85,10 @@ def test_e3_t02_large_nu_matches_gbm_with_ito_shift() -> None:
     dt = dt[: y.shape[0]]
 
     st = FAMILY.log_prob(jnp.asarray(y), dt, _theta(m_loc, s, np.full((n,), 1e6)), None)
-    gbm = GBMFamily().log_prob(
+    gbm = GaussianFamily(scale_by_dt=True, ito_correction=True).log_prob(
         jnp.asarray(y),
         dt,
-        {"emission.mu": jnp.asarray(m_loc + 0.5 * s**2), "emission.sigma": jnp.asarray(s)},
+        {"emission.mean": jnp.asarray(m_loc + 0.5 * s**2), "emission.scale": jnp.asarray(s)},
         None,
     )
     np.testing.assert_allclose(np.asarray(st), np.asarray(gbm), atol=1e-6)
@@ -101,6 +101,7 @@ def _cfg(nu: dict[str, object], **extra: object) -> EmissionCfg:
     return EmissionCfg.model_validate(
         {
             "family": "student_t",
+            "scale_by_dt": True,
             "params": {
                 "m": {"mode": "free"},
                 "s": {"mode": "free"},

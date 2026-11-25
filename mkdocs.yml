@@ -50,6 +50,7 @@ nav:
       - Data sources: guide/data_sources.md
       - Configuration reference: guide/config.md
       - Data providers & ToS: guide/providers.md
+      - Finance emissions: guide/finance_emissions.md
       - Forecasting: guide/forecasting.md
       - Model bundle: guide/bundle.md
       - Output files: guide/outputs.md

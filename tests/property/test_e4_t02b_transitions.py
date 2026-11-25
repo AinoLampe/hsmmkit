@@ -11,7 +11,7 @@ from hypothesis import strategies as st
 from scipy.special import softmax
 
 from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition, build_memory_layout
 from regimekit.statespace.builders import build_expanded
@@ -29,7 +29,7 @@ def _spec(
     return ModelSpec(
         n_states=n_states,
         n_series=1,
-        emission=GBMFamily(),
+        emission=GaussianFamily(scale_by_dt=True, ito_correction=True),
         duration=duration,  # type: ignore[arg-type]
         transition=transition,  # type: ignore[arg-type]
         order=order,

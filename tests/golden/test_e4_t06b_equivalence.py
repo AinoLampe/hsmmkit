@@ -44,8 +44,8 @@ def paired_scenarios(seed: int) -> tuple[Scenario, ModelSpec, dict[str, jnp.ndar
     theta = {
         **sc.theta,
         "duration.rate": jnp.asarray(-np.log1p(-a) / DT),
-        "emission.mu": jnp.asarray(mu),
-        "emission.sigma": jnp.asarray(sigma),
+        "emission.mean": jnp.asarray(mu),
+        "emission.scale": jnp.asarray(sigma),
     }
     data = make_dataset(simulate_returns(rng, a, mu, sigma), np.full(T_LEN, DT))
     spec_x = ModelSpec(

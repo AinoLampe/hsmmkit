@@ -14,7 +14,7 @@ from regimekit.data.contracts import PreparedDataset
 from regimekit.estimation.em import EMResult, em_fit
 from regimekit.estimation.map import fit
 from regimekit.inference.simulate import simulate_dataset
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.spec import ModelSpec
 from regimekit.utils.errors import ConfigError, NumericalError
 from regimekit.utils.rng import key_for
@@ -31,7 +31,7 @@ def _problem(duration: str, seed: int, t_len: int) -> tuple[ModelSpec, PreparedD
     """A 2-regime GBM model of the requested duration family and data simulated from known parameters."""
     case = make_case("gbm", duration, 1, t_len=t_len, seed=seed)
     theta = dict(case.manager.unflatten(case.manager.init_u()))
-    theta["emission.mu"], theta["emission.sigma"] = jnp.asarray(TRUE_MU), jnp.asarray(TRUE_SIGMA)
+    theta["emission.mean"], theta["emission.scale"] = jnp.asarray(TRUE_MU), jnp.asarray(TRUE_SIGMA)
     theta.update(case.spec.duration.init_from_mean_sojourn(MEAN_SOJOURN, DT))
     data = simulate_dataset(
         key_for(seed, SIM_PURPOSE), theta, case.spec, case.space, jnp.full((t_len,), DT), clock="trading"
@@ -73,7 +73,7 @@ def test_e5_t06_pair_conditioning_and_increasing_sigma_are_refused() -> None:
         em_fit(pair, case.data, _cfg(), 0)
     ordered = tuple(
         dataclasses.replace(s, constraint="increasing", shape=(2,), init=np.array([0.1, 0.3]))
-        if s.name == "emission.sigma"
+        if s.name == "emission.scale"
         else s
         for s in case.spec.param_specs
     )
@@ -90,7 +90,7 @@ def test_e5_t06_debug_mode_raises_when_the_loglik_decreases(monkeypatch: pytest.
 
     def broken(*args: object) -> dict[str, jnp.ndarray]:
         out = dict(original(*args))
-        out["emission.sigma"] = out["emission.sigma"] * 3.0
+        out["emission.scale"] = out["emission.scale"] * 3.0
         return out
 
     monkeypatch.setattr(em_module, "_m_step", broken)
@@ -108,8 +108,8 @@ def test_e5_t06_em_agrees_with_map_on_a_two_state_set(duration: str) -> None:
     )
     map_fit = fit(spec, data, cfg, 7)
     assert abs(em.loglik - map_fit.loglik) <= 1e-4 * abs(map_fit.loglik)
-    sig_em = np.sort(np.asarray(em.params["emission.sigma"]).ravel())
-    sig_map = np.sort(np.asarray(map_fit.params["emission.sigma"]).ravel())
+    sig_em = np.sort(np.asarray(em.params["emission.scale"]).ravel())
+    sig_map = np.sort(np.asarray(map_fit.params["emission.scale"]).ravel())
     np.testing.assert_allclose(sig_em, sig_map, rtol=1e-2)
 
 
@@ -120,7 +120,9 @@ def test_e5_t06_sufficient_stats_give_the_gaussian_mle() -> None:
     dt = DT * rng.integers(1, 4, size=t).astype(float)
     y = rng.normal(0.001, 0.01, size=(t, 1))
     w = rng.dirichlet([1.0, 2.0], size=t)
-    st = GBMFamily().sufficient_stats(jnp.asarray(y), jnp.asarray(dt), jnp.asarray(w))
+    st = GaussianFamily(scale_by_dt=True, ito_correction=True).sufficient_stats(
+        jnp.asarray(y), jnp.asarray(dt), jnp.asarray(w)
+    )
     m = np.asarray(st["w_y"] / st["w_dt"])
     var = np.asarray((st["w_y2_dt"] - 2 * m * st["w_y"] + m**2 * st["w_dt"]) / st["w"])
     for i in range(2):
@@ -137,7 +139,7 @@ def test_e5_t06_unsupported_models_raise_config_error() -> None:
         with pytest.raises(ConfigError, match="covariates"):
             em_fit(case.spec, case.data, _cfg(), 0)
     student = make_case("student_t", "negbin", 1, t_len=60)
-    with pytest.raises(ConfigError, match="gbm"):
+    with pytest.raises(ConfigError, match="gaussian"):
         em_fit(student.spec, student.data, _cfg(), 0)
     explicit = make_case("gbm", "gamma", 1, t_len=60)
     with pytest.raises(ConfigError, match="expanded engine"):

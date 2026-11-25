@@ -63,7 +63,11 @@ def test_e1_t02b_export_json_schema_has_registered_family_enum_and_no_profile(tm
     export_json_schema(out_path, FinanceConfig)
     schema = json.loads(out_path.read_text())
     assert "profile" not in schema["properties"]
-    assert schema["$defs"]["FinanceEmissionCfg"]["properties"]["family"]["enum"] == ["gbm", "student_t"]
+    assert schema["$defs"]["FinanceEmissionCfg"]["properties"]["family"]["enum"] == [
+        "gaussian",
+        "gbm",
+        "student_t",
+    ]
     assert "provider" in schema["$defs"]["SourceCfg"]["properties"]["kind"]["enum"]
 
     # DataSection is referenced via $ref/$defs (standard pydantic v2 JSON-Schema shape); resolve

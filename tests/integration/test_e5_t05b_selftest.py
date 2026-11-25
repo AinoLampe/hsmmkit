@@ -41,7 +41,7 @@ def test_e5_t05b_selftest_exits_0_and_prints_backend_table_and_determinism(tiny:
     assert "backend: jax " in out
     assert "x64 on" in out
     assert "scenario gbm_negbin" in out
-    assert "emission.sigma[0]" in out
+    assert "emission.scale[0]" in out
     assert "determinism (bitwise u over two fits): identical" in out
     assert "selftest passed" in out
 

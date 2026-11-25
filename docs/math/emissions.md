@@ -7,36 +7,36 @@ $$
 \log p(y_t \mid z_t = i, \Delta_t) = \ell_i(y_t; \theta_i, \Delta_t)
 $$
 
-## GBM (`GBMFamily`, E3-T01)
+## Gaussian (`GaussianFamily`, E10-T06)
 
-Per-state geometric Brownian motion: Gaussian log-returns scaled by `\Delta_t`, with linear drift and
-log-volatility covariate links.
-
-$$
-y_t \mid z_t = i \sim \mathcal{N}\!\left(\left(\mu_i(t) - \tfrac{1}{2}\sigma_i(t)^2\right)\Delta_t,\; \sigma_i(t)^2 \Delta_t\right)
-$$
+Per-state Gaussian with a diagonal covariance, for `M \ge 1` series, with optional time scaling and Itô
+correction:
 
 $$
-\mu_i(t) = \mu_i + \gamma_i^\top z^e_t \qquad
-\log \sigma_i(t) = \log \sigma_i + \delta_i^\top z^e_t
+y_t \mid z_t = i \sim \mathcal{N}\!\left(m_i(t)\, s(\Delta_t),\; \operatorname{diag}(\sigma_i(t)^2)\, s(\Delta_t)\right),
+\qquad s(\Delta) = \Delta \text{ if } \texttt{scale\_by\_dt} \text{ else } 1
 $$
 
-`\mu_i`/`\sigma_i` are in clock units: annualized under the `trading`/`calendar` clocks (`\mu` per year,
-`\sigma` per `\sqrt{\text{year}}`), per step under `steps` (where `\Delta_t \equiv 1`, so the density
-collapses to `N(\mu_i - \sigma_i^2/2, \sigma_i^2)`) — no code branches on the clock name (CLAUDE.md §3.2).
+$$
+m_i(t) = \mu_i + \gamma_i^\top z^e_t - \left(\tfrac{1}{2}\sigma_i(t)^2 \text{ if } \texttt{ito\_correction}\right),
+\qquad \log \sigma_i(t) = \log \sigma_i + \delta_i^\top z^e_t
+$$
 
-`GBMFamily` declares `support = "real"` and `scale_by_dt = True`. Emission covariates (`z`, the
-`cov_emission` block) may drive drift and log-volatility through different column subsets, selected by
-`drift_idx`/`logvol_idx`; `gamma`/`delta` are present only when the corresponding covariate list is
-non-empty, with a default `NormalPrior(0, coef_prior_sd)` regularizer (`emission.gamma`, `emission.delta`).
+Options (`model.emission`): `scale_by_dt: false`, `ito_correction: false`, `covariance: diag` (`full` follows with
+E11-T02). `native_time` is `continuous` with `scale_by_dt`, else `discrete`. With the defaults the family is the
+plain per-step Gaussian `N(\mu_i, \sigma_i^2)`.
 
-`GBMFamily.from_config` maps `model.emission` config to a configured instance plus its `ParamSpec`s
-(`emission.mu`, `emission.sigma`, and `emission.gamma`/`emission.delta` when configured). The `increasing`
-bijector (`ParamManager`) only supports a 1-D `(N,)` cell, so a `constraint: increasing` on `sigma`
-collapses its spec to `(N,)` rather than `(N, M)` — a per-series ordering constraint has no clean joint
-semantics. This matches Appendix A's single-series (`M = 1`) usage; `from_config` raises `ConfigError`
-for `constraint: increasing` with `n_series > 1` rather than silently sharing one ordered value across
-every series.
+Parameters (config keys in brackets): `emission.mean` `(N, M)` [`mean`], `emission.scale` `(N, M)`, positive
+[`scale`], `emission.gamma` `(N, K_mean)`, `emission.delta` `(N, K_logscale)`. Emission covariates are selected
+by `covariates: {mean: [...], log_scale: [...]}`; `gamma`/`delta` exist only when the corresponding list is
+non-empty, with a default `NormalPrior(0, coef_prior_sd)` regularizer. A `constraint: increasing` on `scale`
+collapses its spec to `(N,)` (single series, or shared with `per_series: false`): a per-series ordering has no
+clean joint semantics, so `from_config` raises `ConfigError` for `increasing` with `n_series > 1`.
+
+The log-density keeps the operation order `\sigma_t = \sigma_i e^{\delta^\top z}`, `\text{var} = \sigma_t^2 \Delta`,
+`\text{mean} = (\mu_t - \tfrac12 \sigma_t^2)\Delta`, so that `scale_by_dt: true, ito_correction: true` reproduces
+the Part I GBM density bit for bit (the finance application registers that case as `gbm`, see
+[finance emissions](../guide/finance_emissions.md)).
 
 ## Student-t (`StudentTFamily`, E3-T02)
 
@@ -48,8 +48,8 @@ m_i(t) = m_i + \gamma_i^\top z^e_t, \quad \log s_i(t) = \log s_i + \delta_i^\top
 $$
 
 `s_i` is a **scale, not the standard deviation**: `\mathrm{sd} = s_i \sqrt{\nu_i/(\nu_i - 2)}\,\sqrt{\Delta_t}`.
-`m_i` is the location of the log-return itself, so there is no `-\sigma^2/2` term; as `\nu \to \infty` the density
-tends to GBM with `\mu - \sigma^2/2 = m`, `\sigma = s`. Parameters: `emission.{m,s,nu,gamma,delta}`;
+`m_i` is the location of the observation itself, so there is no `-\sigma^2/2` term; `scale_by_dt` (default `false` in the core) switches the `\Delta_t` scaling on; as `\nu \to \infty` the density
+tends to the Gaussian with `ito_correction` and `\mu - \sigma^2/2 = m`, `\sigma = s`. Parameters: `emission.{m,s,nu,gamma,delta}`;
 `emission.nu` has shape `(N,)` on the `nu_gt_2` domain, and mode `tied` shares one value (tie group `"nu"`),
 i.e. one free coordinate.
 

@@ -96,8 +96,8 @@ def test_e6_t01_return_moments_within_3se_of_gbm_analytic(big_sim: _BigSim) -> N
     dt = float(case.data.nominal_dt)
     y = np.asarray(result.returns)[:, :, 0].ravel()
     regimes = np.asarray(result.regimes).ravel()
-    mu = np.asarray(theta["emission.mu"])[:, 0]
-    sigma = np.asarray(theta["emission.sigma"])[:, 0]
+    mu = np.asarray(theta["emission.mean"])[:, 0]
+    sigma = np.asarray(theta["emission.scale"])[:, 0]
 
     for i in range(n):
         y_i = y[regimes == i]

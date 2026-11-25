@@ -9,7 +9,7 @@ import numpy as np
 
 from regimekit.data.contracts import PreparedDataset, PrepStats
 from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import GaussianFamily
 from regimekit.model.spec import ModelSpec
 from regimekit.model.transition import JumpTransition
 from regimekit.statespace.builders import build_expanded
@@ -79,7 +79,7 @@ def make_scenario(
     spec = ModelSpec(
         n_states=n_states,
         n_series=1,
-        emission=GBMFamily(),
+        emission=GaussianFamily(scale_by_dt=True, ito_correction=True),
         duration=NegBinDuration(r=tuple(r), cov_idx=tuple(range(n_cov_d))),
         transition=JumpTransition(cov_idx=tuple(range(n_cov_pi)) if has_pi else ()),
         order=order,
@@ -93,8 +93,8 @@ def make_scenario(
     r_rows = space.layout.tuples.shape[0]
 
     theta: dict[str, jnp.ndarray] = {
-        "emission.mu": jnp.asarray(rng.normal(0.05, 0.1, size=n_states)),
-        "emission.sigma": jnp.asarray(np.sort(rng.uniform(0.1, 0.5, size=n_states))),
+        "emission.mean": jnp.asarray(rng.normal(0.05, 0.1, size=n_states)),
+        "emission.scale": jnp.asarray(np.sort(rng.uniform(0.1, 0.5, size=n_states))),
         "duration.rate": jnp.asarray(rng.uniform(1.0, 20.0, size=n_states)),
     }
     if n_cov_d:
@@ -154,7 +154,7 @@ def make_explicit_scenario(
     spec = ModelSpec(
         n_states=n_states,
         n_series=1,
-        emission=GBMFamily(),
+        emission=GaussianFamily(scale_by_dt=True, ito_correction=True),
         duration=duration,  # type: ignore[arg-type]
         transition=JumpTransition(cov_idx=tuple(range(n_cov_pi)) if has_pi else ()),
         order=1,
@@ -167,8 +167,8 @@ def make_explicit_scenario(
     space = build_explicit(spec)
     mean = mean_steps if mean_steps is not None else max(2.0, d_max / 3.0)
     theta: dict[str, jnp.ndarray] = {
-        "emission.mu": jnp.asarray(rng.normal(0.05, 0.1, size=n_states)),
-        "emission.sigma": jnp.asarray(np.sort(rng.uniform(0.1, 0.5, size=n_states))),
+        "emission.mean": jnp.asarray(rng.normal(0.05, 0.1, size=n_states)),
+        "emission.scale": jnp.asarray(np.sort(rng.uniform(0.1, 0.5, size=n_states))),
     }
     if family in ("negbin", "geometric"):
         a = 1.0 / rng.uniform(0.5 * mean, 1.5 * mean, size=n_states)

@@ -19,7 +19,7 @@ MEAN_SOJOURN_DAYS = (60.0, 30.0)
 
 
 def two_series_config(
-    *, per_series: bool = True, family: str = "gbm", symbols: tuple[str, ...] = ("A", "B")
+    *, per_series: bool = True, family: str = "gaussian", symbols: tuple[str, ...] = ("A", "B")
 ) -> FinanceConfig:
     """A valid 2-regime, `len(symbols)`-series config: negbin durations, no covariates, free `mu`/`sigma`."""
     raw: dict[str, Any] = YAML(typ="safe").load(APPENDIX_A.read_text(encoding="utf-8"))
@@ -28,19 +28,22 @@ def two_series_config(
     model = raw["model"]
     model["n_states"] = 2
     model["d_max"] = 200
-    if family == "gbm":
+    if family == "gaussian":
         model["emission"] = {
-            "family": "gbm",
+            "family": "gaussian",
+            "scale_by_dt": True,
+            "ito_correction": True,
             "per_series": per_series,
             "params": {
-                "mu": {"mode": "free", "init": [0.0, 0.0]},
-                "sigma": {"mode": "free", "init": [0.1, 0.3]},
+                "mean": {"mode": "free", "init": [0.0, 0.0]},
+                "scale": {"mode": "free", "init": [0.1, 0.3]},
             },
         }
     else:
         model["emission"] = {
             "family": "student_t",
             "per_series": per_series,
+            "scale_by_dt": True,
             "params": {
                 "m": {"mode": "free", "init": [0.0, 0.0]},
                 "s": {"mode": "free", "init": [0.1, 0.3]},

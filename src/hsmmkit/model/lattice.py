@@ -29,7 +29,10 @@ if TYPE_CHECKING:
 
 # Emission blocks that place a state on the observation scale; if all are `fixed` the states are
 # identified by construction (a lattice). Coefficient blocks (`gamma`, `delta`) and `nu` do not count.
-_IDENTIFYING_EMISSION = frozenset({"emission.mu", "emission.sigma", "emission.m", "emission.s"})
+_SCALE_NAMES = ("emission.scale", "emission.sigma", "emission.s")
+_IDENTIFYING_EMISSION = frozenset(
+    {"emission.mu", "emission.sigma", "emission.mean", "emission.scale", "emission.m", "emission.s"}
+)
 
 
 @dataclass(frozen=True, eq=False)
@@ -83,12 +86,16 @@ def validate_lattice(cfg: ProjectConfig) -> None:
         )
 
 
-def apply_ordering(specs: tuple[ParamSpec, ...], name: str = "emission.sigma") -> tuple[ParamSpec, ...]:
+def apply_ordering(specs: tuple[ParamSpec, ...], name: str | None = None) -> tuple[ParamSpec, ...]:
     """Return `specs` with `constraint="increasing"` set on the spec called `name`.
+
+    `name=None` picks the family's scale parameter (`emission.scale`, `emission.sigma` or `emission.s`).
 
     The `increasing` bijector acts on a 1-D `(N,)` cell, so an `(N, 1)` spec is squeezed to `(N,)`
     (single series); `(N, M > 1)` is rejected rather than silently sharing one ordering across series.
     """
+    if name is None:
+        name = next((n for n in _SCALE_NAMES if any(s.name == n for s in specs)), _SCALE_NAMES[0])
     out: list[ParamSpec] = []
     found = False
     for spec in specs:
@@ -171,7 +178,7 @@ def _relabel_transition(theta: Params, n_states: int, order: int, perm: np.ndarr
     return out
 
 
-def post_sort_states(theta: Params, spec: ModelSpec, by: str = "emission.sigma") -> tuple[Params, np.ndarray]:
+def post_sort_states(theta: Params, spec: ModelSpec, by: str | None = None) -> tuple[Params, np.ndarray]:
     """Relabel states so `theta[by]` (first series if `(N, M)`) is ascending.
 
     Returns `(theta_sorted, perm)` with `perm[new] = old` (stable `argsort`): new state `i` is old state
@@ -180,6 +187,8 @@ def post_sort_states(theta: Params, spec: ModelSpec, by: str = "emission.sigma")
     columns, so the model is unchanged up to labels (`jump_probs` is invariant). The caller recomputes
     `u` from the sorted `theta` (`ParamManager.flatten`).
     """
+    if by is None:
+        by = next((n for n in _SCALE_NAMES if n in theta), _SCALE_NAMES[0])
     if by not in theta:
         raise ConfigError(f"cannot sort by {by!r}: not in theta", path=by)
     n = spec.n_states

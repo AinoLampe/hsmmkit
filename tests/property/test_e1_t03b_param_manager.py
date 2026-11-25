@@ -32,8 +32,8 @@ def test_e1_t03b_n_free_matches_appendix_b_order1_gbm_negbin() -> None:
             init=np.full((n, n - 1), 1.0 / (n - 1)),
         ),
         _spec_free("duration.rate", n),
-        _spec_free("emission.mu", n, domain="real"),
-        _spec_free("emission.sigma", n),
+        _spec_free("emission.mean", n, domain="real"),
+        _spec_free("emission.scale", n),
     )
     manager = ParamManager(specs)
     assert manager.n_free == 20
@@ -207,7 +207,7 @@ def test_e1_t03b_log_det_jac_and_log_prior_are_jittable_and_differentiable() -> 
 def test_e1_t03b_increasing_constraint_is_strictly_increasing(u: list[float]) -> None:
     """`constraint='increasing'` produces a strictly increasing `theta` for any `u`."""
     spec = ParamSpec(
-        name="emission.sigma",
+        name="emission.scale",
         shape=(4,),
         domain="positive",
         mode="free",
@@ -215,14 +215,14 @@ def test_e1_t03b_increasing_constraint_is_strictly_increasing(u: list[float]) ->
         constraint="increasing",
     )
     manager = ParamManager((spec,))
-    theta = manager.unflatten(jnp.asarray(u))["emission.sigma"]
+    theta = manager.unflatten(jnp.asarray(u))["emission.scale"]
     assert bool(jnp.all(jnp.diff(theta) > 0))
 
 
 def test_e1_t03b_increasing_constraint_round_trips_and_names() -> None:
     """`flatten`/`unflatten` round-trip an `increasing`-constrained spec; `names()` labels it."""
     spec = ParamSpec(
-        name="emission.sigma",
+        name="emission.scale",
         shape=(4,),
         domain="positive",
         mode="free",
@@ -230,11 +230,11 @@ def test_e1_t03b_increasing_constraint_round_trips_and_names() -> None:
         constraint="increasing",
     )
     manager = ParamManager((spec,))
-    assert manager.names() == [f"emission.sigma[increasing]:{i}" for i in range(4)]
+    assert manager.names() == [f"emission.scale[increasing]:{i}" for i in range(4)]
 
     u0 = manager.init_u()
     theta = manager.unflatten(u0)
-    np.testing.assert_allclose(np.asarray(theta["emission.sigma"]), spec.init, atol=1e-9)
+    np.testing.assert_allclose(np.asarray(theta["emission.scale"]), spec.init, atol=1e-9)
     u_back = manager.flatten(theta)
     np.testing.assert_allclose(np.asarray(u_back), np.asarray(u0), atol=1e-9)
 
@@ -242,7 +242,7 @@ def test_e1_t03b_increasing_constraint_round_trips_and_names() -> None:
 def test_e1_t03b_increasing_with_prior_mode_computes_and_contributes_log_prior() -> None:
     """`constraint='increasing'` combined with `mode='prior'` round-trips and adds a prior term."""
     spec = ParamSpec(
-        name="emission.sigma",
+        name="emission.scale",
         shape=(3,),
         domain="positive",
         mode="prior",
@@ -253,7 +253,7 @@ def test_e1_t03b_increasing_with_prior_mode_computes_and_contributes_log_prior()
     manager = ParamManager((spec,))
     u0 = manager.init_u()
     theta = manager.unflatten(u0)
-    assert bool(jnp.all(jnp.diff(theta["emission.sigma"]) > 0))
+    assert bool(jnp.all(jnp.diff(theta["emission.scale"]) > 0))
     np.testing.assert_allclose(np.asarray(manager.flatten(theta)), np.asarray(u0), atol=1e-9)
     assert manager.log_prior(theta) != 0.0
 

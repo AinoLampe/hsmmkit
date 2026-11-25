@@ -97,8 +97,8 @@ def test_e4_t04_expected_remaining_steps_at_entry_matches_analytic_mean() -> Non
     y = (mu[regimes] - 0.5 * sigma[regimes] ** 2) + sigma[regimes] * rng.normal(size=len(regimes))
     data = make_dataset(y[:, None], dt)
     theta = dict(sc.theta)
-    theta["emission.mu"] = jnp.asarray(mu)
-    theta["emission.sigma"] = jnp.asarray(sigma)
+    theta["emission.mean"] = jnp.asarray(mu)
+    theta["emission.scale"] = jnp.asarray(sigma)
     theta["duration.rate"] = jnp.asarray(rate)
     theta["transition.pi_rows"] = jnp.ones((2, 1))
 

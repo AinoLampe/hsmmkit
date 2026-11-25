@@ -81,7 +81,7 @@ def test_e10_t02a_all_kinds_exist_and_clock_transform_preset_start_empty_or_regi
 
 def test_e10_t02a_decorator_default_provenance_is_the_callers_origin() -> None:
     """The decorator labels components registered from core, finance and extension modules."""
-    assert provenance_of("regimekit.model.emission.gbm") == "regimekit.core"
+    assert provenance_of("regimekit.model.emission.gaussian") == "regimekit.core"
     assert provenance_of("regimekit.finance.providers.csv") == "regimekit.finance"
     assert provenance_of("regimekit.finance") == "regimekit.finance"
     assert provenance_of("myext.emission.foo") == "myext"
@@ -107,10 +107,11 @@ def test_e10_t02a_decorator_registers_and_returns_the_object() -> None:
 def test_e10_t02a_part_one_components_are_registered() -> None:
     """Every Part I family, init strategy and forecaster resolves through the registry."""
     import regimekit.evaluation.metrics.registry as metrics
+    import regimekit.finance.emission
     import regimekit.inference.covariate_forecasters
     import regimekit.model.build  # noqa: F401
 
-    assert set(REGISTRY.names("emission")) == {"gbm", "product", "student_t"}
+    assert set(REGISTRY.names("emission")) == {"gaussian", "gbm", "product", "student_t"}
     assert set(REGISTRY.names("duration")) == {
         "gamma",
         "geometric",
@@ -129,11 +130,12 @@ def test_e10_t02a_part_one_components_are_registered() -> None:
 
 def test_e10_t02a_config_resolves_every_part_one_family_through_the_registry() -> None:
     """The config -> ModelSpec lookups are views over the registry (no private dicts)."""
+    import regimekit.finance.emission  # noqa: F401  (registers `gbm`)
     from regimekit.model.build import DURATION_FAMILIES, EMISSION_FAMILIES
 
     assert not isinstance(EMISSION_FAMILIES, dict)
     assert not isinstance(DURATION_FAMILIES, dict)
-    assert set(EMISSION_FAMILIES) == {"gbm", "student_t"}  # `product` has no config name
+    assert set(EMISSION_FAMILIES) == {"gaussian", "gbm", "student_t"}  # `product` has no config name
     assert set(DURATION_FAMILIES) == set(REGISTRY.names("duration"))
     for name in DURATION_FAMILIES:
         assert DURATION_FAMILIES[name] is REGISTRY.get("duration", name)

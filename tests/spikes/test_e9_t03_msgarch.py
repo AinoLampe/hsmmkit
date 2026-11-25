@@ -12,9 +12,9 @@ import pytest
 from regimekit.config.schema import EstimationSection
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine, _regime_log_emis
 from regimekit.estimation.map import fit
+from regimekit.finance.emission.gbm import GBMFamily
+from regimekit.finance.emission.msgarch import MSGARCHFamily
 from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gbm import GBMFamily
-from regimekit.model.emission.msgarch import MSGARCHFamily
 from regimekit.model.params import ParamManager, ParamSpec
 from regimekit.model.params.priors import DirichletPrior
 from regimekit.model.spec import ModelSpec
@@ -22,6 +22,8 @@ from regimekit.model.transition import JumpTransition
 from regimekit.statespace.builders import build_expanded
 from tests.helpers.engine_fixtures import DT, make_dataset
 from tests.reference.ref_garch import garch11_loglik, simulate_garch11
+
+pytestmark = pytest.mark.finance
 
 PARAMS = {"m": 0.05, "omega": 4e-6, "alpha": 0.08, "beta": 0.88}
 

@@ -33,7 +33,7 @@ def _simulate(seed: int, t_len: int) -> tuple[ModelSpec, PreparedDataset]:
     assert isinstance(spec.emission, ProductEmission)
     manager = ParamManager(spec.param_specs)
     theta = dict(manager.unflatten(manager.init_u()))
-    theta["emission.mu"], theta["emission.sigma"] = jnp.asarray(MU_STAR), jnp.asarray(SIGMA_STAR)
+    theta["emission.mean"], theta["emission.scale"] = jnp.asarray(MU_STAR), jnp.asarray(SIGMA_STAR)
     theta.update(spec.duration.init_from_mean_sojourn(jnp.asarray(MEAN_SOJOURN_DAYS), DT))
     data = simulate_dataset(
         key_for(seed, SIM_PURPOSE), theta, spec, build_expanded(spec), jnp.full((t_len,), DT), clock="trading"
@@ -45,7 +45,7 @@ def _fit_sigma(spec: ModelSpec, data: PreparedDataset, seed: int, restarts: int)
     cfg = EstimationSection(restarts=restarts, max_iter=400, init=["rollvol_kmeans", "lattice_jitter"])
     res = fit(spec, data, cfg, seed)
     assert np.isfinite(res.loglik)
-    return np.asarray(res.params["emission.sigma"])
+    return np.asarray(res.params["emission.scale"])
 
 
 def test_e9_t01_two_series_fit_runs_and_has_one_sigma_per_series_and_regime() -> None:

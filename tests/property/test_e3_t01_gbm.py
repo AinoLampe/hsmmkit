@@ -9,9 +9,12 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from regimekit.model.emission.gbm import GBMFamily, _broadcast_per_state, _prior_from_cfg
+from regimekit.finance.emission.gbm import GBMFamily
+from regimekit.model.emission.gaussian import _broadcast_per_state, _prior_from_cfg
 from regimekit.model.params import ParamManager
 from regimekit.utils.errors import ConfigError
+
+pytestmark = pytest.mark.finance
 
 N_SIM = 20_000
 

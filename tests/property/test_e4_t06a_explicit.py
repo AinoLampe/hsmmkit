@@ -32,7 +32,7 @@ def per_start_reference(sc: Scenario) -> tuple[float, np.ndarray, np.ndarray]:
     """Enumeration with the covariate-dependent jump matrix and pmf of every segment start."""
     d, th, spec = sc.data, sc.theta, sc.spec
     y = np.asarray(d.observations)[:, 0]
-    mu, sig = np.asarray(th["emission.mu"]), np.asarray(th["emission.sigma"])
+    mu, sig = np.asarray(th["emission.mean"]), np.asarray(th["emission.scale"])
     log_emis = norm.logpdf(y[:, None], (mu - 0.5 * sig**2) * d.nominal_dt, sig * np.sqrt(d.nominal_dt))
     z_pi, z_d = d.cov_transition, d.cov_duration
     pis = [
@@ -78,7 +78,7 @@ def test_e4_t06a_covariates_change_the_answer() -> None:
 def test_e4_t06a_gradient_is_finite_and_matches_finite_differences(family: str) -> None:
     """AC5: `grad(loglik)` finite and equal to central differences (step 1e-6, rel <= 1e-5)."""
     sc = make_explicit_scenario(2, 5, 12, family=family, seed=11, mean_steps=2.0)
-    keys = ("emission.mu", "emission.sigma") + (
+    keys = ("emission.mean", "emission.scale") + (
         ("duration.shape", "duration.scale") if family == "gamma" else ("duration.rate",)
     )
     shapes = [(k, sc.theta[k].shape) for k in keys]
@@ -108,9 +108,9 @@ def test_e4_t06a_gradient_finite_with_structural_zeros_and_short_sequence() -> N
     sc = make_explicit_scenario(3, 15, 6, family="weibull", seed=2)
 
     def f(mu: jnp.ndarray) -> jnp.ndarray:
-        return ENGINE.loglik({**sc.theta, "emission.mu": mu}, sc.spec, sc.space, sc.data)
+        return ENGINE.loglik({**sc.theta, "emission.mean": mu}, sc.spec, sc.space, sc.data)
 
-    assert np.all(np.isfinite(np.asarray(jax.grad(f)(sc.theta["emission.mu"]))))
+    assert np.all(np.isfinite(np.asarray(jax.grad(f)(sc.theta["emission.mean"]))))
 
 
 @pytest.mark.parametrize("family", ["weibull", "gamma", "negbin", "geometric"])

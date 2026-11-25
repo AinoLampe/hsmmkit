@@ -54,11 +54,6 @@ inference/simulate.py:returns  # E10-T07b
 model/duration/base.py:bars_per_day  # E10-T07b
 model/duration/explicit.py:trading  # E10-T07b
 model/duration/nonparametric.py:returns  # E10-T07b
-model/emission/gbm.py:annualiz  # E10-T06
-model/emission/gbm.py:returns  # E10-T06
-model/emission/gbm.py:trading  # E10-T06
-model/emission/msgarch.py:annualiz  # E10-T06
-model/emission/student_t.py:returns  # E10-T06
 persistence/results.py:return_  # E10-T07a
 persistence/results.py:returns  # E10-T07a
 persistence/results.py:strategy  # E10-T07a

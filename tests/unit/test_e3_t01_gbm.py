@@ -8,7 +8,9 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from regimekit.model.emission.gbm import GBMFamily
+from regimekit.finance.emission.gbm import GBMFamily
+
+pytestmark = pytest.mark.finance
 
 FAMILY = GBMFamily()
 
@@ -85,7 +87,7 @@ def test_e3_t01_zero_coefficients_reproduce_covariate_free_density() -> None:
     dt = jnp.full((t,), 1.0 / 252.0)
     z = jnp.asarray(rng.normal(size=(t, k)))
 
-    family = GBMFamily(drift_idx=(0, 1), logvol_idx=(0, 1))
+    family = GBMFamily(mean_idx=(0, 1), scale_idx=(0, 1))
     theta_plain = _theta(mu, sigma)
     theta_cov = {
         **theta_plain,
@@ -108,7 +110,7 @@ def test_e3_t01_nonzero_delta_scales_variance_by_exp_2_delta_z() -> None:
     z = jnp.asarray(np.full((t, k), 0.5))
     delta = np.full((n, k), 0.3)
 
-    family = GBMFamily(logvol_idx=(0,))
+    family = GBMFamily(scale_idx=(0,))
     theta = {**_theta(mu, sigma), "emission.delta": jnp.asarray(delta)}
     mean_t, sd_t = family._mean_sd(dt, theta, z)
 
