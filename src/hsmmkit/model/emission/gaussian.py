@@ -45,11 +45,13 @@ def _prior_from_cfg(cfg: PriorCfg, init: np.ndarray | None) -> Prior:
 
 
 def _broadcast_per_state(
-    values: list[float] | None, n_states: int, n_series: int, *, flat: bool
+    values: list[float] | float | str | None, n_states: int, n_series: int, *, flat: bool
 ) -> np.ndarray | None:
     """`values` (one per state) -> `(n_states,)` (`flat`) or `(n_states, n_series)`."""
     if values is None:
         return None
+    if isinstance(values, str):
+        raise ConfigError(f"init: {values!r} is not available before E12-T06", path="values")
     arr = np.asarray(values, dtype=np.float64)
     if arr.shape != (n_states,):
         raise ConfigError(f"expected {n_states} per-state values, got shape {arr.shape}", path="values")

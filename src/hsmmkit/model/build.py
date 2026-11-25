@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import hsmmkit.model.duration
 import hsmmkit.model.emission  # noqa: F401  (registers the emission families)
+from hsmmkit.config.gates import check as gates_check
 from hsmmkit.model.emission.product import ProductEmission
 from hsmmkit.model.spec import ModelSpec
 from hsmmkit.model.transition import JumpTransition
@@ -116,6 +117,7 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
     Raises:
         ConfigError: an unregistered `emission.family`/`duration.family` name.
     """
+    gates_check(cfg)
     m = cfg.model
     n = m.n_states
     n_series = inputs.n_series
@@ -139,6 +141,8 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
     if n_series > 1:  # per-series masks and shared parameters (E9-T01); M = 1 keeps the bare family
         emission = ProductEmission.of(emission, n_series)
 
+    if m.duration.family is None:  # `per_state` (gated until E12-T05)
+        raise ConfigError("a duration family per state is not supported yet", path="model.duration.per_state")
     dur_cls = DURATION_FAMILIES.get(m.duration.family)
     if dur_cls is None:
         raise ConfigError(f"unknown duration family {m.duration.family!r}", path="model.duration.family")

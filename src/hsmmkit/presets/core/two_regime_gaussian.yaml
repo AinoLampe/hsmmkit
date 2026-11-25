@@ -1,0 +1,60 @@
+# Two-regime sanity example (Part I concept, Appendix E) in Gaussian form: calm and turbulent regimes,
+# per-step parameters on a daily calendar grid (calm 0.03 % / 0.756 %, turbulent -0.064 % / 2.205 % per step).
+schema_version: 1
+project:
+  name: two_regime_gaussian
+  seed: 7
+  output_dir: runs/two_regime_gaussian
+  log_level: INFO
+
+data:
+  source:
+    kind: csv
+    path: data/two_regime.csv
+    observation_columns: [x]
+    time_column: date
+  clock: calendar
+  preparation:
+    missing_observations: mask
+
+model:
+  n_states: 2
+  engine: expanded
+  initial_state: uniform
+  emission:
+    family: gaussian
+    ito_correction: false
+    params:
+      mean:  {mode: free, init: [0.0003, -0.0006]}
+      scale: {mode: free, init: [0.0076, 0.022], constraint: increasing}
+  duration:
+    family: geometric
+    params:
+      rate: {mode: free, init_mean_sojourn_steps: [100.0, 40.0]}
+  transition:
+    mode: jump
+    order: 1
+
+estimation:
+  method: map
+  restarts: 4
+  max_iter: 500
+  init: [rolling_kmeans, random]
+  device: auto
+
+forecast:
+  horizon: 10
+  n_sim: 1000
+  covariate_forecaster: {type: freeze}
+  quantiles: [0.05, 0.5, 0.95]
+
+evaluation:
+  metrics: [log_score, bic, icl]
+  backtest:
+    scheme: expanding
+    initial_train_steps: 500
+    refit_every_steps: 60
+    horizons: [1, 5]
+
+output:
+  write: [posterior, forecast, backtest, report]
