@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "benchmarks" / "import_time_baseline.json"
 FORBIDDEN = {"matplotlib", "sklearn", "numpyro", "arviz", "xarray", "scipy"}  # scipy until ADR-0020
@@ -44,6 +46,10 @@ def test_e10_t11_import_pulls_no_extra_package() -> None:
     assert not tops & FORBIDDEN, sorted(tops & FORBIDDEN)
 
 
+@pytest.mark.skipif(
+    "PYTEST_XDIST_WORKER" in os.environ,
+    reason="timing is meaningless while other workers compete for the CPU",
+)
 def test_e10_t11_import_time_within_baseline() -> None:
     """The best of three imports stays below the committed baseline x 1.3 (refresh needs a justification)."""
     baseline = json.loads(BASELINE.read_text(encoding="utf-8"))

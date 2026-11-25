@@ -73,14 +73,17 @@ jobs:
         run: |
           for pkg in matplotlib scikit-learn numpyro arviz xarray; do
             case "${{ matrix.extra }}:$pkg" in
-              plot:matplotlib|sklearn:scikit-learn|bayes:numpyro|bayes:arviz|xarray:xarray) ;;
-              *) uv pip uninstall "$pkg" || true  # the dev group carries them all ;;
+              plot:matplotlib|sklearn:scikit-learn|bayes:numpyro|bayes:arviz|bayes:xarray|xarray:xarray) ;;
+              *) uv pip uninstall "$pkg" ;;
             esac
           done
       - name: "Tests of this extra (the none row: no extra marker)"
         run: |
           if [ "${{ matrix.extra }}" = "none" ]; then
-            uv run --no-sync pytest -m "not (plot or sklearn or bayes or xarray)" tests/unit/test_e10_t11_optional_import.py tests/unit/test_e10_t11_import_time.py -q
+            for mod in matplotlib sklearn numpyro arviz xarray; do
+              if uv run --no-sync python -c "import $mod" 2>/dev/null; then echo "$mod is still installed"; exit 1; fi
+            done
+            uv run --no-sync pytest -m "not (plot or sklearn or bayes or xarray) and not slow and not live and not benchmark and not gpu" tests/unit/test_e10_t11_optional_import.py tests/unit/test_e10_t11_import_time.py -q
           else
-            uv run --no-sync pytest -m "${{ matrix.extra }} or not (plot or sklearn or bayes or xarray)" tests/unit -q -n 2
+            uv run --no-sync pytest -m "(${{ matrix.extra }} or not (plot or sklearn or bayes or xarray)) and not slow and not live and not benchmark and not gpu" tests/unit tests/integration -q -n 2
           fi
