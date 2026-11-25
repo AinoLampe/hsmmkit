@@ -132,7 +132,7 @@ def fit(
             (
                 name
                 for name in theta
-                if name in ("emission.scale", "emission.sigma", "emission.s", "emission.chol")
+                if name in ("emission.scale", "emission.sigma", "emission.s", "emission.chol", "emission.eta")
             ),
             "emission.scale",
         )
