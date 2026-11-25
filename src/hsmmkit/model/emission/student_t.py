@@ -15,13 +15,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, ClassVar, Literal
 
+import jax
 import jax.numpy as jnp
 import jax.scipy.stats
 import numpy as np
 
-from hsmmkit.model.dists import sample_student_t, student_t_logpdf
+from hsmmkit.model.dists import mvt_logpdf, sample_student_t, student_t_logpdf, unpack_lower
 from hsmmkit.model.emission.base import BaseEmission, Support
-from hsmmkit.model.emission.gaussian import _coef_spec, _spec_from_paramcfg
+from hsmmkit.model.emission.gaussian import (
+    _chol_spec,
+    _chol_spec_from_paramcfg,
+    _coef_spec,
+    _spec_from_paramcfg,
+)
 from hsmmkit.model.params.spec import ParamSpec
 from hsmmkit.plugins import register
 from hsmmkit.utils.errors import ConfigError
@@ -94,7 +100,13 @@ class StudentTFamily(BaseEmission):
         n_series: int,
         cov_names: tuple[str, ...],
     ) -> tuple[StudentTFamily, tuple[ParamSpec, ...]]:
-        """Map `model.emission` config to a configured `StudentTFamily` and its `ParamSpec`s."""
+        """Map `model.emission` config to a configured `StudentTFamily` and its `ParamSpec`s.
+
+        A configuration with `covariance: full` or with the multivariate parameter names (`mean`, `scale` or
+        `chol`) selects the joint `MultivariateStudentT` (E11-T03); `m` / `s` keep the Part I code path.
+        """
+        if cfg.covariance == "full" or "mean" in cfg.params:
+            return MultivariateStudentT.from_config(cfg, n_states, n_series, cov_names)  # type: ignore[return-value]
         try:
             loc_idx = tuple(cov_names.index(c) for c in cfg.covariates.drift)
         except ValueError as exc:
@@ -240,5 +252,203 @@ class StudentTFamily(BaseEmission):
 
     def sufficient_stats(self, y: Array, dt: Array, gamma: Array, z: Array | None = None) -> object | None:
         """No EM sufficient statistics in v1 (hook for E5-T06)."""
+        del y, dt, gamma, z
+        return None
+
+
+@dataclass(frozen=True)
+class MultivariateStudentT(BaseEmission):
+    """Joint multivariate Student-t with a diagonal or full scale matrix (selected by `student_t` configs).
+
+    `y_t | i ~ t_nu_i(m_i(t) s(dt), Sigma_i(t) s(dt))`, `Sigma_i = L_i L_i^T` (`diag`: `L_i = diag(scale_i)`),
+    `Sigma_i(t) = e^{2 delta_i . z_t} Sigma_i`, one `nu_i > 2` per regime shared by all series. Built by
+    `StudentTFamily.from_config` (the config name is `student_t`; it has no registry entry of its own).
+    """
+
+    name: str = "student_t"
+    native_time: Literal["continuous", "discrete"] = field(default="discrete", init=False)
+    support: Support = "real"
+    scale_by_dt: bool = False
+    covariance: Literal["diag", "full"] = "diag"
+    mean_idx: tuple[int, ...] = ()
+    scale_idx: tuple[int, ...] = ()
+    joint: ClassVar[bool] = True
+
+    def __post_init__(self) -> None:
+        """`native_time` follows `scale_by_dt`."""
+        object.__setattr__(self, "native_time", "continuous" if self.scale_by_dt else "discrete")
+
+    def param_specs(self, n_states: int, n_series: int, cov_names: tuple[str, ...]) -> tuple[ParamSpec, ...]:
+        """Default specs: `mean`, `scale` (diag) or `chol` (full), one `nu` per regime."""
+        del cov_names
+        mean = ParamSpec(
+            name="emission.mean",
+            shape=(n_states, n_series),
+            domain="real",
+            mode="free",
+            init=np.zeros((n_states, n_series)),
+        )
+        nu = ParamSpec(
+            name="emission.nu",
+            shape=(n_states,),
+            domain="nu_gt_2",
+            mode="free",
+            init=np.full((n_states,), _DEFAULT_NU_INIT),
+        )
+        if self.covariance == "full":
+            scale = _chol_spec(n_states, n_series, None, mode="free", prior=None)
+        else:
+            scale = ParamSpec(
+                name="emission.scale",
+                shape=(n_states, n_series),
+                domain="positive",
+                mode="free",
+                init=np.full((n_states, n_series), 0.1),
+            )
+        return (mean, scale, nu)
+
+    @classmethod
+    def from_config(
+        cls, cfg: EmissionCfg, n_states: int, n_series: int, cov_names: tuple[str, ...]
+    ) -> tuple[MultivariateStudentT, tuple[ParamSpec, ...]]:
+        """Map `model.emission` to the family and its specs (`ito_correction` is not allowed)."""
+        if cfg.ito_correction:
+            raise ConfigError(
+                "the student_t emission has no Ito correction", path="model.emission.ito_correction"
+            )
+        full = cfg.covariance == "full"
+        scale_key = "chol" if full else "scale"
+        for required in ("mean", scale_key, "nu"):
+            if required not in cfg.params:
+                raise ConfigError(
+                    f"student_t emission requires params.{required}", path=f"model.emission.params.{required}"
+                )
+        idx: dict[str, tuple[int, ...]] = {}
+        for key, names in (("drift", cfg.covariates.drift), ("log_vol", cfg.covariates.log_vol)):
+            try:
+                idx[key] = tuple(cov_names.index(c) for c in names)
+            except ValueError as exc:
+                raise ConfigError(str(exc), path=f"model.emission.covariates.{key}") from exc
+        nu_spec = _spec_from_paramcfg(
+            "emission.nu",
+            cfg.params["nu"],
+            n_states=n_states,
+            n_series=1,
+            domain="nu_gt_2",
+            default_init=_DEFAULT_NU_INIT,
+            flat=True,
+        )
+        if nu_spec.tie_group is None and nu_spec.mode == "tied":
+            nu_spec = replace(nu_spec, tie_group=NU_TIE_GROUP)
+        specs = [
+            _spec_from_paramcfg(
+                "emission.mean",
+                cfg.params["mean"],
+                n_states=n_states,
+                n_series=n_series,
+                domain="real",
+                default_init=0.0,
+            ),
+            _chol_spec_from_paramcfg(cfg.params["chol"], n_states, n_series)
+            if full
+            else _spec_from_paramcfg(
+                "emission.scale",
+                cfg.params["scale"],
+                n_states=n_states,
+                n_series=n_series,
+                domain="positive",
+                default_init=0.1,
+            ),
+            nu_spec,
+        ]
+        for name, key in (("gamma", "drift"), ("delta", "log_vol")):
+            if not idx[key]:
+                continue
+            if name in cfg.params:
+                specs.append(
+                    _spec_from_paramcfg(
+                        f"emission.{name}",
+                        cfg.params[name],
+                        n_states=n_states,
+                        n_series=len(idx[key]),
+                        domain="real",
+                        default_init=0.0,
+                    )
+                )
+            else:
+                specs.append(_coef_spec(f"emission.{name}", n_states, len(idx[key])))
+        family = cls(
+            scale_by_dt=bool(cfg.scale_by_dt),
+            covariance=cfg.covariance,
+            mean_idx=idx["drift"],
+            scale_idx=idx["log_vol"],
+        )
+        return family, tuple(specs)
+
+    def _parts(self, dt: Array, theta: dict[str, Array], z: Array | None) -> tuple[Array, Array, Array]:
+        """`(T, N, M)` location, `(T, N, M, M)` scale factor `L~`, `(N,)` degrees of freedom."""
+        mu = theta["emission.mean"]
+        n_states, m = mu.shape
+        if self.covariance == "full":
+            chol = unpack_lower(theta["emission.chol"], m)
+        else:
+            chol = jax.vmap(jnp.diag)(theta["emission.scale"])
+        t = dt.shape[0]
+        mean_adj = jnp.zeros((t, n_states))
+        if self.mean_idx and "emission.gamma" in theta and z is not None:
+            mean_adj = z[:, jnp.asarray(self.mean_idx)] @ theta["emission.gamma"].T
+        logscale_adj = jnp.zeros((t, n_states))
+        if self.scale_idx and "emission.delta" in theta and z is not None:
+            logscale_adj = z[:, jnp.asarray(self.scale_idx)] @ theta["emission.delta"].T
+        mult = jnp.exp(logscale_adj)
+        loc = mu[None] + mean_adj[:, :, None]
+        if self.scale_by_dt:
+            loc = loc * dt[:, None, None]
+            mult = mult * jnp.sqrt(dt)[:, None]
+        return loc, mult[:, :, None, None] * chol[None], theta["emission.nu"]
+
+    def log_prob(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
+        """`(T, N)` joint log-density."""
+        loc, chol_t, nu = self._parts(dt, theta, z)
+        return mvt_logpdf(y[:, None, :], loc, chol_t, nu[None, :])
+
+    def cdf(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
+        """`(T, N, M)` marginal predictive CDFs (the marginals of a multivariate t are Student-t)."""
+        loc, chol_t, nu = self._parts(dt, theta, z)
+        sd = jnp.sqrt(jnp.sum(chol_t**2, axis=-1))
+        out: Array = jax.scipy.stats.t.cdf((y[:, None, :] - loc) / sd, df=nu[None, :, None])  # type: ignore[attr-defined]
+        return out
+
+    def sample(self, key: Array, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
+        """`mu + L z / sqrt(g / nu)` with `z ~ N(0, I)`, `g ~ chi2_nu`."""
+        loc, chol_t, nu = self._parts(dt, theta, z)
+        idx = jnp.arange(dt.shape[0])
+        k1, k2 = jax.random.split(key)
+        eps = jax.random.normal(k1, (dt.shape[0], loc.shape[-1]), dtype=loc.dtype)
+        g = 2.0 * jax.random.gamma(k2, nu[regime] / 2.0, shape=(dt.shape[0],), dtype=loc.dtype)
+        shock = jnp.einsum("tij,tj->ti", chol_t[idx, regime], eps)
+        return loc[idx, regime, :] + shock / jnp.sqrt(g / nu[regime])[:, None]
+
+    def moments(
+        self, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None
+    ) -> tuple[Array, Array]:
+        """Mean `loc` and marginal variances `nu / (nu - 2) diag(Sigma)` (`nu > 2` by construction)."""
+        loc, chol_t, nu = self._parts(dt, theta, z)
+        idx = jnp.arange(dt.shape[0])
+        diag = jnp.sum(chol_t[idx, regime] ** 2, axis=-1)
+        n = nu[regime][:, None]
+        return loc[idx, regime, :], diag * n / (n - 2.0)
+
+    def init_carry(self) -> object:
+        """No path-dependent state."""
+        return None
+
+    def step_carry(self, carry: object, y_t: Array, theta: dict[str, Array]) -> object:
+        """Identity."""
+        del y_t, theta
+        return carry
+
+    def sufficient_stats(self, y: Array, dt: Array, gamma: Array, z: Array | None = None) -> object | None:
+        """None (the multivariate t is estimated by ECM, E13-T02b)."""
         del y, dt, gamma, z
         return None

@@ -104,3 +104,16 @@ Closed-form M-step (no covariates, no Itô): with `n = Σγ`, `w = Σγ s`, `S1 
 `μ = S1 / w`, `Σ = (S2 − μ S1ᵀ − S1 μᵀ + w μ μᵀ) / n` (a relative jitter of `1e-10` is added before the
 Cholesky factorization). The conjugate prior is Normal-Wishart `(m0, κ0, W0, ν0)` (`conjugate_prior()`).
 A step with any missing series is dropped (there is no per-series masking under a joint density).
+
+## Multivariate Student-t
+
+A `student_t` configuration with `covariance: full`, or with the parameter names `mean`, `scale` (diagonal) or
+`chol` (full) and `nu`, selects the joint multivariate Student-t (the Part I names `m`, `s`, `nu` keep the
+independent per-series family):
+
+$$\log f = \log\Gamma\!\big(\tfrac{\nu+M}{2}\big) - \log\Gamma\!\big(\tfrac{\nu}{2}\big) - \tfrac M2\log(\nu\pi)
+- \log|\tilde L| - \tfrac{\nu+M}{2}\log\!\big(1 + q/\nu\big),\qquad q = \|\tilde L^{-1}(y - \tilde\mu)\|^2 ,$$
+
+with `L̃ = e^{δᵀz} √s L` and `ν_i > 2` shared by the series of one regime (`2 + softplus`). There is no Itô
+correction; `m_step` and `conjugate_prior` are absent (ECM estimates `ν`, E13-T02b). Sampling:
+`μ + L̃ ε / √(g/ν)`, `ε ~ N(0, I)`, `g ~ χ²_ν`.
