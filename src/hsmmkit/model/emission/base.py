@@ -5,7 +5,7 @@ Concept refs: §4.2, §5.5, §5.10; Part II §15.7 amendment 4 (`support`, `scal
 
 from __future__ import annotations
 
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from hsmmkit.model.params import Params, ParamSpec
 from hsmmkit.utils.typing import Array
@@ -52,6 +52,49 @@ class EmissionFamily(Protocol):
         """Advance `carry` by one observed step (identity for GBM)."""
         ...
 
-    def sufficient_stats(self, y: Array, dt: Array, gamma: Array) -> object | None:
-        """EM sufficient statistics hook (`None` in v1; used by E5-T06)."""
+    def sufficient_stats(self, y: Array, dt: Array, gamma: Array, z: Array | None = None) -> object | None:
+        """EM sufficient statistics for regime weights `gamma (T, N)` (`None` when the family has none)."""
         ...
+
+    def m_step(self, stats: object) -> Params | None:
+        """Closed-form maximizer of the expected complete-data log-likelihood (`None`: not available)."""
+        ...
+
+    def conjugate_prior(self) -> Any | None:  # noqa: ANN401
+        """The conjugate prior family of the parameters (`None`: no conjugate prior is known)."""
+        ...
+
+    def expected_log_prob(self, y: Array, dt: Array, q_theta: object, z: Array | None) -> Array | None:
+        """`E_q[log f_i(y_t)]`, `(T, N)`, for variational Bayes (`None`: not available)."""
+        ...
+
+    def moments(self, regime: Array, dt: Array, theta: Params, z: Array | None) -> tuple[Array, Array] | None:
+        """Analytic `(mean, variance)`, each `(T, M)`, of the regime `(T,)` density (`None`: not analytic)."""
+        ...
+
+
+class BaseEmission:
+    """Mixin with the optional estimation hooks of `EmissionFamily`; each returns `None` (not available).
+
+    Families inherit it and override only what they implement; estimators discover capabilities by calling
+    the hooks and checking for `None` (never by family name).
+    """
+
+    def m_step(self, stats: object) -> Params | None:
+        """Not available."""
+        del stats
+        return None
+
+    def conjugate_prior(self) -> Any | None:  # noqa: ANN401
+        """Not available."""
+        return None
+
+    def expected_log_prob(self, y: Array, dt: Array, q_theta: object, z: Array | None) -> Array | None:
+        """Not available."""
+        del y, dt, q_theta, z
+        return None
+
+    def moments(self, regime: Array, dt: Array, theta: Params, z: Array | None) -> tuple[Array, Array] | None:
+        """Not available."""
+        del regime, dt, theta, z
+        return None

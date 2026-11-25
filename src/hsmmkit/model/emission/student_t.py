@@ -20,7 +20,7 @@ import jax.scipy.stats
 import numpy as np
 
 from hsmmkit.model.dists import sample_student_t, student_t_logpdf
-from hsmmkit.model.emission.base import Support
+from hsmmkit.model.emission.base import BaseEmission, Support
 from hsmmkit.model.emission.gaussian import _coef_spec, _spec_from_paramcfg
 from hsmmkit.model.params.spec import ParamSpec
 from hsmmkit.plugins import register
@@ -36,7 +36,7 @@ _DEFAULT_NU_INIT = 8.0
 
 @register("emission", "student_t")
 @dataclass(frozen=True)
-class StudentTFamily:
+class StudentTFamily(BaseEmission):
     """Per-state location-scale Student-t emission.
 
     `loc_idx`/`logscale_idx` select, by column, which entries of the `(T, K_e)` emission covariate
@@ -218,6 +218,17 @@ class StudentTFamily:
         nu_sel = nu[regime][:, None]  # (T, 1)
         return sample_student_t(key, loc_sel, scale_sel, nu_sel, shape=loc_sel.shape)
 
+    def moments(
+        self, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None
+    ) -> tuple[Array, Array]:
+        """Mean and variance `(T, M)`; variance `inf` where `nu <= 2`, mean `nan` where `nu <= 1`."""
+        loc_t, scale_t, nu = self._loc_scale_nu(dt, theta, z)
+        idx = jnp.arange(dt.shape[0])
+        loc, scale = loc_t[idx, regime, :], scale_t[idx, regime, :]
+        nu_t = nu[regime][:, None]
+        var = jnp.where(nu_t > 2.0, scale**2 * nu_t / jnp.where(nu_t > 2.0, nu_t - 2.0, 1.0), jnp.inf)
+        return jnp.where(nu_t > 1.0, loc, jnp.nan), var
+
     def init_carry(self) -> object:
         """Student-t has no path-dependent state."""
         return None
@@ -227,7 +238,7 @@ class StudentTFamily:
         del y_t, theta
         return carry
 
-    def sufficient_stats(self, y: Array, dt: Array, gamma: Array) -> object | None:
+    def sufficient_stats(self, y: Array, dt: Array, gamma: Array, z: Array | None = None) -> object | None:
         """No EM sufficient statistics in v1 (hook for E5-T06)."""
-        del y, dt, gamma
+        del y, dt, gamma, z
         return None
