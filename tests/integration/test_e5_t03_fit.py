@@ -10,7 +10,7 @@ import pytest
 
 from regimekit.config.schema import EstimationSection
 from regimekit.estimation import fit
-from regimekit.estimation.init import lattice_jitter, random, rollvol_kmeans
+from regimekit.estimation.init import lattice_jitter, random, rolling_kmeans
 from regimekit.estimation.objective import make_objective
 from regimekit.estimation.optimizers import RunRecord
 from regimekit.utils.rng import key_for
@@ -55,7 +55,7 @@ def test_e5_t03_best_of_restarts_selection(monkeypatch: pytest.MonkeyPatch) -> N
     assert len(result.restarts) == restarts
     assert list(result.restarts.columns) == [
         "restart",
-        "init_strategy",
+        "init_method",
         "objective",
         "loglik",
         "n_iter",
@@ -105,7 +105,7 @@ def test_e5_t03_empty_init_list_defaults_to_random_for_every_restart() -> None:
         result = fit(case.spec, case.data, cfg, seed=4)
 
     assert len(result.restarts) == restarts
-    assert set(result.restarts["init_strategy"]) == {"random"}
+    assert set(result.restarts["init_method"]) == {"random"}
 
 
 @pytest.mark.parametrize(
@@ -120,7 +120,7 @@ def test_e5_t03_every_strategy_finite_under_steps_clock(emission: str, duration:
     key = key_for(0, 1)
 
     for theta in (
-        rollvol_kmeans(steps_data, case.spec, key),
+        rolling_kmeans(steps_data, case.spec, key),
         lattice_jitter(case.spec, key),
         random(steps_data, case.spec, key),
     ):

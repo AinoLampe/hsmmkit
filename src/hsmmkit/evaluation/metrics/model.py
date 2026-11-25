@@ -16,19 +16,19 @@ def _posterior(ctx: dict[str, object]) -> PosteriorResult:
     return post
 
 
-@metric("aic", {"posterior"})
+@metric("aic", {"posterior"}, better="lower")
 def aic(**ctx: object) -> float:
     """Akaike information criterion of the decoded fit."""
     return float(_posterior(ctx).aic)
 
 
-@metric("bic", {"posterior"})
+@metric("bic", {"posterior"}, better="lower")
 def bic(**ctx: object) -> float:
     """Bayesian information criterion of the decoded fit."""
     return float(_posterior(ctx).bic)
 
 
-@metric("icl", {"posterior"})
+@metric("icl", {"posterior"}, better="lower")
 def icl(**ctx: object) -> float:
     """Integrated completed likelihood criterion of the decoded fit."""
     return float(_posterior(ctx).icl)

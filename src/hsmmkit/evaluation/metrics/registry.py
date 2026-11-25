@@ -3,8 +3,9 @@
 Concept refs: §3.1 FR-E01, §5.5 (`Metric`). A metric is a named callable over a common context
 (`**ctx`) that declares which context entries it `needs`; a runner (E7-T02b) skips metrics whose needs
 it cannot supply. Context keys: `forecast` (`ForecastResult`), `realized (H, M)` realized future
-log-returns for steps `1..H`, `horizon` (int, `<= H`), `posterior` (`PosteriorResult`), `fit`
-(`FitResult`), `labels (T,)` ints or `None`, `strategy` (`pd.DataFrame` or `None`), plus the optional
+observations for steps `1..H`, `horizon` (int, `<= H`), `posterior` (`PosteriorResult`), `fit`
+(`FitResult`), `labels (T,)` ints or `None`, `extras` (`dict[str, pd.DataFrame]`: the frames finalized by the
+backtest's origin hooks, or one fold's slice of them), plus the optional
 `dt_next` / `z_emission_next` used by `log_score_mixture`.
 
 `aggregate` tells a runner how to combine per-origin values: `"mean"` (default) or `"rms"` (root of the
@@ -21,7 +22,7 @@ from typing import Literal, Protocol
 from regimekit.plugins import CORE_PROVENANCE, REGISTRY
 from regimekit.utils.errors import ConfigError
 
-Need = Literal["forecast", "posterior", "fit", "labels", "strategy"]
+Need = str  # "forecast", "posterior", "fit", "labels", or the name of an origin hook's extras frame
 MetricValue = float | dict[str, float]
 
 
@@ -56,6 +57,7 @@ class FunctionMetric:
     needs: frozenset[str]
     fn: Callable[..., MetricValue]
     aggregate: str = "mean"
+    better: Literal["lower", "higher"] | None = None
 
     def __call__(self, **ctx: object) -> MetricValue:
         """Call the wrapped function with the context."""
@@ -66,7 +68,6 @@ _BUILTIN_MODULES = (
     "regimekit.evaluation.metrics.predictive",
     "regimekit.evaluation.metrics.model",
     "regimekit.evaluation.metrics.labels",
-    "regimekit.evaluation.metrics.strategy",
 )
 
 
@@ -84,12 +85,21 @@ def register(metric: Metric, *, replace: bool = False, provenance: str = CORE_PR
 
 
 def metric(
-    name: str, needs: set[Need] | frozenset[Need], aggregate: Literal["mean", "rms"] = "mean"
+    name: str,
+    needs: set[Need] | frozenset[Need],
+    aggregate: Literal["mean", "rms"] = "mean",
+    *,
+    better: Literal["lower", "higher"] | None = None,
+    provenance: str = CORE_PROVENANCE,
 ) -> Callable[[Callable[..., MetricValue]], Callable[..., MetricValue]]:
-    """Decorator registering a function of `**ctx` as the metric `name`."""
+    """Decorator registering a function of `**ctx` as the metric `name`.
+
+    `better` tells `compare` which direction ranks best; `provenance` is the origin label (an application
+    passes its own).
+    """
 
     def wrap(fn: Callable[..., MetricValue]) -> Callable[..., MetricValue]:
-        register(FunctionMetric(name, frozenset(needs), fn, aggregate))
+        register(FunctionMetric(name, frozenset(needs), fn, aggregate, better), provenance=provenance)
         return fn
 
     return wrap
@@ -110,6 +120,15 @@ def _load_builtin() -> None:
     except Exception:
         _builtin_loaded = False
         raise
+
+
+def better_of(name: str) -> Literal["lower", "higher"] | None:
+    """The ranking direction a metric declares (`None`: not ranked or unknown)."""
+    _load_builtin()
+    if not REGISTRY.has("metric", name):
+        return None
+    direction: Literal["lower", "higher"] | None = getattr(REGISTRY.get("metric", name), "better", None)
+    return direction
 
 
 def available() -> list[str]:

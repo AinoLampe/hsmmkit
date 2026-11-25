@@ -65,7 +65,7 @@ def _project(root: Path, name: str, sojourn: float = 30.0) -> Path:
         model=_model(sojourn),
         estimation__restarts=1,
         estimation__max_iter=150,
-        estimation__init=["rollvol_kmeans"],
+        estimation__init=["rolling_kmeans"],
         estimation__device="cpu",
         forecast__horizon=1,
         forecast__n_sim=50,
@@ -129,7 +129,7 @@ def test_e7_t04_backtest_writes_all_artifacts_with_the_documented_schema(
     assert len(strategy) == int((folds["test_end"] - folds["test_start"]).sum())
 
     result, meta = read_backtest(out)
-    assert result.strategy is not None
+    assert "strategy" in result.extras
     assert meta["config"] == "dax_3state_gbm_nb"
     assert len(meta["snapshot_ids"]) == 1
     assert isinstance(meta["n_free"], int)

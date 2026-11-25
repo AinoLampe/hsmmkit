@@ -2,7 +2,7 @@
 
 `fit(spec, data, cfg, seed) -> FitResult` (CLAUDE.md §3.1) builds the engine/state-space from `spec`
 itself (`spec.engine` picks `expanded`/`explicit`), runs `cfg.restarts` independent `minimize` (E5-T02)
-calls from starting points cycled over `cfg.init`'s strategies, and keeps the best finite run.
+calls from starting points cycled over `cfg.init`'s methods, and keeps the best finite run.
 """
 
 from __future__ import annotations
@@ -42,18 +42,18 @@ _LOG = get_logger("regimekit.estimation.map")
 _WARM_START = "warm_start"
 
 
-def _restart_plan(strategies: list[str], restarts: int) -> list[str]:
-    """`strategies` cycled over `restarts` starts; the first strategy absorbs the remainder."""
-    if not strategies:
-        strategies = ["random"]
-    reps, remainder = divmod(restarts, len(strategies))
-    counts = [reps] * len(strategies)
+def _restart_plan(methods: list[str], restarts: int) -> list[str]:
+    """`methods` cycled over `restarts` starts; the first method absorbs the remainder."""
+    if not methods:
+        methods = ["random"]
+    reps, remainder = divmod(restarts, len(methods))
+    counts = [reps] * len(methods)
     counts[0] += remainder
-    return [name for name, count in zip(strategies, counts, strict=True) for _ in range(count)]
+    return [name for name, count in zip(methods, counts, strict=True) for _ in range(count)]
 
 
-def _init_theta(strategy: str, data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
-    result: Params = REGISTRY.get("init", strategy)(data, spec, key)
+def _init_theta(method: str, data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
+    result: Params = REGISTRY.get("init", method)(data, spec, key)
     return result
 
 
@@ -68,7 +68,7 @@ def fit(
 
     Restarts run sequentially, in a deterministic order, each with its own `key_for(seed, restart_idx)`.
     `warm_start` (unconstrained parameters `(n_free,)`, e.g. the previous walk-forward fold's optimum)
-    adds one *extra* restart, last, with `init_strategy == "warm_start"`; the `cfg.restarts` regular
+    adds one *extra* restart, last, with `init_method == "warm_start"`; the `cfg.restarts` regular
     restarts and their keys are unchanged.
     If no per-state emission location/scale spec identifies the labelling (`has_identifiability_guard`),
     the winner is relabelled by ascending `emission.scale` (`post_sort_states`) with a warning.
@@ -96,18 +96,18 @@ def fit(
         plan.append(_WARM_START)
     rows: list[dict[str, object]] = []
     records = []
-    for i, strategy in enumerate(plan):
-        if strategy == _WARM_START:
+    for i, method in enumerate(plan):
+        if method == _WARM_START:
             assert warm_start is not None
             u0 = warm_start
         else:
-            u0 = manager.flatten(_init_theta(strategy, init_data, spec, key_for(seed, i)))
+            u0 = manager.flatten(_init_theta(method, init_data, spec, key_for(seed, i)))
         record = minimize(objective, u0, cfg, _LOG)
         records.append(record)
         rows.append(
             {
                 "restart": i,
-                "init_strategy": strategy,
+                "init_method": method,
                 "objective": record.objective,
                 "loglik": record.loglik,
                 "n_iter": record.n_iter,

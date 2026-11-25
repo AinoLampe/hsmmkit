@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from regimekit.config.schema import EstimationSection
-from regimekit.estimation.init import observed_rows, rollvol_kmeans
+from regimekit.estimation.init import observed_rows, rolling_kmeans
 from regimekit.estimation.map import fit
 from regimekit.estimation.objective import make_objective
 from regimekit.evaluation.padding import PAD_MULTIPLE, pad_dataset, padded_length
@@ -70,28 +70,28 @@ def test_e7_t02b_observed_rows_is_a_noop_without_masked_rows_and_drops_padding()
 
 
 def test_e7_t02b_padding_rows_no_longer_bias_the_data_driven_init() -> None:
-    """`rollvol_kmeans` on the observed rows of a padded window equals the init on the raw window."""
+    """`rolling_kmeans` on the observed rows of a padded window equals the init on the raw window."""
     case = make_case("gbm", "negbin", 1, t_len=200, seed=3)
     padded = pad_dataset(case.data)
     key = key_for(0, 1)
-    plain = rollvol_kmeans(case.data, case.spec, key)
-    via_observed = rollvol_kmeans(observed_rows(padded), case.spec, key)
-    biased = rollvol_kmeans(padded, case.spec, key)
+    plain = rolling_kmeans(case.data, case.spec, key)
+    via_observed = rolling_kmeans(observed_rows(padded), case.spec, key)
+    biased = rolling_kmeans(padded, case.spec, key)
     for name in plain:
         np.testing.assert_array_equal(np.asarray(via_observed[name]), np.asarray(plain[name]), err_msg=name)
     assert not np.allclose(np.asarray(biased["emission.scale"]), np.asarray(plain["emission.scale"]))
 
 
 def _cfg(restarts: int = 1) -> EstimationSection:
-    return EstimationSection(restarts=restarts, init=["rollvol_kmeans"], max_iter=60, device="cpu")
+    return EstimationSection(restarts=restarts, init=["rolling_kmeans"], max_iter=60, device="cpu")
 
 
 def test_e7_t02b_warm_start_adds_one_extra_restart_last() -> None:
-    """`warm_start` appends a restart (`init_strategy == "warm_start"`); regular restarts are unchanged."""
+    """`warm_start` appends a restart (`init_method == "warm_start"`); regular restarts are unchanged."""
     case = make_case("gbm", "negbin", 1, t_len=200, seed=3)
     plain = fit(case.spec, case.data, _cfg(), seed=4)
     warm = fit(case.spec, case.data, _cfg(), seed=4, warm_start=plain.uparams)
-    assert list(warm.restarts["init_strategy"]) == ["rollvol_kmeans", "warm_start"]
+    assert list(warm.restarts["init_method"]) == ["rolling_kmeans", "warm_start"]
     assert warm.restarts.loc[0, "objective"] == plain.restarts.loc[0, "objective"]  # same key, same restart
     # started at the previous optimum: at least as good as the cold restart it was added to
     assert warm.restarts.loc[1, "objective"] <= warm.restarts.loc[0, "objective"] + 1e-6

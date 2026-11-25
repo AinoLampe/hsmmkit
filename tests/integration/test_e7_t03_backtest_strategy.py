@@ -11,8 +11,8 @@ import pytest
 from regimekit.data.prepare import Preparer
 from regimekit.evaluation.backtest import run_backtest, schedule_folds
 from regimekit.evaluation.metrics.registry import resolve
-from regimekit.evaluation.strategies import make_strategy
 from regimekit.finance.config import StrategyCfg
+from regimekit.finance.strategies import StrategyHook, make_strategy
 from tests.helpers import backtest_fixtures as bf
 
 SHORT = {"initial_train": 100, "refit_every": 30, "horizons": (1,), "restarts": 1, "n_sim": 50}
@@ -25,13 +25,15 @@ def _run(tmp_path: Path, strategy_cfg: StrategyCfg):  # type: ignore[no-untyped-
     cfg.evaluation.strategy = strategy_cfg
     grid = Preparer(cfg.data).fit(obs, [], train_end=obs.times[-1]).transform(obs, [])
     strategy = make_strategy(strategy_cfg, grid.nominal_dt, n_series=1)
-    result = run_backtest(cfg, obs, [], seed=5, strategy=strategy)
+    result = run_backtest(
+        cfg, lambda: (obs, []), seed=5, hooks=[StrategyHook(strategy, strategy_cfg.cost_bps)]
+    )
     folds = schedule_folds(np.asarray(grid.times), np.asarray(grid.dt), cfg.evaluation.backtest, 1)
     return result, grid, folds
 
 
 def _check_trace(result, grid, folds, cost_bps: float) -> pd.DataFrame:  # type: ignore[no-untyped-def]  # noqa: ANN001
-    trace = result.strategy
+    trace = result.extras.get("strategy")
     assert trace is not None
     origins = np.concatenate([np.arange(f.test_start, f.test_end) for f in folds])
     # the position decided at origin o is held over row o + 1
@@ -56,7 +58,7 @@ def _check_trace(result, grid, folds, cost_bps: float) -> pd.DataFrame:  # type:
             "value"
         ]
         for metric in resolve(list(STRATEGY_METRICS)):
-            assert rows[metric.name] == metric(strategy=part), (fold.fold, metric.name)
+            assert rows[metric.name] == metric(extras={"strategy": part}), (fold.fold, metric.name)
     summary = result.summary.set_index(["horizon", "metric"])
     for name in STRATEGY_METRICS:
         assert summary.loc[(0, name), "n"] == len(folds)
@@ -64,7 +66,7 @@ def _check_trace(result, grid, folds, cost_bps: float) -> pd.DataFrame:  # type:
 
 
 def test_e7_t03_backtest_collects_long_flat_positions_costs_and_fold_metrics(tmp_path: Path) -> None:
-    """`run_backtest(strategy=)` returns the trace of the positions decided at each origin, with costs."""
+    """`StrategyHook` gives the trace of the positions decided at each origin, with costs."""
     cfg = StrategyCfg(
         type="regime_long_flat", flat_if={"regime": 0, "prob_above": 0.6, "use": "smoothed"}, cost_bps=5.0
     )
@@ -74,7 +76,9 @@ def test_e7_t03_backtest_collects_long_flat_positions_costs_and_fold_metrics(tmp
     assert set(np.unique(trace["position"])) <= {0.0, 1.0}
     with pytest.warns(UserWarning, match="smoothed"):
         again, _, _ = _run(tmp_path, cfg)
-    pd.testing.assert_frame_equal(result.strategy, again.strategy, check_exact=True)  # bitwise (AC5)
+    pd.testing.assert_frame_equal(
+        result.extras["strategy"], again.extras["strategy"], check_exact=True
+    )  # bitwise (AC5)
     pd.testing.assert_frame_equal(result.metrics, again.metrics, check_exact=True)
 
 

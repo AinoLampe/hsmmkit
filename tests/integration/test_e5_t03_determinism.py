@@ -15,7 +15,7 @@ def test_e5_t03_fit_twice_gives_bitwise_identical_uparams() -> None:
     """Running `fit` twice with the same config/data/seed on CPU gives bitwise identical `uparams`."""
     case = make_case("gbm", "negbin", 1, t_len=150, seed=9)
     cfg = EstimationSection(  # type: ignore[call-arg]
-        optimizer="lbfgs", max_iter=30, restarts=3, init=["random", "rollvol_kmeans"]
+        optimizer="lbfgs", max_iter=30, restarts=3, init=["random", "rolling_kmeans"]
     )
 
     with warnings.catch_warnings():

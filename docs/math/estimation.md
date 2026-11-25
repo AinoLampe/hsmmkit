@@ -59,7 +59,7 @@ and never touches an RNG key: identical inputs give bitwise identical output.
 `estimation/init.py` builds a starting `theta` (constrained space) for one restart, from three
 strategies (`estimation.init` config, cycled over `estimation.restarts`):
 
-- `rollvol_kmeans(data, spec, key)`: clusters a 21-step rolling realized volatility
+- `rolling_kmeans(data, spec, key)`: clusters a 21-step rolling realized volatility
   (`sqrt(mean(y^2) / nominal_dt)`, no literal `252`) into `n_states` regimes via 1-D k-means (k-means++
   seeding, 20 iterations; deterministic from `key` via a derived NumPy seed). Cluster centers, sorted
   ascending, become `sigma` (or `s`); the cluster mean of `y / nominal_dt` becomes `mu`/`m`; each

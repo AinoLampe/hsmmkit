@@ -7,7 +7,7 @@ Every named component is registered in `regimekit.plugins.REGISTRY` under a *kin
 | `emission` | `gbm`, `student_t`, `product` |
 | `duration` | `geometric`, `negbin`, `poisson`, `gamma`, `weibull`, `lognormal`, `nonparametric` |
 | `metric` | the metrics of `regimekit.evaluation.metrics` |
-| `init` | `rollvol_kmeans`, `lattice_jitter`, `random` |
+| `init` | `rolling_kmeans` (alias `rollvol_kmeans`), `lattice_jitter`, `random` |
 | `covariate_forecaster` | `freeze`, `scenario`, `bootstrap`, `ar` |
 | `source`, `clock`, `transform`, `preset` | empty until later tickets fill them |
 

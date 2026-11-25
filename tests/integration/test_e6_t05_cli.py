@@ -358,7 +358,7 @@ def test_e6_t05_write_simulation_splits_returns_for_several_series(tmp_path: Pat
         times=np.arange(4).astype("datetime64[D]").astype("datetime64[ns]"),
         regimes=regimes,
         phases=np.ones_like(regimes),
-        returns=returns,
+        values=returns,
         segments=segments_of(regimes),
     )
     table = pd.read_parquet(tmp_path / "simulation.parquet")

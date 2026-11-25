@@ -142,7 +142,7 @@ estimation:
   tol_g: 1e-06
   restarts: 8
   init:
-  - rollvol_kmeans
+  - rolling_kmeans
   - lattice_jitter
   - random
   use_priors: true

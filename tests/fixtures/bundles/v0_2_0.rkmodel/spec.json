@@ -1,0 +1,57 @@
+{
+  "n_states": 2,
+  "n_series": 1,
+  "order": 1,
+  "d_max": 300,
+  "engine": "expanded",
+  "initial": "uniform",
+  "duration_conditioning": "current",
+  "emission": {
+    "family": "gbm",
+    "class": "GBMFamily"
+  },
+  "duration": {
+    "family": "geometric",
+    "class": "GeometricDuration",
+    "r": null
+  },
+  "transition": {
+    "mode": "jump",
+    "class": "JumpTransition"
+  },
+  "build_inputs": {
+    "n_series": 1,
+    "cov_names": {},
+    "clock": "steps",
+    "nominal_dt": 1.0
+  },
+  "params": [
+    {
+      "name": "emission.mu",
+      "shape": [
+        2,
+        1
+      ]
+    },
+    {
+      "name": "emission.sigma",
+      "shape": [
+        2
+      ]
+    },
+    {
+      "name": "duration.rate",
+      "shape": [
+        2
+      ]
+    },
+    {
+      "name": "transition.pi_rows",
+      "shape": [
+        2,
+        1
+      ]
+    }
+  ],
+  "n_free": 6
+}

@@ -42,7 +42,7 @@ def _simulate(seed: int, t_len: int) -> tuple[ModelSpec, PreparedDataset]:
 
 
 def _fit_sigma(spec: ModelSpec, data: PreparedDataset, seed: int, restarts: int) -> np.ndarray:
-    cfg = EstimationSection(restarts=restarts, max_iter=400, init=["rollvol_kmeans", "lattice_jitter"])
+    cfg = EstimationSection(restarts=restarts, max_iter=400, init=["rolling_kmeans", "lattice_jitter"])
     res = fit(spec, data, cfg, seed)
     assert np.isfinite(res.loglik)
     return np.asarray(res.params["emission.scale"])

@@ -35,7 +35,7 @@ def _log_score_by_fold(
     tmp_path: Path, obs: ObservationSet, covs: list[CovariateSeries], *, with_covariate: bool
 ) -> np.ndarray:
     cfg = bf.make_config(tmp_path, with_covariate=with_covariate, **CHEAP)  # type: ignore[arg-type]
-    metrics = run_backtest(cfg, obs, covs, seed=5).metrics
+    metrics = run_backtest(cfg, lambda: (obs, covs), seed=5).metrics
     rows = metrics[(metrics["metric"] == "log_score") & (metrics["horizon"] == 1)].sort_values("fold")
     return rows["value"].to_numpy()
 

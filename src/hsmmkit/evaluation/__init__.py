@@ -1,1 +1,1 @@
-"""Backtesting, strategies and metrics."""
+"""Walk-forward backtesting and metrics."""

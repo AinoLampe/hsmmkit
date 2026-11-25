@@ -1,27 +1,36 @@
-"""`ModelStore`: the `<name>.rkmodel/` bundle (E8-T01, ADR-0011).
+"""`ModelStore`: the `<name>.rkmodel/` bundle (E8-T01, ADR-0011; bundle v2 from E10-T07a).
 
-Concept refs: §5.8 persistence. A bundle persists a `FitResult` so that it reloads without data and
-reproduces its log-likelihood bitwise on the same backend:
+A bundle persists a `FitResult` so that it reloads without data and reproduces its log-likelihood bitwise
+on the same backend (`bundle_version = 2`):
 
-- `manifest.json`: `bundle_version`, regimekit/jax versions, backend, `created_at`, `seed`, `profile`,
-  `schema_version`
+- `manifest.json`: `bundle_version`, `package`, `package_version`, `extensions` (`{name: version}`), jax
+  version, backend, `created_at`, `seed`, `schema_version`
 - `config.resolved.yaml`: the full resolved configuration
 - `spec.json`: the `ModelSpec` structure (family names and classes, `n_states`, `order`, `d_max`, `engine`,
   `initial`, covariate names), the data-derived build inputs and the expected parameter names and shapes
 - `params.safetensors`: constrained `theta` (key = parameter name) and the unconstrained `u` (key
   `__u__`), float64
 - `prep_stats.json`: `PrepStats`
-- `snapshots.json`: snapshot ids and provider metadata
+- `provenance.json`: the data snapshot ids
 - `fit_report.json`: objective, loglik, convergence, restarts table, diagnostics, standard errors
+- `extensions/<name>.json`: opaque payloads of extension packages (the finance application writes its
+  data-source metadata to `extensions/regimekit.json`)
 
 `load` rebuilds the `ModelSpec` from the resolved configuration and the stored build inputs through the
 family registries (`model.build.build_model_spec_from`), so no dataset is needed, then checks that the
-stored `theta` has the expected names and shapes and equals `ParamManager.unflatten(u)` to 1e-12.
+stored `theta` has the expected names and shapes and equals `ParamManager.unflatten(u)` to 1e-12, and that
+every extension listed in the manifest is importable.
+
+Bundles of `bundle_version 1` (0.1.x / 0.2.x: `snapshots.json`, `profile` in the manifest) are read through
+a compatibility path (`snapshots.json` becomes the provenance and the `regimekit` extension, `profile` is
+ignored); saving always writes version 2.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -45,9 +54,9 @@ if TYPE_CHECKING:
     from regimekit.data.contracts import PreparedDataset
     from regimekit.model.spec import ModelSpec
 
-BUNDLE_VERSION = 1
-_PROFILE_OF_SCHEMA = {"regimekit": "finance"}  # E10-T07a replaces the bundle manifest (bundle v2)
-REGISTERED_PROFILES = frozenset({"finance"})  # `core` has no execution path in 0.1.0 (overview section 8)
+BUNDLE_VERSION = 2
+PACKAGE = "regimekit"
+EXTENSIONS_DIR = "extensions"
 U_KEY = "__u__"
 THETA_TOLERANCE = 1e-12
 
@@ -56,11 +65,13 @@ CONFIG = "config.resolved.yaml"
 SPEC = "spec.json"
 PARAMS = "params.safetensors"
 PREP_STATS = "prep_stats.json"
-SNAPSHOTS = "snapshots.json"
+PROVENANCE = "provenance.json"
+SNAPSHOTS = "snapshots.json"  # bundle version 1
 FIT_REPORT = "fit_report.json"
-FILES = (MANIFEST, CONFIG, SPEC, PARAMS, PREP_STATS, SNAPSHOTS, FIT_REPORT)
+FILES = (MANIFEST, CONFIG, SPEC, PARAMS, PREP_STATS, PROVENANCE, FIT_REPORT)
+FILES_V1 = (MANIFEST, CONFIG, SPEC, PARAMS, PREP_STATS, SNAPSHOTS, FIT_REPORT)
 
-_RESTART_COLUMNS = ["restart", "init_strategy", "objective", "loglik", "n_iter", "converged", "wall_s"]
+_RESTART_COLUMNS = ["restart", "init_method", "objective", "loglik", "n_iter", "converged", "wall_s"]
 
 
 def _jsonable(value: Any) -> Any:  # noqa: ANN401
@@ -76,9 +87,9 @@ def _jsonable(value: Any) -> Any:  # noqa: ANN401
     return value
 
 
-def _package_version() -> str:
+def _package_version(name: str = PACKAGE) -> str:
     try:
-        return version("regimekit")
+        return version(name)
     except PackageNotFoundError:  # a source tree without an installed distribution
         return "unknown"
 
@@ -93,7 +104,18 @@ def _read_json(path: Path) -> Any:  # noqa: ANN401
 
 
 class ModelStore:
-    """Save and load `<name>.rkmodel/` bundles (see the module docstring)."""
+    """Save and load `<name>.rkmodel/` bundles (see the module docstring).
+
+    `suffix` is the directory suffix of `bundle_path` (`.rkmodel` for `regimekit`).
+    """
+
+    def __init__(self, suffix: str = ".rkmodel") -> None:
+        """Choose the bundle directory suffix."""
+        self.suffix = suffix
+
+    def bundle_path(self, directory: Path | str, name: str) -> Path:
+        """`<directory>/<name><suffix>`."""
+        return Path(directory) / f"{name}{self.suffix}"
 
     @staticmethod
     def save(
@@ -103,12 +125,15 @@ class ModelStore:
         data: PreparedDataset,
         *,
         seed: int | None = None,
+        extensions: Mapping[str, Any] | None = None,
     ) -> Path:
         """Write `fit` to the bundle directory `path` (created; files of an older bundle are replaced).
 
         `cfg` is the resolved configuration the model was built from and `data` the dataset it was fitted
         on: they supply what a `FitResult` does not carry (the configuration, the covariate name split
         per entry point, `nominal_dt`, the snapshot ids). `seed` defaults to `cfg.project.seed`.
+        `extensions` maps an extension package name to its JSON-serializable payload, written to
+        `extensions/<name>.json` and listed with its version in the manifest.
 
         Raises:
             PersistenceError: the directory cannot be written.
@@ -133,13 +158,14 @@ class ModelStore:
             ) from exc
         manifest = {
             "bundle_version": BUNDLE_VERSION,
-            "regimekit_version": _package_version(),
+            "package": PACKAGE,
+            "package_version": _package_version(),
+            "extensions": {name: _package_version(name) for name in (extensions or {})},
             "jax_version": jax.__version__,
             "backend": jax.default_backend(),
             "devices": [str(d) for d in jax.devices()],
             "created_at": datetime.now(UTC).isoformat(),
             "seed": cfg.project.seed if seed is None else seed,
-            "profile": _PROFILE_OF_SCHEMA.get(cfg.SCHEMA_ID, cfg.SCHEMA_ID),
             "schema_version": cfg.schema_version,
         }
         spec_json = {
@@ -166,23 +192,7 @@ class ModelStore:
             "params": [{"name": s.name, "shape": list(s.shape)} for s in spec.param_specs],
             "n_free": manager.n_free,
         }
-        snapshots = {
-            "snapshot_ids": list(data.snapshot_ids),
-            "primary": {
-                "provider": cfg.data.source.option("provider"),
-                "symbols": list(cfg.data.source.option("symbols", [])),
-                "interval": cfg.data.source.option("interval"),
-                "adjusted": cfg.data.source.option("adjusted"),
-            },
-            "covariates": [
-                {
-                    "name": c.name,
-                    "provider": None if c.source is None else c.source.option("provider"),
-                    "series": None if c.source is None else c.source.option("series"),
-                }
-                for c in cfg.data.covariates
-            ],
-        }
+        provenance = {"snapshot_ids": list(data.snapshot_ids)}
         report = {
             "objective": fit.objective,
             "loglik": fit.loglik,
@@ -199,12 +209,38 @@ class ModelStore:
             (out / SPEC).write_text(json.dumps(spec_json, indent=2), encoding="utf-8")
             save_file(arrays, str(out / PARAMS))
             (out / PREP_STATS).write_text(prep_stats_to_json(fit.prep_stats), encoding="utf-8")
-            (out / SNAPSHOTS).write_text(json.dumps(snapshots, indent=2), encoding="utf-8")
+            (out / PROVENANCE).write_text(json.dumps(provenance, indent=2), encoding="utf-8")
             (out / FIT_REPORT).write_text(json.dumps(report, indent=2), encoding="utf-8")
+            for stale in (out / SNAPSHOTS,):  # an older version-1 bundle in the same directory
+                stale.unlink(missing_ok=True)
+            ext_dir = out / EXTENSIONS_DIR
+            if ext_dir.is_dir():
+                for old in ext_dir.glob("*.json"):
+                    old.unlink()
+            for name, payload in (extensions or {}).items():
+                ext_dir.mkdir(parents=True, exist_ok=True)
+                (ext_dir / f"{name}.json").write_text(
+                    json.dumps(_jsonable(payload), indent=2), encoding="utf-8"
+                )
             (out / MANIFEST).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         except OSError as exc:
             raise PersistenceError(f"cannot write the model bundle {out}: {exc}", path=str(out)) from exc
         return out
+
+    @staticmethod
+    def load_extensions(path: Path | str) -> dict[str, Any]:
+        """The extension payloads of a bundle (`{name: payload}`); a version-1 bundle gives `regimekit`.
+
+        Raises:
+            PersistenceError: an unreadable bundle or payload.
+        """
+        src = Path(path)
+        manifest = _read_json(src / MANIFEST)
+        if manifest.get("bundle_version") == 1:
+            return {PACKAGE: _read_json(src / SNAPSHOTS)}
+        ext_dir = src / EXTENSIONS_DIR
+        names = sorted(manifest.get("extensions", {}))
+        return {name: _read_json(ext_dir / f"{name}.json") for name in names}
 
     @staticmethod
     def load(path: Path | str, config_cls: type[ProjectConfig] = ProjectConfig) -> FitResult:
@@ -219,34 +255,36 @@ class ModelStore:
         """Read a bundle back as a `FitResult` (no dataset needed; `loglik` is checked by the caller).
 
         Raises:
-            PersistenceError: a missing or unreadable file, a `bundle_version` newer than this release, a
-                `profile` that is not registered, a configuration that no longer builds, or parameters
+            PersistenceError: a missing or unreadable file, a `bundle_version` newer than this release, an
+                extension package that is not importable, a configuration that no longer builds, or parameters
                 whose names or shapes disagree with the model (the message names the parameter).
         """
         src = Path(path)
         if not src.is_dir():
             raise PersistenceError(f"{src} is not a model bundle directory", path=str(src))
-        missing = [name for name in FILES if not (src / name).is_file()]
+        manifest = _read_json(src / MANIFEST) if (src / MANIFEST).is_file() else {}
+        bundle_version = manifest.get("bundle_version", BUNDLE_VERSION if not manifest else None)
+        files = FILES_V1 if bundle_version == 1 else FILES
+        missing = [name for name in files if not (src / name).is_file()]
         if missing:
             raise PersistenceError(
                 f"{src} is not a complete model bundle (missing {', '.join(missing)})", path=str(src)
             )
-
-        manifest = _read_json(src / MANIFEST)
-        bundle_version = manifest.get("bundle_version")
         if not isinstance(bundle_version, int) or bundle_version > BUNDLE_VERSION:
             raise PersistenceError(
                 f"{src} is bundle version {bundle_version!r}, newer than the supported {BUNDLE_VERSION}: "
                 "upgrade regimekit to load it",
                 path=str(src / MANIFEST),
             )
-        profile = manifest.get("profile")
-        if profile not in REGISTERED_PROFILES:
-            raise PersistenceError(
-                f"{src} was written for the profile {profile!r}, which is not registered "
-                f"(known: {sorted(REGISTERED_PROFILES)})",
-                path=str(src / MANIFEST),
-            )
+        for name in manifest.get("extensions", {}):
+            try:
+                found = importlib.util.find_spec(name) is not None
+            except (ImportError, ValueError):
+                found = False
+            if not found:
+                raise PersistenceError(
+                    f"{src} needs the extension package {name!r}, which is not importable", path=name
+                )
 
         try:
             cfg = load_config(src / CONFIG, config_cls)
@@ -286,7 +324,11 @@ class ModelStore:
         theta = {name: jnp.asarray(stored[name]) for name in reference}
 
         report = _read_json(src / FIT_REPORT)
-        restarts = pd.DataFrame(report["restarts"], columns=_RESTART_COLUMNS)
+        raw_restarts = pd.DataFrame(report["restarts"])
+        if "init_method" not in raw_restarts.columns and raw_restarts.shape[1] > 1:
+            # a bundle of version 1 uses the former name of the second column
+            raw_restarts = raw_restarts.rename(columns={raw_restarts.columns[1]: "init_method"})
+        restarts = raw_restarts.reindex(columns=_RESTART_COLUMNS)
         std_errors = report["std_errors"]
         return FitResult(
             estimator="map",

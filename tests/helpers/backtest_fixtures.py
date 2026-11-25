@@ -147,7 +147,7 @@ def make_config(
         },
         "transition": {"mode": "jump", "order": 1, "covariates": [], "coef_prior_sd": 1.0},
     }
-    cfg["estimation"].update(restarts=restarts, max_iter=300, init=["rollvol_kmeans", "lattice_jitter"])
+    cfg["estimation"].update(restarts=restarts, max_iter=300, init=["rolling_kmeans", "lattice_jitter"])
     cfg["estimation"]["device"] = "cpu"
     if sharp:
         cfg["estimation"].update(max_iter=2000, tol_f=1.0e-16, tol_g=1.0e-11)

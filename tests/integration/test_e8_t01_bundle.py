@@ -137,16 +137,17 @@ def test_e8_t01_load_does_not_need_data_and_rebuilds_the_covariate_split(tmp_pat
 
 
 def test_e8_t01_bundle_has_all_files_with_the_documented_keys(plain: Fitted, bundle: Path) -> None:
-    """AC2: seven files; manifest keys incl. `profile`/`schema_version`; `__u__` in the safetensors file."""
-    assert sorted(p.name for p in bundle.iterdir()) == sorted(FILES)
+    """AC2: the bundle-v2 files; manifest keys incl. `package`; `__u__` in the safetensors file."""
+    assert sorted(p.name for p in bundle.iterdir() if p.is_file()) == sorted(FILES)
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     for key in (
-        "bundle_version", "regimekit_version", "jax_version", "backend", "created_at", "seed", "profile",
-        "schema_version",
+        "bundle_version", "package", "package_version", "extensions", "jax_version", "backend", "created_at",
+        "seed", "schema_version",
     ):  # fmt: skip
         assert key in manifest, key
-    assert manifest["bundle_version"] == BUNDLE_VERSION == 1
-    assert manifest["profile"] == "finance"
+    assert manifest["bundle_version"] == BUNDLE_VERSION == 2
+    assert "profile" not in manifest
+    assert manifest["package"] == "regimekit"
     assert manifest["schema_version"] == plain.cfg.schema_version
     assert manifest["seed"] == plain.cfg.project.seed
 
@@ -171,21 +172,20 @@ def test_e8_t01_bundle_has_all_files_with_the_documented_keys(plain: Fitted, bun
     assert spec_json["emission"]["family"] == "gbm"
     assert spec_json["duration"]["class"] == "GeometricDuration"
     assert load_config(bundle / "config.resolved.yaml", FinanceConfig).model_dump() == plain.cfg.model_dump()
-    snapshots = json.loads((bundle / "snapshots.json").read_text(encoding="utf-8"))
+    snapshots = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     assert snapshots["snapshot_ids"] == list(plain.data.snapshot_ids)
     report = json.loads((bundle / "fit_report.json").read_text(encoding="utf-8"))
     assert report["loglik"] == plain.fit.loglik
     assert len(report["restarts"]) == len(plain.fit.restarts)
 
 
-def test_e8_t01_an_unregistered_profile_is_rejected_by_name(bundle: Path) -> None:
-    """AC2: a manifest whose `profile` is not registered -> `PersistenceError` naming it."""
+def test_e8_t01_the_profile_key_of_the_manifest_is_ignored(bundle: Path) -> None:
+    """Bundle v2 has no `profile`; a stale key in a manifest is not an error (E10-T07a)."""
     manifest_path = bundle / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["profile"] = "quantum"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    with pytest.raises(PersistenceError, match="quantum"):
-        ModelStore.load(bundle, FinanceConfig)
+    ModelStore.load(bundle, FinanceConfig)
 
 
 # --- AC3 -----------------------------------------------------------------------------------------

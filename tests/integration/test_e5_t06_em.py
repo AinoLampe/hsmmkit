@@ -104,7 +104,7 @@ def test_e5_t06_em_agrees_with_map_on_a_two_state_set(duration: str) -> None:
     spec, data = _problem(duration, 7, t_len=4000)
     em = em_fit(spec, data, _cfg(max_iter=3000, tol_f=1e-12), 7)
     cfg = EstimationSection(
-        restarts=3, max_iter=600, use_priors=False, init=["rollvol_kmeans", "lattice_jitter"]
+        restarts=3, max_iter=600, use_priors=False, init=["rolling_kmeans", "lattice_jitter"]
     )
     map_fit = fit(spec, data, cfg, 7)
     assert abs(em.loglik - map_fit.loglik) <= 1e-4 * abs(map_fit.loglik)

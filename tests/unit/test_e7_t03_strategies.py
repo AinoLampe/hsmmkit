@@ -15,18 +15,19 @@ from ruamel.yaml import YAML
 from regimekit.config.yaml_io import dump_resolved, export_json_schema, load_config
 from regimekit.evaluation.backtest import run_backtest
 from regimekit.evaluation.metrics.registry import resolve
-from regimekit.evaluation.metrics.strategy import hit_rate, max_drawdown, sharpe, turnover
-from regimekit.evaluation.strategies import (
+from regimekit.finance import FinanceConfig
+from regimekit.finance.clocks import TRADING_DAYS_PER_YEAR
+from regimekit.finance.config import StrategyCfg
+from regimekit.finance.metrics import hit_rate, max_drawdown, sharpe, turnover
+from regimekit.finance.strategies import (
     RegimeLongFlat,
     RegimeTargetVol,
+    StrategyHook,
     check_backtest_admissible,
     make_strategy,
     strategy_returns,
     strategy_trace,
 )
-from regimekit.finance import FinanceConfig
-from regimekit.finance.clocks import TRADING_DAYS_PER_YEAR
-from regimekit.finance.config import StrategyCfg
 from regimekit.inference.results import ForecastResult, PosteriorResult
 from regimekit.utils.errors import ConfigError
 from tests.helpers import backtest_fixtures as bf
@@ -141,7 +142,7 @@ def test_e7_t03_smoothed_use_warns_in_a_backtest(tmp_path: Path) -> None:
     obs = bf.observations(bf.simulate_returns(30))
     cfg = bf.make_config(tmp_path)
     with pytest.warns(UserWarning, match="smoothed"), pytest.raises(ConfigError):  # too short: no fold fits
-        run_backtest(cfg, obs, [], seed=1, strategy=smoothed)
+        run_backtest(cfg, lambda: (obs, []), seed=1, hooks=[StrategyHook(smoothed)])
 
 
 def test_e7_t03_long_flat_regime_out_of_range_is_a_config_error() -> None:
@@ -260,27 +261,31 @@ def _trace(returns: list[float], positions: list[float] | None = None, gross: li
 def test_e7_t03_constant_return_gives_zero_drawdown_infinite_sharpe_full_hit_rate() -> None:
     """Constant return gives zero drawdown infinite sharpe full hit rate."""
     trace = _trace([0.001] * 252)
-    assert max_drawdown(strategy=trace) == 0.0
-    assert sharpe(strategy=trace) == np.inf
-    assert hit_rate(strategy=trace) == 1.0
-    assert turnover(strategy=trace) == pytest.approx(1.0 / (252 * DT))  # one entry per year
-    assert sharpe(strategy=_trace([-0.001] * 5)) == -np.inf
-    assert sharpe(strategy=_trace([0.0] * 5)) == 0.0
+    assert max_drawdown(extras={"strategy": trace}) == 0.0
+    assert sharpe(extras={"strategy": trace}) == np.inf
+    assert hit_rate(extras={"strategy": trace}) == 1.0
+    assert turnover(extras={"strategy": trace}) == pytest.approx(1.0 / (252 * DT))  # one entry per year
+    assert sharpe(extras={"strategy": _trace([-0.001] * 5)}) == -np.inf
+    assert sharpe(extras={"strategy": _trace([0.0] * 5)}) == 0.0
 
 
 def test_e7_t03_sharpe_and_drawdown_match_closed_forms() -> None:
     """Sharpe and drawdown match closed forms."""
     r = [0.01, 0.03, 0.02, 0.0]
     expected = np.mean(r) / np.std(r, ddof=1) * np.sqrt(TRADING_DAYS_PER_YEAR)
-    assert sharpe(strategy=_trace(r)) == pytest.approx(expected, rel=1e-12)
+    assert sharpe(extras={"strategy": _trace(r)}) == pytest.approx(expected, rel=1e-12)
     # per-step clock (dt = 1): no annualization factor
-    assert sharpe(strategy=_trace(r, dt=1.0)) == pytest.approx(np.mean(r) / np.std(r, ddof=1), rel=1e-12)
+    assert sharpe(extras={"strategy": _trace(r, dt=1.0)}) == pytest.approx(
+        np.mean(r) / np.std(r, ddof=1), rel=1e-12
+    )
     # +10 %, -10 %, +10 %, -10 % (log): peak e^0.1, trough 1 -> drawdown 1 - e^-0.1; equity starts at 1
     up_down = _trace([0.1, -0.1, 0.1, -0.1])
-    assert max_drawdown(strategy=up_down) == pytest.approx(1.0 - np.exp(-0.1), rel=1e-12)
-    assert sharpe(strategy=up_down) == pytest.approx(0.0, abs=1e-12)
+    assert max_drawdown(extras={"strategy": up_down}) == pytest.approx(1.0 - np.exp(-0.1), rel=1e-12)
+    assert sharpe(extras={"strategy": up_down}) == pytest.approx(0.0, abs=1e-12)
     # a loss from the very start counts against the initial equity of 1
-    assert max_drawdown(strategy=_trace([-0.2, 0.0])) == pytest.approx(1.0 - np.exp(-0.2), rel=1e-12)
+    assert max_drawdown(extras={"strategy": _trace([-0.2, 0.0])}) == pytest.approx(
+        1.0 - np.exp(-0.2), rel=1e-12
+    )
 
 
 def test_e7_t03_turnover_and_hit_rate_on_a_hand_checked_fixture() -> None:
@@ -291,9 +296,9 @@ def test_e7_t03_turnover_and_hit_rate_on_a_hand_checked_fixture() -> None:
         gross=[0.01, 0.0, -0.02, 0.01],
         turnover_=[1.0, 1.0, 1.0, 0.0],
     )
-    assert hit_rate(strategy=trace) == pytest.approx(2.0 / 3.0)
-    assert turnover(strategy=trace) == pytest.approx(3.0 / (4 * DT))
-    assert hit_rate(strategy=_trace([0.01], positions=[0.0])) == 0.0
+    assert hit_rate(extras={"strategy": trace}) == pytest.approx(2.0 / 3.0)
+    assert turnover(extras={"strategy": trace}) == pytest.approx(3.0 / (4 * DT))
+    assert hit_rate(extras={"strategy": _trace([0.01], positions=[0.0])}) == 0.0
 
 
 def test_e7_t03_strategy_metrics_resolve_and_refuse_an_empty_trace() -> None:
@@ -304,7 +309,7 @@ def test_e7_t03_strategy_metrics_resolve_and_refuse_an_empty_trace() -> None:
         with pytest.raises(ConfigError):
             m()
         with pytest.raises(ConfigError):
-            m(strategy=pd.DataFrame())
+            m(extras={"strategy": pd.DataFrame()})
 
 
 # --- AC5: reproducibility ------------------------------------------------------------------------

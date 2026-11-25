@@ -2,19 +2,19 @@
 
 Concept refs: §5.9, §4.10. The report is deterministic for a given run (no timestamps): header (config,
 snapshots, seed, versions, backend), model summary, per-fold fit summary, diagnostics of the last fold's fit
-with their warnings (E5-T04), the backtest summary table, the strategy table and timings.
+with their warnings (E5-T04), the backtest summary table, the sections contributed by the origin hooks
+(`extra_sections`, E10-T07a) and timings.
 """
 
 from __future__ import annotations
 
 import platform
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 import jax
 import numpy as np
 import pandas as pd
-
-from regimekit.evaluation.metrics.strategy import hit_rate, max_drawdown, sharpe, turnover
 
 if TYPE_CHECKING:
     from regimekit.config.schema import ProjectConfig
@@ -26,12 +26,11 @@ SECTIONS = (
     "Fit",
     "Diagnostics",
     "Backtest summary",
-    "Strategy",
     "Timings",
 )
 
 
-def _md_table(frame: pd.DataFrame) -> str:
+def md_table(frame: pd.DataFrame) -> str:
     """A pipe table of `frame` (floats to 4 significant digits)."""
 
     def cell(value: object) -> str:
@@ -97,36 +96,20 @@ def _diagnostic_lines(diagnostics: dict[str, Any] | None) -> tuple[list[str], li
     return lines, warns
 
 
-def _strategy_lines(result: BacktestResult, cfg: ProjectConfig) -> list[str]:
-    trace = result.strategy
-    if trace is None:
-        return ["No strategy was configured."]
-    s = getattr(cfg.evaluation, "strategy", None)  # the finance evaluation section adds it
-    overall = {
-        "total log-return": float(trace["return"].sum()),
-        "final equity": float(trace["equity"].iloc[-1]),
-        "sharpe": sharpe(strategy=trace),
-        "max_drawdown": max_drawdown(strategy=trace),
-        "turnover": turnover(strategy=trace),
-        "hit_rate": hit_rate(strategy=trace),
-    }
-    desc = f"`{s.type}`, cost {s.cost_bps:g} bp" if s is not None else "configured strategy"
-    table = pd.DataFrame({"statistic": list(overall), "value": list(overall.values())})
-    return [
-        f"Strategy {desc}; {len(trace)} out-of-sample periods in {trace['fold'].nunique()} folds.",
-        "",
-        _md_table(table),
-    ]
-
-
 def build_report(
     name: str,
     cfg: ProjectConfig,
     result: BacktestResult,
     meta: dict[str, Any],
     diagnostics: dict[str, Any] | None,
+    extra_sections: Sequence[Callable[[dict[str, Any]], str]] = (),
 ) -> str:
-    """The Markdown report of one backtest run (every heading of `SECTIONS`)."""
+    """The Markdown report of one backtest run (every heading of `SECTIONS`).
+
+    `extra_sections` are contributed by origin hooks (E10-T07a): each gets `{"cfg", "result", "meta"}` and
+    gives a Markdown section (with its `##` heading); they follow the backtest summary.
+    """
+    context = {"cfg": cfg, "result": result, "meta": meta}
     snaps = meta.get("snapshot_ids", [])
     ver = meta.get("versions", {})
     folds = result.folds
@@ -144,7 +127,7 @@ def build_report(
         "## Header",
         "",
         f"- config: `{name}`, seed {meta.get('seed', 'n/a')}",
-        f"- snapshot ids: {', '.join(f'`{s}`' for s in snaps) if snaps else 'n/a'}",
+        f"- data provenance (snapshot ids): {', '.join(f'`{s}`' for s in snaps) if snaps else 'n/a'}",
         f"- versions: regimekit {ver.get('regimekit', 'n/a')}, python {ver.get('python', 'n/a')}, "
         f"jax {ver.get('jax', 'n/a')}",
         f"- backend: {ver.get('backend', 'n/a')}, x64 {ver.get('x64', 'n/a')}",
@@ -163,7 +146,7 @@ def build_report(
         f"{float(folds['restart_gap'].max()) if 'restart_gap' in folds.columns else float('nan'):.4g} "
         "(0 with a single restart).",
         "",
-        _md_table(fit_table),
+        md_table(fit_table),
         "",
         "## Diagnostics",
         "",
@@ -175,14 +158,11 @@ def build_report(
         "",
         "## Backtest summary",
         "",
-        "Rows with horizon 0 are in-sample (per fold) or strategy metrics; `pit_ks` rows pool all origins.",
+        "Rows with horizon 0 are in-sample (per fold) or hook metrics; `pit_ks` rows pool all origins.",
         "",
-        _md_table(summary),
+        md_table(summary),
         "",
-        "## Strategy",
-        "",
-        *_strategy_lines(result, cfg),
-        "",
+        *[block for section in extra_sections for block in (section(context).rstrip("\n"), "")],
         "## Timings",
         "",
         f"- total fit time {fit_total:.1f} s, mean per fold {fit_total / max(len(folds), 1):.1f} s",

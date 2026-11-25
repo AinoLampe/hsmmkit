@@ -18,6 +18,7 @@ from regimekit.evaluation.compare import (
 )
 from regimekit.evaluation.report import SECTIONS, build_report
 from regimekit.evaluation.results import BacktestResult
+from regimekit.finance.report import strategy_section
 from regimekit.persistence.results import read_backtest, write_backtest
 from regimekit.utils.errors import ConfigError, DataError
 from tests.helpers import backtest_fixtures as bf
@@ -81,7 +82,9 @@ def _result(
                 "dt": [1.0, 1.0, 1.0],
             }
         )
-    return BacktestResult(folds=folds, metrics=metrics, strategy=trace, summary=summary)
+    return BacktestResult(
+        folds=folds, metrics=metrics, summary=summary, extras={} if trace is None else {"strategy": trace}
+    )
 
 
 def test_e7_t04_backtest_files_round_trip_and_the_stale_strategy_file_is_removed(tmp_path: Path) -> None:
@@ -93,16 +96,16 @@ def test_e7_t04_backtest_files_round_trip_and_the_stale_strategy_file_is_removed
     pd.testing.assert_frame_equal(back.metrics, result.metrics, check_dtype=False)
     pd.testing.assert_frame_equal(back.summary, result.summary, check_dtype=False)
     pd.testing.assert_frame_equal(back.folds, result.folds, check_dtype=False)
-    assert result.strategy is not None
-    assert back.strategy is not None
-    pd.testing.assert_frame_equal(back.strategy, result.strategy, check_dtype=False)
+    assert "strategy" in result.extras
+    assert "strategy" in back.extras
+    pd.testing.assert_frame_equal(back.extras["strategy"], result.extras["strategy"], check_dtype=False)
     schema = pq.read_schema(tmp_path / "backtest_metrics.parquet")
     assert [(f.name, str(f.type)) for f in schema] == [
         ("fold", "int64"), ("horizon", "int64"), ("metric", "string"), ("value", "double"),
     ]  # fmt: skip
     write_backtest(_result(-1.0, 0.01, -500.0, 10.0, strategy=False), tmp_path, {"snapshot_ids": []})
     assert not (tmp_path / "strategy.parquet").exists()
-    assert read_backtest(tmp_path)[0].strategy is None
+    assert read_backtest(tmp_path)[0].extras == {}
 
 
 def test_e7_t04_comparison_table_has_one_row_per_config_and_marks_the_best() -> None:
@@ -163,9 +166,10 @@ def test_e7_t04_report_has_every_section_and_lists_diagnostic_warnings(tmp_path:
         "regime_occupancy": {"value": [0.6, 0.4], "warning": None},
         "restart_dispersion": {"value": 0.3, "warning": "restarts disagree"},
     }
-    text = build_report("demo", cfg, _result(-1.0, 0.01, -500.0, 10.0), meta, diagnostics)
+    text = build_report("demo", cfg, _result(-1.0, 0.01, -500.0, 10.0), meta, diagnostics, [strategy_section])
     for section in SECTIONS:
         assert f"\n## {section}\n" in text, section
+    assert "\n## Strategy\n" in text
     assert "# Backtest report: demo" in text
     for needle in (
         "`abc123`",
@@ -176,11 +180,13 @@ def test_e7_t04_report_has_every_section_and_lists_diagnostic_warnings(tmp_path:
         "sharpe",
     ):
         assert needle in text, needle
-    no_strategy = build_report("demo", cfg, _result(-1.0, 0.01, -500.0, 10.0, strategy=False), meta, None)
+    no_strategy = build_report(
+        "demo", cfg, _result(-1.0, 0.01, -500.0, 10.0, strategy=False), meta, None, [strategy_section]
+    )
     assert "No strategy was configured." in no_strategy
     assert "No diagnostics were computed." in no_strategy
     assert text == build_report(
-        "demo", cfg, _result(-1.0, 0.01, -500.0, 10.0), meta, diagnostics
+        "demo", cfg, _result(-1.0, 0.01, -500.0, 10.0), meta, diagnostics, [strategy_section]
     )  # deterministic
 
 

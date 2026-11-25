@@ -1,7 +1,7 @@
 """Single-start optimization of the objective (E5-T02): L-BFGS + zoom line search, Adam fallback.
 
 Concept refs: §4.8 Optimizers, §5.4 (`FitResult.restarts`). `minimize` drives one run from one starting
-point `u0` to a `RunRecord`; multi-start and initialization strategy are E5-T03's job.
+point `u0` to a `RunRecord`; multi-start and initialization method are E5-T03's job.
 
 Convergence: `|delta J| <= tol_f * max(1, |J|)` or `||grad J||_inf <= tol_g`, else `max_iter` reached.
 Adam's convergence test is only evaluated every 10 iterations (its per-step objective estimate is noisier
@@ -128,7 +128,7 @@ def minimize(
     """Minimize `objective.value` from `u0`, following `cfg.optimizer`'s schedule and tolerances.
 
     Never raises for a non-finite value/gradient: it reports `reason="non_finite"` (or
-    `"non_finite_start"` when `u0` itself is bad) and returns the last point known to be finite. `log`
+    `"non_finite_start"` when `u0` itself is bad) and gives back the last point known to be finite. `log`
     is a structlog-style bound logger; a progress event (`iter`, `J`, `grad_norm`, `elapsed`) is emitted
     every `k` iterations (`_LOG_EVERY`, default 25).
     """

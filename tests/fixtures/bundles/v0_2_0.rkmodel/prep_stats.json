@@ -1,0 +1,11 @@
+{
+  "cov_mean": [],
+  "cov_std": [],
+  "train_window": [
+    "2020-01-02",
+    "2020-10-06"
+  ],
+  "cov_names": [],
+  "transforms": {},
+  "lags": {}
+}

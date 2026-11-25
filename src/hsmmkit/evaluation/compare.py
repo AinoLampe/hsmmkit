@@ -15,11 +15,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from regimekit.evaluation.metrics.registry import better_of
 from regimekit.evaluation.results import BacktestResult
 from regimekit.utils.errors import ConfigError, DataError
 
-LOWER_IS_BETTER = frozenset({"crps", "rmse", "mae", "aic", "bic", "icl", "max_drawdown", "fit_time"})
-HIGHER_IS_BETTER = frozenset({"log_score", "log_score_mixture", "sharpe", "hit_rate"})
+_NOT_METRICS_LOWER = frozenset({"fit_time"})  # columns of the table that are no registered metric
 # components that describe a run instead of ranking it
 _ALWAYS = ("aic", "bic", "icl")  # in-sample criteria stay in the table whatever --metric selects
 _SKIPPED = ("pit_ks", "pit_coverage.pit", "regime_occupancy", "regime_persistence")
@@ -116,9 +116,8 @@ def comparison_table(entries: Sequence[CompareEntry], metrics: Sequence[str] | N
 def best_configs(table: pd.DataFrame) -> dict[str, str]:
     """`{column: config with the best value}` for every column whose direction is known.
 
-    Lower is better for `crps, rmse, mae, aic, bic, icl, max_drawdown, fit_time`, higher for `log_score,
-    log_score_mixture, sharpe, hit_rate`; other columns (coverage, turnover, `n_free`) are not ranked. With a
-    single configuration nothing is marked.
+    The direction comes from the metric's own `better` declaration (`fit_time`: lower); columns of metrics
+    without one (coverage, `n_free`) are not ranked. With a single configuration nothing is marked.
     """
     best: dict[str, str] = {}
     if len(table) < 2:
@@ -128,9 +127,10 @@ def best_configs(table: pd.DataFrame) -> dict[str, str]:
             continue
         name = base_metric(str(col))
         values = table[col].to_numpy(dtype=np.float64)
-        if not np.isfinite(values).any() or not (name in LOWER_IS_BETTER or name in HIGHER_IS_BETTER):
+        direction = "lower" if name in _NOT_METRICS_LOWER else better_of(name)
+        if not np.isfinite(values).any() or direction is None:
             continue
-        pick = np.nanargmin(values) if name in LOWER_IS_BETTER else np.nanargmax(values)
+        pick = np.nanargmin(values) if direction == "lower" else np.nanargmax(values)
         best[str(col)] = str(table["config"].iloc[int(pick)])
     return best
 

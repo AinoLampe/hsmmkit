@@ -22,7 +22,7 @@ class FitResult:
     uparams: Array
     objective: float
     loglik: float
-    restarts: pd.DataFrame  # restart, init_strategy, objective, loglik, n_iter, converged, wall_s
+    restarts: pd.DataFrame  # restart, init_method, objective, loglik, n_iter, converged, wall_s
     converged: bool
     n_iter: int
     std_errors: dict[str, Array] | None

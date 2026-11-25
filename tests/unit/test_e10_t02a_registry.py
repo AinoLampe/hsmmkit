@@ -121,7 +121,7 @@ def test_e10_t02a_part_one_components_are_registered() -> None:
         "poisson",
         "weibull",
     }
-    assert set(REGISTRY.names("init")) == {"lattice_jitter", "random", "rollvol_kmeans"}
+    assert set(REGISTRY.names("init")) == {"lattice_jitter", "random", "rolling_kmeans", "rollvol_kmeans"}
     assert set(REGISTRY.names("covariate_forecaster")) == {"ar", "bootstrap", "freeze", "scenario"}
     assert set(REGISTRY.names("metric")) == set(metrics.available())
     assert REGISTRY.names("clock") == ("calendar", "steps", "trading")  # E10-T03

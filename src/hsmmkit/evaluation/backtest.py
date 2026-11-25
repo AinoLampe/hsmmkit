@@ -13,9 +13,8 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
@@ -30,7 +29,6 @@ from regimekit.evaluation.metrics.predictive import one_step_mixture_weights, pi
 from regimekit.evaluation.metrics.registry import resolve
 from regimekit.evaluation.padding import pad_dataset
 from regimekit.evaluation.results import BacktestResult
-from regimekit.evaluation.strategies import Strategy, check_backtest_admissible, strategy_trace
 from regimekit.inference.covariate_forecasters import make_forecaster
 from regimekit.inference.decode import decode
 from regimekit.inference.forecast import MonteCarloForecaster
@@ -47,12 +45,43 @@ if TYPE_CHECKING:
     from regimekit.engine.base import InferenceEngine
     from regimekit.estimation.results import FitResult
     from regimekit.evaluation.metrics.registry import Metric
+    from regimekit.inference.results import ForecastResult
     from regimekit.statespace.index import StateSpace
     from regimekit.utils.typing import Array
 
 _LOG = get_logger("regimekit.backtest")
 
 _YEARS_TOL = 1e-9  # elapsed-time comparisons: a sum of equal steps must count as the exact length
+
+
+@runtime_checkable
+class OriginHook(Protocol):
+    """An extension point of the walk-forward loop (E10-T07a): called at every forecast origin.
+
+    `on_origin` receives the fold, the origin row, the filtered `Posterior` of the data up to the origin
+    (only `log_alpha` and `index` are meaningful), the Monte-Carlo forecast from it and the fold's prepared
+    dataset; it gives back the values of one row, or an empty dict for "no row at this origin". `finalize`
+    turns the collected rows (each with `fold` and `origin` added) into the frame stored under
+    `BacktestResult.extras[name]`; a frame with a `fold` column can be scored per fold by metrics whose
+    `needs` name the hook.
+    """
+
+    name: str
+
+    def on_origin(
+        self,
+        fold: int,
+        origin: int,
+        posterior: Posterior,
+        forecast: ForecastResult | None,
+        data: PreparedDataset,
+    ) -> dict[str, Any]:
+        """The row of this origin (values only), or `{}`."""
+        ...
+
+    def finalize(self, rows: list[dict[str, Any]]) -> pd.DataFrame:
+        """The frame of all rows (possibly empty is an error of the hook)."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -85,7 +114,7 @@ def schedule_folds(times: np.ndarray, dt: np.ndarray, cfg: BacktestCfg, max_hori
 
     Args:
         times: `(T,)` grid end times (only their length is used here).
-        dt: `(T,)` `Δ` per row in clock units (years under the trading/calendar clocks).
+        dt: `(T,)` `Δ` per row in clock units (years under a year clock).
         cfg: the `evaluation.backtest` section.
         max_horizon: largest forecast horizon (`max(cfg.horizons)`).
 
@@ -263,10 +292,9 @@ def _rule(name: str, agg_of: dict[str, str]) -> str:
 
 def run_backtest(
     cfg: ProjectConfig,
-    obs: ObservationSet,
-    covs: Sequence[CovariateSeries],
+    data_loader: Callable[[], tuple[ObservationSet, Sequence[CovariateSeries]]],
     seed: int,
-    strategy: Strategy | None = None,
+    hooks: Sequence[OriginHook] = (),
     on_fold: Callable[[Fold, FitResult, PreparedDataset], None] | None = None,
 ) -> BacktestResult:
     """Walk-forward evaluation: per fold refit on the train window, forecast from every test origin.
@@ -282,20 +310,19 @@ def run_backtest(
     (`evaluation.padding`), so the jitted engine functions compile once per padded length, not per fold.
 
     Metrics that need a decoded posterior (`aic`, `bic`, `icl`, `regime_*`) are evaluated once per fold on
-    the train window and stored with `horizon == 0`. With a `strategy` (E7-T03), the position decided at
-    every origin from its filtered probabilities and forecast is held over the next step; the resulting
-    trace (`evaluation.strategies.strategy_trace`, costs from `evaluation.strategy.cost_bps`) is returned in
-    `BacktestResult.strategy` and the strategy metrics (`sharpe`, `max_drawdown`, `turnover`, `hit_rate`) are
-    evaluated per fold on its slice (`horizon == 0`). Without a strategy those metrics, and metrics that need
-    labels, are skipped. `on_fold(fold, fit, train)` is called after every fold's fit with the fitted model
+    the train window and stored with `horizon == 0`. Each `OriginHook` is called at every origin (E10-T07a)
+    and its frame is returned in `BacktestResult.extras[hook.name]`; metrics whose `needs` name hooks are
+    evaluated per fold on that fold's slice of the frame (`horizon == 0`, context `extras`). Metrics whose
+    needs nobody supplies (hook frames, labels) are skipped. `data_loader()` gives the observations and the
+    covariate series. `on_fold(fold, fit, train)` is called after every fold's fit with the fitted model
     and the (unpadded) train window, e.g. to run the fit diagnostics of the last fold.
 
     Returns:
         `BacktestResult` with `folds` (`schedule_folds` table + `fit_time` seconds and the fit summary
         `objective`, `loglik`, `converged`, `n_iter`, `restart_gap`), `metrics` (one row per
         `(fold, horizon, metric)`: the mean over the fold's origins, root mean square for `rmse`),
-        `strategy` (the trace, or `None` without a strategy) and `summary` (per `(horizon, metric)`:
-        `mean`, `sd` across folds, `n` folds).
+        `summary` (per `(horizon, metric)`: `mean`, `sd` across folds, `n` folds) and `extras` (the hooks'
+        frames).
         `pit_ks` / `pit_ks_pvalue` rows pool the PIT values of all origins per horizon (`n` = pooled
         origins; the p-value ignores the overlap between horizons > 1 and is optimistic there).
 
@@ -310,13 +337,14 @@ def run_backtest(
     metrics = resolve(list(cfg.evaluation.metrics))
     per_origin = [m for m in metrics if m.needs <= {"forecast", "fit"}]
     per_fold = [m for m in metrics if "posterior" in m.needs and m.needs <= {"posterior", "fit"}]
-    per_strategy = [m for m in metrics if m.needs == {"strategy"}] if strategy is not None else []
-    skipped = [m.name for m in metrics if m not in per_origin + per_fold + per_strategy]
+    hook_names = {h.name for h in hooks}
+    per_extra = [m for m in metrics if m.needs and m.needs <= hook_names]
+    skipped = [m.name for m in metrics if m not in per_origin + per_fold + per_extra]
     if skipped:
-        _LOG.info("backtest_metrics_skipped", metrics=skipped, reason="need labels or a strategy trace")
-    agg_of = {m.name: m.aggregate for m in per_origin + per_fold + per_strategy}
-    if strategy is not None:
-        check_backtest_admissible(strategy)
+        _LOG.info("backtest_metrics_skipped", metrics=skipped, reason="need labels or a hook's frame")
+    agg_of = {m.name: m.aggregate for m in per_origin + per_fold + per_extra}
+
+    obs, covs = data_loader()
 
     # The grid does not depend on the fitted statistics: one full-sample preparation fixes the fold table.
     grid = Preparer(cfg.data).fit(obs, covs, train_end=obs.require_times()[-1]).transform(obs, covs)
@@ -346,7 +374,7 @@ def run_backtest(
     )
 
     origin_rows: list[OriginRow] = []
-    decisions: list[tuple[int, int, np.ndarray]] = []  # (fold, origin, position decided there)
+    hook_rows: dict[str, list[dict[str, Any]]] = {h.name: [] for h in hooks}
     fold_rows: list[tuple[int, int, str, float]] = []
     fit_times: list[float] = []
     fit_rows: list[dict[str, object]] = []
@@ -393,7 +421,7 @@ def run_backtest(
                 for name, value in _flatten(metric.name, metric(**ctx)).items():
                     fold_rows.append((fold.fold, 0, name, value))
 
-        if per_origin or strategy is not None:
+        if per_origin or hooks:
             rows, taken = _forecast_fold(
                 fold_index=fold.fold,
                 origins=fold.origins(),
@@ -408,10 +436,11 @@ def run_backtest(
                 n_sim=n_sim,
                 seed=seed,
                 clock_options=cfg.data.clock_options,
-                strategy=strategy,
+                hooks=hooks,
             )
             origin_rows += rows
-            decisions += taken
+            for name, taken_rows in taken.items():
+                hook_rows[name] += taken_rows
         _LOG.info(
             "backtest_fold_done",
             fold=fold.fold,
@@ -423,18 +452,17 @@ def run_backtest(
 
     origin_frame = pd.DataFrame(origin_rows, columns=_ORIGIN_COLUMNS)
     fold_frame = _fold_metrics(origin_frame, fold_rows, agg_of)
-    trace = None
-    if strategy is not None:
-        trace = _strategy_trace(decisions, grid, cfg)
-        fold_frame = _with_strategy_metrics(fold_frame, trace, per_strategy)
+    extras = {h.name: h.finalize(hook_rows[h.name]) for h in hooks}
+    if per_extra:
+        fold_frame = _with_extra_metrics(fold_frame, extras, per_extra)
     folds_table = fold_table(folds, grid.times)
     folds_table["fit_time"] = fit_times
     folds_table = pd.concat([folds_table, pd.DataFrame(fit_rows)], axis=1)
     return BacktestResult(
         folds=folds_table,
         metrics=fold_frame,
-        strategy=trace,
         summary=_summary(fold_frame, origin_frame, agg_of),
+        extras=extras,
     )
 
 
@@ -453,9 +481,9 @@ def _forecast_fold(
     n_sim: int,
     seed: int,
     clock_options: Mapping[str, Any],
-    strategy: Strategy | None,
-) -> tuple[list[OriginRow], list[tuple[int, int, np.ndarray]]]:
-    """Metric rows `(fold, origin, horizon, metric, value)` and strategy decisions of one fold."""
+    hooks: Sequence[OriginHook],
+) -> tuple[list[OriginRow], dict[str, list[dict[str, Any]]]]:
+    """Metric rows `(fold, origin, horizon, metric, value)` and the hook rows of one fold."""
     max_h = horizons[-1]
     engine_tag = fitted.spec.engine
     wants_mixture = any(m.name == "log_score_mixture" for m in metrics)
@@ -464,16 +492,17 @@ def _forecast_fold(
     obs_np = np.asarray(data.observations)
     mask_np = np.asarray(data.mask)
     rows: list[OriginRow] = []
-    taken: list[tuple[int, int, np.ndarray]] = []
+    taken: dict[str, list[dict[str, Any]]] = {h.name: [] for h in hooks}
     for o in origins:
         post = _filter_posterior(log_alpha[: o + 1], loglik, space, engine_tag)
         data_o = data.window(0, o + 1)
         forecast = mc.forecast(
             fitted, data_o, max_h, n_sim, derive_seed(seed, PURPOSE_BACKTEST_FORECAST, fold_index, o), post
         )
-        if strategy is not None and bool(mask_np[o + 1].all()):
-            filtered = jax.nn.softmax(log_alpha[o]) @ space.index.collapse
-            taken.append((fold_index, o, np.asarray(strategy.decide(filtered, forecast), dtype=np.float64)))
+        for hook in hooks:
+            values = hook.on_origin(fold_index, o, post, forecast, data)
+            if values:
+                taken[hook.name].append({"fold": fold_index, "origin": o, **values})
         base: dict[str, object] = {
             "forecast": forecast,
             "fit": fitted,
@@ -504,36 +533,22 @@ def _forecast_fold(
     return rows, taken
 
 
-def _strategy_trace(
-    decisions: list[tuple[int, int, np.ndarray]], grid: PreparedDataset, cfg: ProjectConfig
+def _with_extra_metrics(
+    fold_frame: pd.DataFrame, extras: Mapping[str, pd.DataFrame], metrics: Sequence[Metric]
 ) -> pd.DataFrame:
-    """The strategy table of the decisions: the position decided at origin `o` is held over row `o + 1`."""
-    if not decisions:
-        raise DataError(
-            "the strategy recorded no position: every origin's next return is missing", path="data"
-        )
-    strategy_cfg = getattr(cfg.evaluation, "strategy", None)  # the finance evaluation section adds it
-    cost_bps = strategy_cfg.cost_bps if strategy_cfg is not None else 0.0
-    rows = np.asarray([o + 1 for _, o, _ in decisions], dtype=np.int64)
-    return strategy_trace(
-        np.asarray(grid.times)[rows],
-        np.vstack([pos for _, _, pos in decisions]),
-        np.asarray(grid.observations)[rows],
-        np.asarray(grid.dt)[rows],
-        cost_bps,
-        fold=np.asarray([f for f, _, _ in decisions], dtype=np.int64),
-    )
-
-
-def _with_strategy_metrics(
-    fold_frame: pd.DataFrame, trace: pd.DataFrame, metrics: Sequence[Metric]
-) -> pd.DataFrame:
-    """`fold_frame` plus the strategy metrics of each fold's slice of `trace` (`horizon == 0`)."""
+    """`fold_frame` plus the metrics of each fold's slice of the hooks' frames (`horizon == 0`)."""
+    for name, frame in extras.items():
+        if "fold" not in frame.columns:
+            raise DataError(f"the frame of the hook {name!r} has no `fold` column", path=f"extras.{name}")
     rows: list[tuple[int, int, str, float]] = []
-    for fold, part in trace.groupby("fold", sort=True):
+    folds = sorted({int(f) for frame in extras.values() for f in frame["fold"].unique()})
+    for fold in folds:
+        slices = {name: frame[frame["fold"] == fold].reset_index(drop=True) for name, frame in extras.items()}
         for metric in metrics:
-            for name, value in _flatten(metric.name, metric(strategy=part.reset_index(drop=True))).items():
-                rows.append((int(str(fold)), 0, name, value))
+            if any(slices[name].empty for name in metric.needs):
+                continue
+            for name, value in _flatten(metric.name, metric(extras=slices)).items():
+                rows.append((fold, 0, name, value))
     extra = pd.DataFrame(rows, columns=_FOLD_COLUMNS).astype(
         {"fold": "int64", "horizon": "int64", "value": "float64"}
     )

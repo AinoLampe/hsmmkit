@@ -1,0 +1,19 @@
+{
+  "objective": -608.3152677730027,
+  "loglik": 624.0173699966497,
+  "converged": false,
+  "n_iter": 40,
+  "restarts": [
+    {
+      "restart": 0,
+      "init_strategy": "rollvol_kmeans",
+      "objective": -608.3152677730027,
+      "loglik": 624.0173699966497,
+      "n_iter": 40,
+      "converged": false,
+      "wall_s": 4.409094463999963
+    }
+  ],
+  "diagnostics": {},
+  "std_errors": null
+}

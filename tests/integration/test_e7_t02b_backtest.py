@@ -48,7 +48,7 @@ def test_e7_t02b_fold_table_metric_rows_summary_and_single_compilation(tmp_path:
     returns = bf.simulate_returns(bf.N_PRICES - 1)
     obs = bf.observations(returns)
     cfg = bf.make_config(tmp_path, metrics=ALL_METRICS)
-    result = run_backtest(cfg, obs, [], seed=5)
+    result = run_backtest(cfg, lambda: (obs, []), seed=5)
 
     # --- fold table equals the scheduler's output
     grid = Preparer(cfg.data).fit(obs, [], train_end=obs.times[-1]).transform(obs, [])
@@ -60,7 +60,7 @@ def test_e7_t02b_fold_table_metric_rows_summary_and_single_compilation(tmp_path:
         [f.fold, f.train_start, f.train_end, f.test_start, f.test_end] for f in expected
     ]
     assert (result.folds["fit_time"] > 0).all()
-    assert result.strategy is None
+    assert result.extras == {}
 
     # --- metrics: one row per (fold, horizon, metric); horizon 0 = per-fold model metrics
     m = result.metrics
@@ -140,7 +140,7 @@ def test_e7_t02b_standardization_uses_only_each_folds_train_window(
     cfg = bf.make_config(  # type: ignore[arg-type]
         tmp_path, with_covariate=True, metrics=("log_score",), scheme=scheme, **SHORT
     )
-    result = run_backtest(cfg, obs, [cov], seed=5)
+    result = run_backtest(cfg, lambda: (obs, [cov]), seed=5)
 
     fold_calls = calls[1:]  # the first call prepares the full-sample grid (shape only)
     assert len(fold_calls) == len(result.folds) == 4
@@ -172,9 +172,9 @@ def test_e7_t02b_padding_gives_the_same_results_as_no_padding(
 ) -> None:
     """AC4: padded windows (masked rows, 256 multiple) reproduce the unpadded run to 1e-8."""
     cfg, obs = _short_inputs(tmp_path, sharp=True)
-    padded = run_backtest(cfg, obs, [], seed=5)
+    padded = run_backtest(cfg, lambda: (obs, []), seed=5)
     monkeypatch.setattr(backtest, "pad_dataset", lambda data, *a, **k: data)
-    plain = run_backtest(cfg, obs, [], seed=5)
+    plain = run_backtest(cfg, lambda: (obs, []), seed=5)
     assert padded.metrics[["fold", "horizon", "metric"]].equals(plain.metrics[["fold", "horizon", "metric"]])
     np.testing.assert_allclose(
         padded.metrics["value"].to_numpy(), plain.metrics["value"].to_numpy(), rtol=0, atol=1e-8
@@ -184,9 +184,9 @@ def test_e7_t02b_padding_gives_the_same_results_as_no_padding(
 def test_e7_t02b_same_seed_gives_identical_metrics_and_a_new_seed_differs(tmp_path: Path) -> None:
     """AC5: two runs with the same seed give identical `metrics` (bitwise); another seed does not."""
     cfg, obs = _short_inputs(tmp_path)
-    first = run_backtest(cfg, obs, [], seed=5)
-    again = run_backtest(cfg, obs, [], seed=5)
-    other = run_backtest(cfg, obs, [], seed=6)
+    first = run_backtest(cfg, lambda: (obs, []), seed=5)
+    again = run_backtest(cfg, lambda: (obs, []), seed=5)
+    other = run_backtest(cfg, lambda: (obs, []), seed=6)
     pd.testing.assert_frame_equal(first.metrics, again.metrics, check_exact=True)
     pd.testing.assert_frame_equal(first.summary, again.summary, check_exact=True)
     assert not np.array_equal(first.metrics["value"].to_numpy(), other.metrics["value"].to_numpy())
@@ -200,5 +200,5 @@ def test_e7_t02b_scenario_covariate_forecaster_is_a_config_error(tmp_path: Path)
     cfg = bf.make_config(tmp_path, with_covariate=True, metrics=("log_score",), **SHORT)  # type: ignore[arg-type]
     cfg.forecast.covariate_forecaster.type = "scenario"
     with pytest.raises(ConfigError, match="scenario") as err:
-        run_backtest(cfg, obs, [cov], seed=5)
+        run_backtest(cfg, lambda: (obs, [cov]), seed=5)
     assert err.value.path == "forecast.covariate_forecaster.type"

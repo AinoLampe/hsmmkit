@@ -38,7 +38,6 @@ from regimekit.evaluation.backtest import run_backtest
 from regimekit.evaluation.compare import CompareEntry, check_snapshots, comparison_table, render_markdown
 from regimekit.evaluation.report import build_report, versions
 from regimekit.evaluation.results import BacktestResult
-from regimekit.evaluation.strategies import make_strategy
 from regimekit.finance import (
     Cache,
     DataQualityReport,
@@ -46,7 +45,11 @@ from regimekit.finance import (
     FinanceConfig,
     PriceSource,
     SnapshotPolicy,
+    StrategyHook,
     build_quality_report,
+    extension_payloads,
+    make_strategy,
+    strategy_section,
 )
 from regimekit.inference.covariate_forecasters import CovariateForecaster, make_forecaster
 from regimekit.inference.decode import decode as decode_posterior
@@ -493,7 +496,7 @@ class Project:
         dataset = data if data is not None else self.last_data
         if dataset is None:
             raise ConfigError("saving a model needs the dataset it was fitted on; pass data=", path="data")
-        return ModelStore.save(fit, path, self.config, dataset)
+        return ModelStore.save(fit, path, self.config, dataset, extensions=extension_payloads(self.config))
 
     @staticmethod
     def load(path: Path | str) -> FitResult:
@@ -647,7 +650,7 @@ class Project:
                 times=output.times,
                 regimes=output.regimes,
                 phases=output.phases,
-                returns=output.returns,
+                values=output.returns,
                 segments=output.segments,
             )
         get_logger("regimekit.simulate").info(
@@ -665,10 +668,15 @@ class Project:
         spec = build_model_spec(config, grid)
         n_free = ParamManager(spec.param_specs).n_free
         cfg_strategy = config.evaluation.strategy
-        strategy = (
-            None
+        hooks = (
+            []
             if cfg_strategy is None
-            else make_strategy(cfg_strategy, grid.nominal_dt, int(grid.observations.shape[1]))
+            else [
+                StrategyHook(
+                    make_strategy(cfg_strategy, grid.nominal_dt, int(grid.observations.shape[1])),
+                    cfg_strategy.cost_bps,
+                )
+            ]
         )
         last: dict[str, Any] = {}
 
@@ -676,7 +684,7 @@ class Project:
             last["fit"], last["train"] = fitted, train
 
         started = time.perf_counter()
-        result = run_backtest(config, obs, covs, config.project.seed, strategy, on_fold)
+        result = run_backtest(config, lambda: (obs, covs), config.project.seed, hooks, on_fold)
         wall = time.perf_counter() - started
         diagnostics = None
         if "fit" in last:
@@ -695,7 +703,7 @@ class Project:
             "versions": versions(),
             "wall_s": wall,
         }
-        return result, meta, build_report(name, config, result, meta, diagnostics)
+        return result, meta, build_report(name, config, result, meta, diagnostics, [strategy_section])
 
     def _write_backtest(
         self, result: BacktestResult, meta: dict[str, Any], report: str, out_dir: Path

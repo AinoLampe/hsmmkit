@@ -1,6 +1,6 @@
-"""Initialization strategies for multi-start MAP estimation (E5-T03).
+"""Initialization methods for multi-start MAP estimation (E5-T03).
 
-Each strategy returns a `Params` dict (`theta`, constrained space); `estimation/map.py` converts it to
+Each method gives a `Params` dict (`theta`, constrained space); `estimation/map.py` converts it to
 `u` via `ParamManager.flatten`. All three are clock-neutral: they work in steps via `nominal_dt`, never a
 year constant (CLAUDE.md §3.2).
 """
@@ -140,7 +140,7 @@ def _empirical_pi_rows(labels: np.ndarray, spec: ModelSpec) -> np.ndarray | None
 def observed_rows(data: PreparedDataset) -> PreparedDataset:
     """`data` restricted to the rows where every series is observed (`data` itself if there are none to drop).
 
-    The data-driven init strategies (`rollvol_kmeans`, `random`) read `observations` directly, so rows with
+    The data-driven init methods (`rolling_kmeans`, `random`) read `observations` directly, so rows with
     `mask=False` -- padding rows of a walk-forward window (E7-T02b) or missing prints -- would enter as
     zeros and bias the starting volatilities. `estimation.map.fit` initializes from this view; the
     objective itself always sees the full, masked dataset.
@@ -166,10 +166,11 @@ def observed_rows(data: PreparedDataset) -> PreparedDataset:
     )
 
 
-@register("init", "rollvol_kmeans")
-def rollvol_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
-    """Cluster a rolling realized-volatility series into `n_states` regimes and read off `theta`.
+@register("init", "rolling_kmeans")
+def rolling_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
+    """Cluster a rolling scale series (21 steps, `sqrt(mean(y^2) / nominal_dt)`) into `n_states` regimes.
 
+    The clusters (k-means++ with the given key, sorted by scale) give `theta`:
     `sigma`/`mu`-like emission params come from the cluster scale/mean, duration params from each
     cluster's mean run length via `spec.duration.init_from_mean_sojourn`, and (order-1 marginal, see
     `_empirical_pi_rows`) `transition.pi_rows` from run-boundary label transitions. Every other spec
@@ -341,5 +342,5 @@ def random(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
 
 @register("init", "lattice_jitter")
 def _lattice_jitter_init(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
-    """`lattice_jitter` under the common `(data, spec, key)` signature of registered init strategies."""
+    """`lattice_jitter` under the common `(data, spec, key)` signature of registered init methods."""
     return lattice_jitter(spec, key)

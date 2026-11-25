@@ -31,7 +31,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine, _regime_log_emis
-from regimekit.estimation.init import observed_rows, rollvol_kmeans
+from regimekit.estimation.init import observed_rows, rolling_kmeans
 from regimekit.model.duration.geometric import GeometricDuration
 from regimekit.model.duration.negbin import NegBinDuration
 from regimekit.model.emission.gaussian import GaussianFamily
@@ -226,7 +226,7 @@ def em_fit(
     theta0: Params | None = None,
     debug: bool = False,
 ) -> EMResult:
-    """Fit by EM from `theta0` (default: the `rollvol_kmeans` start for `seed`).
+    """Fit by EM from `theta0` (default: the `rolling_kmeans` start for `seed`).
 
     Args:
         spec: a model accepted by `check_em_supported`.
@@ -247,7 +247,7 @@ def em_fit(
     theta = (
         dict(theta0)
         if theta0 is not None
-        else dict(rollvol_kmeans(observed_rows(data), spec, key_for(seed, PURPOSE_EM_INIT)))
+        else dict(rolling_kmeans(observed_rows(data), spec, key_for(seed, PURPOSE_EM_INIT)))
     )
 
     logliks: list[float] = []

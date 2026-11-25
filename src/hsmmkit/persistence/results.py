@@ -347,28 +347,32 @@ def read_forecast(path: Path | str) -> ForecastResult:
     )
 
 
+_VALUE_COLUMN = "return"  # column of `simulation.parquet` (Part I name, kept for compatibility)
+
+
 def write_simulation(
     out_dir: Path | str,
     *,
     times: np.ndarray,
     regimes: np.ndarray,
     phases: np.ndarray,
-    returns: np.ndarray,
+    values: np.ndarray,
     segments: list[list[tuple[int, int, int]]],
 ) -> None:
     """Write `simulation.parquet` and `simulation_segments.json`.
 
-    `simulation.parquet` is long: `path`, `step`, `time`, `regime`, `phase`, `return`.
-    `regimes`/`phases` are `(P, T)`, `returns` `(P, T, M)`, `times` `(T,)`; `step` is 1-based. With
-    `M > 1` the return column is split into `return_0 .. return_{M-1}`. `phase` is the 1-based
-    phase within the regime (`StateIndex.phase_of`); segments are `{start, end, regime}`, `end` inclusive.
+    `simulation.parquet` is long: `path`, `step`, `time`, `regime`, `phase`, `return`
+    (the Part I column name, kept for compatibility). `regimes`/`phases` are `(P, T)`, `values`
+    `(P, T, M)`, `times` `(T,)`; `step` is 1-based. With `M > 1` the column is split into one per series
+    (`<column>_0 .. <column>_{M-1}`). `phase` is the 1-based phase within the regime
+    (`StateIndex.phase_of`); segments are `{start, end, regime}`, `end` inclusive.
 
     Raises:
         PersistenceError: the output directory cannot be written.
     """
     out = Path(out_dir)
     n_paths, t_len = regimes.shape
-    m = returns.shape[2]
+    m = values.shape[2]
     columns: dict[str, Any] = {
         "path": pa.array(np.repeat(np.arange(n_paths, dtype=np.int64), t_len)),
         "step": pa.array(np.tile(np.arange(1, t_len + 1, dtype=np.int64), n_paths)),
@@ -377,10 +381,10 @@ def write_simulation(
         "phase": pa.array(phases.reshape(-1).astype(np.int64)),
     }
     if m == 1:
-        columns["return"] = pa.array(returns[:, :, 0].reshape(-1).astype(np.float64))
+        columns[_VALUE_COLUMN] = pa.array(values[:, :, 0].reshape(-1).astype(np.float64))
     else:
         for s in range(m):
-            columns[f"return_{s}"] = pa.array(returns[:, :, s].reshape(-1).astype(np.float64))
+            columns[f"{_VALUE_COLUMN}_{s}"] = pa.array(values[:, :, s].reshape(-1).astype(np.float64))
     payload = [
         {"path": p, "segments": [{"start": a, "end": b, "regime": r} for a, b, r in segs]}
         for p, segs in enumerate(segments)
@@ -401,7 +405,6 @@ _BACKTEST_PARQUET = {
     "summary": "backtest_summary.parquet",
 }
 BACKTEST_META = "backtest.json"
-STRATEGY_FILE = "strategy.parquet"
 
 
 def _table(frame: pd.DataFrame) -> pa.Table:
@@ -416,14 +419,24 @@ def _table(frame: pd.DataFrame) -> pa.Table:
     return table.cast(pa.schema(fields))
 
 
+def _stale_extras(out: Path) -> list[str]:
+    """Extras frames of an earlier run in `out` (listed in its `backtest.json`)."""
+    try:
+        previous = json.loads((out / BACKTEST_META).read_text(encoding="utf-8"))
+        return [str(n) for n in previous.get("extras", [])]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
 def write_backtest(result: BacktestResult, out_dir: Path | str, meta: dict[str, Any]) -> None:
     """Write a `BacktestResult` and its metadata.
 
     Files: `backtest_metrics.parquet` (long: `fold, horizon, metric, value`), `backtest_folds.parquet`,
-    `backtest_summary.parquet` (`horizon, metric, mean, sd, n`), `strategy.parquet` (only with a strategy;
-    an older file is removed) and `backtest.json` (`meta`).
+    `backtest_summary.parquet` (`horizon, metric, mean, sd, n`), one `<name>.parquet` per entry of
+    `result.extras` (the names are listed under `extras` in `backtest.json`; files of an earlier run that
+    are not in `result.extras` are removed) and `backtest.json` (`meta`).
 
-    `horizon == 0` marks per-fold model and strategy metrics. `meta` must be JSON-serializable.
+    `horizon == 0` marks per-fold model and hook metrics. `meta` must be JSON-serializable.
 
     Raises:
         PersistenceError: the output directory cannot be written.
@@ -434,11 +447,12 @@ def write_backtest(result: BacktestResult, out_dir: Path | str, meta: dict[str, 
         pq.write_table(_table(result.metrics), out / _BACKTEST_PARQUET["metrics"])
         pq.write_table(_table(result.folds), out / _BACKTEST_PARQUET["folds"])
         pq.write_table(_table(result.summary), out / _BACKTEST_PARQUET["summary"])
-        if result.strategy is not None:
-            pq.write_table(_table(result.strategy), out / STRATEGY_FILE)
-        else:
-            (out / STRATEGY_FILE).unlink(missing_ok=True)
-        (out / BACKTEST_META).write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+        for old in _stale_extras(out):
+            (out / f"{old}.parquet").unlink(missing_ok=True)
+        for name, frame in result.extras.items():
+            pq.write_table(_table(frame), out / f"{name}.parquet")
+        stored = {**meta, "extras": sorted(result.extras)} if result.extras else dict(meta)
+        (out / BACKTEST_META).write_text(json.dumps(stored, indent=2, sort_keys=True), encoding="utf-8")
     except OSError as exc:
         raise PersistenceError(f"cannot write backtest outputs to {out}: {exc}", path=str(out)) from exc
 
@@ -452,10 +466,12 @@ def read_backtest(out_dir: Path | str) -> tuple[BacktestResult, dict[str, Any]]:
     out = Path(out_dir)
     try:
         frames = {k: pq.read_table(out / name).to_pandas() for k, name in _BACKTEST_PARQUET.items()}
-        strategy = pq.read_table(out / STRATEGY_FILE).to_pandas() if (out / STRATEGY_FILE).exists() else None
         meta = json.loads((out / BACKTEST_META).read_text(encoding="utf-8"))
+        names = list(meta.get("extras", [])) if isinstance(meta, dict) else []
+        extras = {name: pq.read_table(out / f"{name}.parquet").to_pandas() for name in names}
     except (OSError, ValueError, pa.ArrowException) as exc:
         raise PersistenceError(f"cannot read backtest outputs from {out}: {exc}", path=str(out)) from exc
     if not isinstance(meta, dict) or "snapshot_ids" not in meta:
         raise PersistenceError(f"{out / BACKTEST_META} has no snapshot_ids", path=str(out))
-    return BacktestResult(frames["folds"], frames["metrics"], strategy, frames["summary"]), meta
+    meta.pop("extras", None)
+    return BacktestResult(frames["folds"], frames["metrics"], frames["summary"], extras), meta

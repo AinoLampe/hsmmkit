@@ -577,7 +577,7 @@ def run_scenario(
 
     cfg = EstimationSection(
         restarts=restarts,
-        init=["rollvol_kmeans", "lattice_jitter", "random"],
+        init=["rolling_kmeans", "lattice_jitter", "random"],
         device=device,
     )
     result = fit(spec, data, cfg, seed)

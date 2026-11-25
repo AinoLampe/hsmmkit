@@ -28,7 +28,7 @@ _runner = CliRunner()
 
 def _empty_restarts() -> pd.DataFrame:
     return pd.DataFrame(
-        columns=["restart", "init_strategy", "objective", "loglik", "n_iter", "converged", "wall_s"]
+        columns=["restart", "init_method", "objective", "loglik", "n_iter", "converged", "wall_s"]
     )
 
 

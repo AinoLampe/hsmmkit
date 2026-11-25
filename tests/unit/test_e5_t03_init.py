@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.estimation.init import lattice_jitter, random, rollvol_kmeans
+from regimekit.estimation.init import lattice_jitter, random, rolling_kmeans
 from regimekit.estimation.objective import make_objective
 from regimekit.model.params.manager import Params
 from regimekit.utils.rng import key_for
@@ -39,7 +39,7 @@ def test_e5_t03_every_strategy_gives_a_finite_objective(
     case = make_case(emission, duration, order, t_len=200, seed=3, **kwargs)  # type: ignore[arg-type]
     key = key_for(0, 1)
 
-    theta_roll = rollvol_kmeans(case.data, case.spec, key)
+    theta_roll = rolling_kmeans(case.data, case.spec, key)
     theta_jitter = lattice_jitter(case.spec, key)
     theta_random = random(case.data, case.spec, key)
 
@@ -71,7 +71,7 @@ def _simulate_two_regime_gbm(
     return np.concatenate(chunks)
 
 
-def test_e5_t03_rollvol_kmeans_recovers_sigma_and_ordering() -> None:
+def test_e5_t03_rolling_kmeans_recovers_sigma_and_ordering() -> None:
     """AC2: on a 2-regime series with sigma=(0.10, 0.40), recovers sigma within 30% and the ordering."""
     true_sigma = (0.10, 0.40)
     dt = 1.0 / 252.0
@@ -80,7 +80,7 @@ def test_e5_t03_rollvol_kmeans_recovers_sigma_and_ordering() -> None:
     case = make_case("gbm", "geometric", 1, t_len=y.shape[0], seed=0)
     data = dataclasses.replace(case.data, observations=jnp.asarray(y[:, None]))
 
-    theta = rollvol_kmeans(data, case.spec, key_for(0, 1))
+    theta = rolling_kmeans(data, case.spec, key_for(0, 1))
     sigma_hat = np.asarray(theta["emission.scale"])
 
     assert sigma_hat.shape == (2,)

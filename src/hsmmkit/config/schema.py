@@ -66,6 +66,11 @@ def _check_name(kind: Kind, name: str, path: str, *, needs: str | None = None) -
     return name
 
 
+def _register_core_sources() -> None:
+    """Import the core sources (lazy: they import this module) so that their kinds are registered."""
+    importlib.import_module("regimekit.data.sources")
+
+
 def _validate_source_options(
     kind: str, options: dict[str, Any], path: str, *, covariate: bool = False
 ) -> None:
@@ -154,6 +159,7 @@ class DataSection(_Base):
     @field_validator("source")
     @classmethod
     def _known_source(cls, value: SourceCfg) -> SourceCfg:
+        _register_core_sources()
         _check_name("source", value.kind, "data.source.kind")
         _validate_source_options(
             value.kind, value.options(), "data.source"
@@ -164,6 +170,7 @@ class DataSection(_Base):
     def _valid_covariate_sources(self) -> DataSection:
         for i, cov in enumerate(self.covariates):
             if cov.source is not None:
+                _register_core_sources()
                 _check_name("source", cov.source.kind, f"data.covariates[{i}].source.kind")
                 _validate_source_options(
                     cov.source.kind, cov.source.options(), f"data.covariates[{i}].source", covariate=True

@@ -54,7 +54,7 @@ For every fold:
    come from the fold's train window only, `[train_start, train_end)` (`PrepStats.train_window` records it); a covariate with `lag: 1`
    reaches step `t` only through prints stamped at or before `tau_{t-1}`.
 2. `fit` (E5-T03) on `window(train_start, train_end)`. The previous fold's optimum is added as one extra
-   restart (`init_strategy == "warm_start"`) next to the `estimation.restarts` regular ones.
+   restart (`init_method == "warm_start"`) next to the `estimation.restarts` regular ones.
 3. One forward pass over `window(0, test_end)` gives the filtered state at every origin. The filter is
    causal, so row `o` is exactly the filter of `window(0, o + 1)`; the Monte-Carlo forecast of horizon
    `max(horizons)` starts from it with the seed `derive_seed(seed, PURPOSE_BACKTEST_FORECAST, fold, o)`
@@ -78,7 +78,7 @@ Every distinct window length `T` is a new compilation of the jitted engine funct
 are therefore padded at the end to the next multiple of 256 rows (`evaluation.padding.pad_dataset`): the
 extra rows have `mask=False`, `observations=0`, the last `dt` and zero covariates, so they add no
 log-density and leave the filter rows `0..T-1` untouched. Folds that pad to the same length share one
-compilation of the objective and of the engine. The data-driven initializations (`rollvol_kmeans`, `random`)
+compilation of the objective and of the engine. The data-driven initializations (`rolling_kmeans`, `random`)
 read only the observed rows (`estimation.init.observed_rows`), so padding cannot bias the starting values.
 
 The posterior metrics are the exception to padding: they decode the *unpadded* train window, because the
@@ -89,7 +89,7 @@ padded length.
 ## Strategies
 
 `evaluation.strategy` maps the state of knowledge at an origin to positions in `[-1, 1]`
-(`regimekit.evaluation.strategies.make_strategy(cfg, nominal_dt, n_series)`). A position is *decided* at an
+(`regimekit.finance.strategies.make_strategy(cfg, nominal_dt, n_series)`). A position is *decided* at an
 origin from its filtered regime probabilities and forecast and *held* over the next step; the strategy
 return of a step is, in the log-return approximation,
 
@@ -105,7 +105,8 @@ and the equity curve is `exp(cumsum(r))`.
   one-step forecast (annualized on the trading/calendar clocks, per step on `steps`); long when the
   predictive mean is non-negative, otherwise flat, or short with the same magnitude when `allow_short`.
 
-`run_backtest(..., strategy=)` returns the trace in `BacktestResult.strategy`: `fold, time, position`
+`run_backtest(cfg, data_loader, seed, hooks=[StrategyHook(...)])` returns the trace in
+`BacktestResult.extras["strategy"]` (`regimekit.finance.strategy_frame(result)`): `fold, time, position`
 (`position_<m>` for `M > 1`), `return`, `gross` (`position . y`, before costs), `equity`, `turnover`
 (`sum_m |change|`) and `dt`; `time` is the end of the step the position was held over. Where an origin's
 next return is missing no position is recorded. The metrics are evaluated on each fold's slice (equity restarts
@@ -124,3 +125,12 @@ at 1) and stored with `horizon == 0`:
 configured strategy and writes the files listed in [Outputs](outputs.md#backtest-files), including
 `report.md`. `regimekit compare CONFIG... [--reuse] [--allow-mixed] [--metric M]` backtests several
 configurations on the same data snapshot and writes `compare.parquet` / `compare.md`.
+
+## Origin hooks
+
+`run_backtest(cfg, data_loader, seed, hooks=(), on_fold=None)` takes `data_loader() -> (ObservationSet, covariates)`
+and a sequence of `OriginHook`s (E10-T07a). A hook has a `name`, an `on_origin(fold, origin, posterior,
+forecast, data)` that gives the values of one row (or `{}` for none) and a `finalize(rows)` that builds the frame
+stored in `BacktestResult.extras[name]`. Metrics whose `needs` name a hook are evaluated per fold on that fold's
+slice of the frame (`horizon == 0`, context `extras`). `build_report(..., extra_sections=[...])` appends the
+sections the hooks contribute (the finance application adds the strategy table).

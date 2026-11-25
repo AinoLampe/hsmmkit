@@ -134,7 +134,7 @@ def ljung_box(
 
 # --- forecast metrics (E7-T01) -----------------------------------------------------------------
 #
-# Context: `forecast` (`ForecastResult`), `realized (H, M)` realized future log-returns for steps
+# Context: `forecast` (`ForecastResult`), `realized (H, M)` realized future observations for steps
 # 1..H and `horizon` (<= H). The predictive quantity at horizon h is the cumulative return
 # `Y_h = sum_{k<=h} y_{t+k}`, compared with the forecast samples `cumsum(samples, axis=1)[:, h-1]`.
 # With `M > 1` series every metric is evaluated per series and returned as `<name>_<m>` entries.
@@ -209,7 +209,7 @@ def crps_from_samples(samples: np.ndarray, y: float) -> float:
     return term_y - 0.5 * term_xx
 
 
-@metric("log_score", {"forecast"})
+@metric("log_score", {"forecast"}, better="higher")
 def log_score(**ctx: object) -> float | dict[str, float]:
     """Log of a Gaussian-KDE density estimate of the forecast at the realized `Y_h` (higher is better).
 
@@ -222,7 +222,7 @@ def log_score(**ctx: object) -> float | dict[str, float]:
     )
 
 
-@metric("crps", {"forecast"})
+@metric("crps", {"forecast"}, better="lower")
 def crps(**ctx: object) -> float | dict[str, float]:
     """Sample-based continuous ranked probability score of `Y_h` (lower is better)."""
     cum, y_h, _ = _forecast_ctx(ctx)
@@ -252,7 +252,7 @@ def one_step_mixture_weights(
     return weights
 
 
-@metric("log_score_mixture", {"forecast", "fit"})
+@metric("log_score_mixture", {"forecast", "fit"}, better="higher")
 def log_score_mixture(**ctx: object) -> float:
     """`h = 1` log score from the predictive mixture `sum_i w_i f_i(y)` with exact regime densities.
 
@@ -315,7 +315,7 @@ def pit_coverage(**ctx: object) -> dict[str, float]:
     return out
 
 
-@metric("rmse", {"forecast"}, aggregate="rms")
+@metric("rmse", {"forecast"}, aggregate="rms", better="lower")
 def rmse(**ctx: object) -> float | dict[str, float]:
     """`|mean[h-1] - Y_h|` for one origin; aggregate with `aggregate == "rms"` (root mean square)."""
     cum, y_h, h = _forecast_ctx(ctx)
@@ -324,7 +324,7 @@ def rmse(**ctx: object) -> float | dict[str, float]:
     return _series_result("rmse", np.abs(mean - y_h))
 
 
-@metric("mae", {"forecast"})
+@metric("mae", {"forecast"}, better="lower")
 def mae(**ctx: object) -> float | dict[str, float]:
     """`|mean[h-1] - Y_h|` for one origin (aggregated by the mean over origins)."""
     cum, y_h, h = _forecast_ctx(ctx)
