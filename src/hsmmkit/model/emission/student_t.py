@@ -99,14 +99,14 @@ class StudentTFamily(BaseEmission):
         n_states: int,
         n_series: int,
         cov_names: tuple[str, ...],
-    ) -> tuple[StudentTFamily, tuple[ParamSpec, ...]]:
+    ) -> tuple[StudentTFamily | MultivariateStudentT, tuple[ParamSpec, ...]]:
         """Map `model.emission` config to a configured `StudentTFamily` and its `ParamSpec`s.
 
         A configuration with `covariance: full` or with the multivariate parameter names (`mean`, `scale` or
         `chol`) selects the joint `MultivariateStudentT` (E11-T03); `m` / `s` keep the Part I code path.
         """
         if cfg.covariance == "full" or "mean" in cfg.params:
-            return MultivariateStudentT.from_config(cfg, n_states, n_series, cov_names)  # type: ignore[return-value]
+            return MultivariateStudentT.from_config(cfg, n_states, n_series, cov_names)
         try:
             loc_idx = tuple(cov_names.index(c) for c in cfg.covariates.drift)
         except ValueError as exc:

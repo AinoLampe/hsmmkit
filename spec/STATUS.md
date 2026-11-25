@@ -84,6 +84,7 @@ Release 0.1.0 is prepared (tag `v0.1.0` is an owner action, see "Blocked / needs
 ## Blocked / needs owner
 
 ## Spec fixes
+- E11-T03: the ticket selects the joint Student-t "when `M > 1` or `covariance: full`"; implemented as `covariance: full` or the new parameter names `mean`/`scale`/`chol`/`nu`, so Part I configs (`m`/`s`/`nu`) with `M > 1` keep the independent product family (Part I behaviour, v0.2.0 compatibility). Owner may prefer the ticket reading; changing it is a one-line dispatch change.
 - E10-T10: Appendix H names metrics that exist only from E14-T03 (`boundary_f1`, `hausdorff`, `covering`, `hamming_matched`, `ari`, `nmi`) and uses scalar per-state `init` / `init_mean_sojourn_steps`, `init: labels` and a `chol` parameter; to make it validate (AC1) the schema accepts the planned metric names (`gates.PLANNED_METRICS`, gated at build, listed in the JSON-Schema enum) and `ParamCfg.init` / `init_mean_sojourn_steps` accept a scalar (broadcast to all states at build) or `"labels"`. `evaluation.backtest` and `forecast.covariate_forecaster` became optional (`ProjectConfig.backtest_cfg()` raises `ConfigError(path="evaluation.backtest")`; default forecaster `freeze`). The generated reference stayed in `docs/guide/config.md` (the ticket says `configuration.md`). The "family support vs data support" check stays where E10-T05 put it (the `Preparer` checks the data against the family support; `BuildInputs` carries no support).
 
 ## Findings for the owner

@@ -291,7 +291,7 @@ class EmissionCfg(_Base):
     ito_correction: bool | None = None
     """`gaussian`: subtract `scale**2 / 2` from the location (`None`: the family's own, `False`)."""
     covariance: Literal["diag", "full"] = "diag"
-    """`gaussian`: covariance structure; `full` is not available before E11-T02."""
+    """`gaussian` / `student_t` (joint path): covariance structure `diag` or `full`."""
     mixture: MixtureCfg | None = None
     """Per-state finite mixture of `base` components (not available before E11-T06)."""
     per_series: bool = True

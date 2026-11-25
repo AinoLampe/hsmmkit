@@ -108,6 +108,10 @@ def test_e11_t03_samples_match_the_declared_scale() -> None:
         s.mean(axis=0), np.asarray(mean[0]), atol=5 * np.sqrt(np.asarray(var[0]) / n).max()
     )
     np.testing.assert_allclose(s.var(axis=0), np.asarray(var[0]), rtol=0.06)
+    # off-diagonal structure (L L^T, not L^T L): Cov = nu / (nu - 2) Sigma
+    np.testing.assert_allclose(
+        np.cov(s.T), 12.0 / 10.0 * _cov(theta, 0, m), atol=0.1 * np.abs(_cov(theta, 0, m)).max()
+    )
 
 
 def _cfg(tmp_path: Path, **emission: object):  # noqa: ANN202
