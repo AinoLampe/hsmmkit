@@ -5,6 +5,13 @@ Release notes are collected from `changelog.d/` fragments by [towncrier](https:/
 
 <!-- towncrier release notes start -->
 
+## hsmmkit 0.1.0 (unreleased)
+
+- E10-T08: `hsmmkit` extracted from `RegimeDetectionAndForecast` (decoupled core of `regimekit` 0.2.0) with history
+  and renamed (package, distribution, console script `hsmmkit`, `HsmmkitError`, `HSMMKIT_*`, bundle suffix
+  `.hsmm`). The entries below are the history of `regimekit` 0.1.0/0.2.0; the decoupling tickets E10-T01…T07b
+  are in `changelog.d/` and are collected by towncrier at the release.
+
 ## 0.2.0 (2026-11-01)
 
 ### Features

@@ -1,6 +1,6 @@
-site_name: regimekit
+site_name: hsmmkit
 site_description: JAX-based Hidden Semi-Markov Model framework for market-regime detection and forecasting.
-repo_name: regimekit
+repo_name: hsmmkit
 docs_dir: docs
 strict: true
 
@@ -44,22 +44,20 @@ extra_javascript:
 nav:
   - Home: index.md
   - Guide:
+      - Overview: guide/index.md
       - Install: guide/install.md
       - Quickstart: guide/quickstart.md
       - Data contracts: guide/contracts.md
       - Data sources: guide/data_sources.md
       - Preparation: guide/preparation.md
       - Configuration reference: guide/config.md
-      - Data providers & ToS: guide/providers.md
-      - Finance emissions: guide/finance_emissions.md
       - Forecasting: guide/forecasting.md
       - Model bundle: guide/bundle.md
       - Output files: guide/outputs.md
       - Backtesting: guide/backtesting.md
       - Validation: guide/validation.md
       - Python API and CLI: guide/project.md
-      - Core and finance commands: guide/cli.md
-      - Examples and tutorial: guide/examples.md
+      - Command line: guide/cli.md
       - Extending: guide/extending.md
       - Troubleshooting: guide/troubleshooting.md
   - Math:
@@ -87,8 +85,9 @@ nav:
       - Evaluation: api/evaluation.md
       - Persistence and utilities: api/persistence.md
   - Releases:
-      - 0.2.0: releases/0.2.0.md
-      - 0.1.0: releases/0.1.0.md
+      - hsmmkit 0.1.0: releases/hsmmkit-0.1.0.md
+      - regimekit 0.2.0 (history): releases/0.2.0.md
+      - regimekit 0.1.0 (history): releases/0.1.0.md
   - Architecture decisions:
       - Index: adr/index.md
       - "0001 Continuous-time parameters, discrete-time inference": adr/0001-continuous-time-parameters-discrete-inference.md

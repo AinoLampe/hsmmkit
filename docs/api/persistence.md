@@ -1,31 +1,31 @@
 # Persistence and utilities
 
-::: regimekit.persistence.store
+::: hsmmkit.persistence.store
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.persistence.results
+::: hsmmkit.persistence.results
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.utils.errors
+::: hsmmkit.utils.errors
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.utils.clock
+::: hsmmkit.utils.clock
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.utils.rng
+::: hsmmkit.utils.rng
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.utils.logging
+::: hsmmkit.utils.logging
     options:
       show_root_heading: true
       heading_level: 3

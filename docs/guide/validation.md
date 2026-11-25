@@ -1,15 +1,15 @@
 # Validation: the parameter-recovery suite
 
-`regimekit.estimation.recovery` proves end-to-end estimation correctness: simulate `T` observations
+`hsmmkit.estimation.recovery` proves end-to-end estimation correctness: simulate `T` observations
 from a known truth `theta*`, MAP-fit the simulated data, and check that the fit recovers `theta*`
 within the tolerances of the concept's Appendix D. The full suite is the weekly CI job (`-m slow`); a
-one-scenario smoke run at `T=5000` runs nightly. It is also the engine behind the `regimekit selftest`
+one-scenario smoke run at `T=5000` runs nightly. It is also the engine behind the `hsmmkit selftest`
 CLI command (E5-T05b).
 
 ## Scenarios
 
 Six scenarios, each `N=3` regimes on a daily (`clock="trading"`) grid, `T=20000` observations by
-default (`REGIMEKIT_RECOVERY_T` overrides it):
+default (`HSMMKIT_RECOVERY_T` overrides it):
 
 1. **`gbm_negbin`** -- GBM emissions, shifted negative-binomial phase durations (`r=(3,3,2)`), order 1,
    no covariates.
@@ -110,12 +110,12 @@ uv run nox -s recovery_smoke
 # The full suite (the weekly job; slow: ~4 h on a laptop, six scenarios x 5 seeds).
 uv run nox -s recovery
 
-# A smaller, faster run (REGIMEKIT_RECOVERY_T sets the base T; tolerances are NOT expected to hold below ~20000).
-REGIMEKIT_RECOVERY_T=1000 uv run pytest tests/recovery/ -m slow -q
+# A smaller, faster run (HSMMKIT_RECOVERY_T sets the base T; tolerances are NOT expected to hold below ~20000).
+HSMMKIT_RECOVERY_T=1000 uv run pytest tests/recovery/ -m slow -q
 
 # A single scenario, programmatically:
 python -c "
-from regimekit.estimation.recovery import run_recovery_suite
+from hsmmkit.estimation.recovery import run_recovery_suite
 suite = run_recovery_suite('gbm_negbin')
 print(suite.passed, suite.n_pass, suite.categories)
 "
@@ -125,9 +125,9 @@ The `T=5000` smoke run does not assert the sojourn or jump tolerances (see *Samp
 `tests/unit/test_e5_t05a_recovery_smoke.py` run the same harness at a tiny `T` in the default (non-`slow`)
 suite, to keep coverage up without paying for the full cost.
 
-## `regimekit selftest`: a quick check of the installation
+## `hsmmkit selftest`: a quick check of the installation
 
-`regimekit selftest` takes about 80 s on a Windows dev CPU (limit: two minutes) and answers "does estimation work on this machine and
+`hsmmkit selftest` takes about 80 s on a Windows dev CPU (limit: two minutes) and answers "does estimation work on this machine and
 backend?". It simulates scenario 1 (`gbm_negbin`) at `T=1500` with two restarts and one seed
 (`--seed`; `--device cpu|gpu|auto`), fits it **twice**, and prints the backend (`jax` version, device,
 x64), a truth / estimate / tolerance table, and the determinism result. `--full` runs all six scenarios.

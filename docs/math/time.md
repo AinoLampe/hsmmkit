@@ -16,15 +16,15 @@ Every emission and duration component receives the step size `\Delta_t` explicit
 | `steps` | `1` | per step, never annualized |
 
 Parameters are annualized or per step, never both: under `steps` a "year" is one row, and rates such as
-`\lambda` are exit rates per step. Branching on the clock name happens only in `regimekit.utils.clock` and
-`regimekit.data.calendar`; all other library code uses the constants of `regimekit.utils.clock`.
+`\lambda` are exit rates per step. Branching on the clock name happens only in `hsmmkit.utils.clock` and
+`hsmmkit.data.calendar`; all other library code uses the constants of `hsmmkit.utils.clock`.
 
 ## Where the grid must be regular
 
 Everything inside the model accepts an irregular grid (`\Delta_t` varies with the gap) except the
 explicit-duration engine, which discretizes sojourn distributions on the nominal step
 `\Delta = \operatorname{median}(\Delta_t)` and warns when `\max \Delta_t / \min \Delta_t > 1.5`
-(`regimekit.utils.clock.is_irregular`, ADR-0007).
+(`hsmmkit.utils.clock.is_irregular`, ADR-0007).
 
 ## Lags
 

@@ -1,15 +1,14 @@
-# CLAUDE.md — RegimeDetectionAndForecast (Python package `regimekit`)
+# CLAUDE.md — hsmmkit (Python package `hsmmkit`)
 
-This repository is called **RegimeDetectionAndForecast**. The Python package, distribution and CLI inside it are
-called **`regimekit`**: a JAX-based Hidden Semi-Markov Model framework for market-regime detection and
-probabilistic return forecasting (Python 3.13, uv, JAX + Equinox + Optax, pydantic v2, typer). It is built ticket
-by ticket from a written specification.
+**`hsmmkit`** is a domain-neutral JAX framework for Hidden Semi-Markov Models (Python 3.13, uv, JAX + Equinox +
+Optax, pydantic v2, typer). It was extracted with its history from the repository `RegimeDetectionAndForecast`
+(package `regimekit`, the finance application) by ticket **E10-T08**, and is extended ticket by ticket from the
+written specification.
 
-- **Part I** (E0–E9, 63 tickets) is done and released: `v0.1.0` (2026-10-24) and `v0.2.0` (2026-11-01, adds E5-T06
-  and E9-T01).
-- **Part II** (E10–E17, 66 tickets) is the current work. It splits the domain-neutral core into a new library
-  **`hsmmkit`** (its own repository). This repository stays the finance application: package `regimekit` that
-  depends on `hsmmkit`.
+- **Part I** (E0–E9) built the core inside `RegimeDetectionAndForecast` (`regimekit` 0.1.0 / 0.2.0). Its tickets
+  stay in `spec/tickets/` as history.
+- **Part II** (E10–E17, 66 tickets) splits the core out and extends it. E10-T01…T07b (decouple) and E10-T08
+  (this extraction) are done. The remaining `hsmmkit` tickets are the current work.
 
 Both ticket overviews are binding and imported here. Part I conventions stay in force unless the Part II overview
 changes them.
@@ -17,74 +16,56 @@ changes them.
 @spec/tickets/00-OVERVIEW-build-order-and-conventions.md
 @spec/tickets/10-OVERVIEW-part2-build-order-and-conventions.md
 
-This file adds (a) the Part II scope rules for this repository (§0), (b) the precedence rules (§1),
-(c) **harmonization decisions that resolve naming and placement conflicts between concept and tickets** (§3),
-and (d) the working rules for autonomous implementation.
+This file adds (a) the scope rules for this repository (§0), (b) the precedence rules (§1), (c) **harmonization
+decisions** (§3) and (d) the working rules for autonomous implementation.
 
-## 0. Part II scope in this repository
+## 0. Scope in this repository
 
 Every Part II ticket names its repository in the `Repo` column (Part II overview §2.1).
 
 | Repo value | Tickets | Where |
 |---|---|---|
-| `RegimeDetectionAndForecast*` | E10-T01, E10-T02a, E10-T02b, E10-T03, E10-T04a, E10-T04b, E10-T05, E10-T06, E10-T07a, E10-T07b | here, **before** the split (phase M7a, "decouple") |
-| `RegimeDetectionAndForecast` | E10-T09, E11-T07, E11-T09, E16-T06, E17-T05 | here, **after** the split |
-| `hsmmkit` | all other E10–E17 tickets | **not here**. If asked to implement one, stop and say it belongs to the `hsmmkit` repository. |
+| `hsmmkit` | E10-T10, E10-T11, E11-T01…T06, E11-T08, E12-*, E13-*, E14-*, E15-*, E16-T01…T05, E17-T01…T04 | **here** |
+| `RegimeDetectionAndForecast` | E10-T09, E11-T07, E11-T09, E16-T06, E17-T05 | **not here**. If asked to implement one, stop and say it belongs to the `RegimeDetectionAndForecast` repository. |
 
-- **E10-T08 (extraction)** starts from a clone of this repository but pushes to the `hsmmkit` repository. Run it only
-  when the owner asks for it in the current session and the `hsmmkit` repository is attached. It is a one-way step:
-  confirm the commit to extract (the E10-T07b merge commit) with the owner before running `git filter-repo`.
-- **Picking the next ticket.** Follow the Part II build order (Part II overview §6) and the dependency graph (§7).
-  The next ticket is the first `todo` row in `spec/STATUS.md` whose dependencies are `done`. A dependency on an
-  `hsmmkit` ticket counts as done only when STATUS records the `hsmmkit` release that contains it.
-- **Phase M7a rule (E10-T01…T07b).** These tickets only move, rename and add extension points. Nothing gains new
-  behaviour. The v0.2.0 golden values stay bitwise identical at every merge (Part II overview §5.7, §10).
-- **After the split.** E10-T09 deletes the core packages from this repository and makes `regimekit` depend on
-  `hsmmkit`. In the same ticket, rewrite this file for the post-split state: drop the rules that only concern
-  core code, which then live in the `hsmmkit` repository's `CLAUDE.md` written by E10-T08.
+- **Picking the next ticket.** Follow the Part II build order (overview §6) and dependency graph (§7). The next
+  ticket is the first `todo` row in `spec/STATUS.md` whose dependencies are `done`.
+- **Downstream.** `RegimeDetectionAndForecast` (package `regimekit`) depends on `hsmmkit` with a minor-range pin.
+  The nightly `downstream` job runs its suite against this repository's HEAD. A change that breaks it is either
+  fixed here or comes with a matching `RegimeDetectionAndForecast` ticket (named under *Connections*).
+- **Names.** `HsmmkitError`, `HSMMKIT_TYPECHECK`, `HSMMKIT_RECOVERY_T`, bundle suffix `.hsmm`, console script
+  `hsmmkit`. The word `regimekit` appears only as the "example extension" in the guide.
+- **Feature gates** (Part II overview §5.11) are introduced by E10-T10; a ticket removes its own gate.
 
 ## 1. Sources of truth and precedence
 
 | Path | Role |
 |---|---|
-| `spec/tickets/<ID>-*.md` | The unit of work, Part I (`E0`–`E9`) and Part II (`E10`–`E17`). Each ticket is self-contained (Context, Creates, Acceptance criteria, Tests). |
-| `spec/tickets/00-OVERVIEW-…md` | Part I conventions (§4), build order, index, Part II amendments (§8), recovery amendment (§9). |
-| `spec/tickets/10-OVERVIEW-part2-…md` | Part II: repositories and phases (§2), conventions and tolerances (§5), feature gates (§5.11), build order (§6), dependency graph (§7), index (§8), relation to Part I tickets (§9), guardrails (§10). |
-| `spec/concept/regimekit_concept.md` | Part I concept **text v1.0**. "Concept v1.1" = this text + Part I overview §8. Read only when a ticket is ambiguous. |
-| `spec/concept/extensions.md` | Part II concept **v1.2** ("Approved for ticket derivation"). It is the concept for every E10–E17 ticket. Its "Changes in 1.2" box lists the decisions and corrections relative to draft 1.1. |
+| `spec/tickets/<ID>-*.md` | The unit of work. Each ticket is self-contained (Context, Creates, Acceptance criteria, Tests). |
+| `spec/tickets/00-OVERVIEW-…md` | Part I conventions (§4), build order, index, amendments. |
+| `spec/tickets/10-OVERVIEW-part2-…md` | Part II: repositories and phases (§2), conventions and tolerances (§5), feature gates (§5.11), build order (§6), dependency graph (§7), index (§8), guardrails (§10). |
+| `spec/concept/extensions.md` | Part II concept **v1.2**: the concept for every E10–E17 ticket. |
+| `spec/concept/regimekit_concept.md` | Part I concept text v1.0 (+ Part I overview §8 = "concept v1.1"). Read only when a ticket is ambiguous. |
 | `spec/STATUS.md` | Progress ledger you maintain (§12). |
 
-Precedence for **Part II tickets**, highest first:
-1. **§3 of this file** (harmonization decisions).
-2. **Part II overview** (§5 conventions and tolerances, §10 guardrails).
-3. **`extensions.md` v1.2** for Part II semantics; **Part I concept** for every Part I semantic that Part II does not
-   change (formulas, defaults, tolerances of existing components).
-4. **Ticket** for everything the concepts leave open: exact signatures, file names, column names, test design.
-
-Precedence for **Part I tickets** (only E5-T05b is still open; see STATUS): unchanged. §3, then Part I overview
-§8/§9, then Part I concept, then ticket.
+Precedence, highest first: (1) §3 of this file, (2) the Part II overview (§5, §10), (3) `extensions.md` v1.2 for
+Part II semantics and the Part I concept for every Part I semantic Part II does not change, (4) the ticket for
+everything the concepts leave open.
 
 If a ticket *contradicts* the concept on semantics (not a naming or detail refinement) and §3 doesn't cover it,
-the concept wins and the ticket is fixed. Implement the concept's version, correct the ticket file in a separate
+the concept wins and the ticket is fixed: implement the concept's version, correct the ticket file in a separate
 commit `docs(spec): align <ID> with concept §x.y`, and log it in STATUS → "Spec fixes". If it is unclear which
-reading is right, stop (§11).
-
-Never edit `spec/concept/*`. Never edit the overviews. Ticket files only as described above.
+reading is right, stop (§11). Never edit `spec/concept/*` or the overviews.
 
 Known slips in the Part I concept text: §0 and §7 say "Section 6.5" / "6.5.4" for testing and recovery; correct
-is **§6.4 / §6.4.4**. The Part I concept still shows v1.0 names (e.g. `PreparedDataset.returns`); §3.1 lists the
-v1.1 names. `extensions.md` v1.2 already contains its own corrections (Hamilton MS-AR uses a time-step memory
-expansion; fixed-lag smoothing is compared with the offline smoother on the same prefix).
-
-Naming in the tickets: "repository"/"repo" + `RegimeDetectionAndForecast` means this repository. Everything else
-called `regimekit` means the Python package, distribution or CLI.
+is **§6.4 / §6.4.4**.
 
 ## 2. Commands
 
 ```bash
 uv sync --all-groups                                     # never pip
 uv run nox -s lint types tests                           # full gate; must be green before merging a ticket
-uv run pytest tests/<layer>/test_e10_t02a_*.py -x -q     # fast loop on the current ticket
+uv run pytest tests/<layer>/test_e10_t10_*.py -x -q      # fast loop on the current ticket
 uv run ruff format . && uv run ruff check --fix .
 uv run mypy
 uv run python scripts/check_package_coverage.py          # per-package ≥ 85 % (after a --cov run)
@@ -92,15 +73,12 @@ uv run nox -s docs                                       # mkdocs build --strict
 uv run nox -s recovery_smoke                             # nightly smoke: 1 scenario at T=5000
 uv run nox -s recovery                                   # -m slow, full suite (weekly, hours)
 uv run nox -s bench                                      # -m benchmark
-# Part II, from E10-T01 on:
-uv run nox -s core                                       # core suite with regimekit.finance blocked (HSMM_CORE_ONLY=1)
-uv run pytest tests/golden/test_e10_t01_v0_2_0.py -q     # v0.2.0 golden values, bitwise
 uv run pytest tests/unit/test_e10_t01_neutral_names.py -q
+uv run pytest tests/unit/test_e10_t08_package.py -q
 ```
 
-- The nox `tests` session sets `REGIMEKIT_TYPECHECK=1` and `JAX_PLATFORMS=cpu`. The default pytest run excludes
-  `slow`, `live`, `benchmark` and `gpu` (E0-T02 `addopts`). From E10-T01 on, finance tests also carry the marker
-  `finance`.
+- The nox `tests` session sets `HSMMKIT_TYPECHECK=1` and `JAX_PLATFORMS=cpu`. The default pytest run excludes
+  `slow`, `live`, `benchmark` and `gpu` (E0-T02 `addopts`).
 - Add dependencies only with `uv add` / `uv add --group dev`. Never edit `uv.lock` by hand.
 
 ## 3. Harmonization decisions (override ticket and concept text)
@@ -113,10 +91,9 @@ uv run pytest tests/unit/test_e10_t01_neutral_names.py -q
 | "`dt`: Δ_t in years" (E1-T01 comment) | `dt` is in **clock units**: years under `trading`/`calendar`, steps (≡ 1) under `steps`. Same for all parameters: annualized or per step, never both. |
 | E3-T04 "Parameters (annualized)", init formulas with `/252` | Explicit duration families are in clock units too; init goes through `days_to_steps` (§3.2) and `init_from_mean_sojourn` (§3.3). |
 | `mean_sojourn_years(theta)` | `mean_sojourn(theta, nominal_dt)` |
-| `estimation/fit.py` | `estimation/map.py`; `from regimekit.estimation import fit` |
-| `data/providers/` | `finance/providers/` |
+| `estimation/fit.py` | `estimation/map.py`; `from hsmmkit.estimation import fit` |
 | `model/params.py` | package `model/params/` (`bijectors`, `priors`, `spec`, `manager`; `__init__` re-exports) |
-| `@jaxtyped(typechecker=beartype)` | `from regimekit.utils.typing import typechecked` (active only with `REGIMEKIT_TYPECHECK=1`) |
+| `@jaxtyped(typechecker=beartype)` | `from hsmmkit.utils.typing import typechecked` (active only with `HSMMKIT_TYPECHECK=1`) |
 | `Estimator.fit(spec, data, cfg, key)` | `fit(spec, data, cfg, seed: int) -> FitResult` |
 | `jump_probs(theta, z_pi, memory_index: StateIndex)` | `jump_probs(theta, z_pi, memory: MemoryLayout)`; `MemoryLayout` lives in **`model/transition.py`**. |
 | `StateIndex.memory_tuple_index()` (E1-T05) vs `row_of_state` (E4-T02a/b) | Array field **`row_of_state (S,)`**; no method. All other index arrays as placed by E4-T02a/b. |
@@ -129,17 +106,16 @@ uv run pytest tests/unit/test_e10_t01_neutral_names.py -q
 
 | Conflict | Decision |
 |---|---|
-| E6-T04a puts `future_grid` in `data/calendar.py`, but `inference/` may not import `data.calendar`. | **`regimekit/utils/clock.py`** holds `TRADING_DAYS_PER_YEAR = 252`, `CALENDAR_DAYS_PER_YEAR = 365.25`, `future_grid(...)`, `days_to_steps(...)` and `is_irregular(dt)`. `data/calendar.py` imports from it. **From E10-T03 on:** `TRADING_DAYS_PER_YEAR` and the trading branches of `future_grid`/`days_to_steps` live only in `regimekit/finance/clocks.py` (registered `trading` clock); `utils/clock.py` keeps the clock-neutral parts and dispatches through the clock registry. |
-| Literal `252` / `365.25`. | Until E10-T03: no literal outside `utils/clock.py`. From E10-T03: `252` only in `finance/clocks.py`; `365.25` only in `utils/clock.py`. Branching on the clock *name* is allowed only in `utils/clock.py`, `data/calendar.py` and the clock registry. |
-| E2-T05 `CachedProvider(inner: DataProvider)` would make `data/` import `regimekit.finance`. | `data/cache.py` declares its own structural Protocol `CacheableProvider`. **E10-T04b** moves the cache to `finance/cache.py`. |
+| E6-T04a puts `future_grid` in `data/calendar.py`, but `inference/` may not import `data.calendar`. | **`hsmmkit/utils/clock.py`** holds `CALENDAR_DAYS_PER_YEAR = 365.25`, `future_grid(...)`, `days_to_steps(...)` and `is_irregular(dt)`, dispatching through the clock registry (kind `clock`; an application registers its own clocks). `data/calendar.py` imports from it. |
+| Literal `252` / `365.25`. | No literal `252` anywhere in the core; `365.25` only in `utils/clock.py`. Branching on the clock *name* is allowed only in `utils/clock.py`, `data/calendar.py` and the clock registry. |
 | E0-T01 `.gitignore` has `*.parquet`; fixtures commit parquet files. | `.gitignore` adds `!tests/fixtures/**/*.parquet`. |
-| Recovery harness location. | **`src/regimekit/estimation/recovery.py`** (pure, no pytest, no file I/O). Its `NOMINAL_DT = 1/252` is derived from the `trading` clock from E10-T03 on. |
+| Recovery harness location. | **`src/hsmmkit/estimation/recovery.py`** (pure, no pytest, no file I/O). Its grid clock is `recovery_clock()`: the registered year clock with the fewest days per year. |
 
 ### 3.3 Unowned deliverables and protocol completions
 
-- **Config → model assembly.** `src/regimekit/model/build.py`: `build_model_spec(cfg, data) -> ModelSpec`, with
+- **Config → model assembly.** `src/hsmmkit/model/build.py`: `build_model_spec(cfg, data) -> ModelSpec`, with
   name registries `EMISSION_FAMILIES`, `DURATION_FAMILIES`. **From E10-T02a on** these dicts are thin views over
-  `regimekit.plugins.REGISTRY`; new lookups go through the registry only.
+  `hsmmkit.plugins.REGISTRY`; new lookups go through the registry only.
 - **`DurationFamily`** additionally has `supports_explicit: bool`, `init_from_mean_sojourn(mean_steps, nominal_dt)`
   and the per-step wrapper `advance_prob_t`. **`TransitionModel`** gets `jump_probs_t`. Phase families size their
   rate arrays by `n_rates` (`N`, or `N(N−1)` for `pair` conditioning).
@@ -158,10 +134,7 @@ Part I fields introduced after E1-T02a (keep): `estimation.chunk_size`, `estimat
 covariate-forecaster sub-keys, `evaluation.backtest.n_sim`, `evaluation.strategy.cap`/`allow_short`,
 `model.emission.per_series`.
 
-Part II: E10-T02b splits the schema into the neutral `ProjectConfig` (no `profile`) and `FinanceConfig`
-(`schema_version: 2`, automatic v1 → v2 migration). A Part II ticket adds a config field to `FinanceConfig` when it
-is finance-specific, to `ProjectConfig` otherwise. Each addition updates the JSON-Schema test and the
-resolved-dump test in the same ticket. Appendix A (v1) must keep validating through the migration.
+Part II: the schema is the neutral `ProjectConfig` (`schema_version: 1`; applications subclass it and register their own migrations). A Part II ticket adds a config field to `ProjectConfig`; each addition updates the JSON-Schema test and the resolved-dump test in the same ticket.
 
 ### 3.5 RNG
 
@@ -176,7 +149,7 @@ resolved-dump test in the same ticket. Appendix A (v1) must keep validating thro
 | 0011 | safetensors bundle format | E8-T01 |
 | 0012 / 0013 | core/profile split / `steps` clock (superseded by 0014 / amended by 0015) | E0-T04 |
 | 0014 | Two-repository split (this repository + `hsmmkit`) | E10-T01 (accepted in E10-T08) |
-| 0015 | Clock registry; `trading` in `regimekit` | E10-T03 |
+| 0015 | Clock registry; the `trading` clock lives in the `hsmmkit` application | E10-T03 |
 | 0016 | Registries and config extension instead of `profile` | E10-T02b |
 | 0017–0021 | Part II, written in the `hsmmkit` repository (plan: Part II overview §5.10) | `hsmmkit` tickets |
 | **0022** | in-scan emissions, annualization exception | E9-T03 (exists) |
@@ -194,50 +167,46 @@ resolved-dump test in the same ticket. Appendix A (v1) must keep validating thro
 ### 3.8 Open points (record the decision in STATUS if you hit them)
 
 - `PersistenceError` maps to exit code `1` in the CLI (no code in Part I overview §4.4); Part II overview §5.4 keeps
-  the codes 0/1/2/3/4 in the core and 5 for `ProviderError` in the finance app.
+  the codes 0/1/2/3/4 in the core (`hsmmkit.cli.app.EXIT_CODES`); applications register their own.
 - `changelog.d/` fragments: `changelog.d/<ID>.<feature|bugfix|doc|removal|misc>.md` for every user-visible change.
 
-### 3.9 Part II decisions for this repository
+### 3.9 Decisions for this repository
 
-- **Baseline.** The golden values of tag **`v0.2.0`** (E10-T01, `tests/golden/v0_2_0/`) are the reference for every
-  Part II ticket here. Never regenerate them to make a test pass. Regenerating is allowed only after a toolchain
-  change (JAX/NumPy/backend), with the owner's approval, recorded in the golden `manifest.json` and in STATUS.
-- **Contracts.** The `PreparedDataset`/`ObservationSet` field sets stay frozen except where a Part II ticket
-  changes them explicitly: `ObservationSet` is generalized in E10-T04a (`values`, `series_names`, `source`,
-  `sequence_ids`); `PreparedDataset.clock` becomes a registered-name `str` in E10-T03.
-- **Allow-lists.** `tests/fixtures/neutral_names_allowlist.txt` and `finance_import_allowlist.txt` (E10-T01) only
-  shrink. Every entry carries the tag of the ticket that removes it. E10-T07b deletes both files.
-- **Names stay `regimekit` here.** `RegimekitError`, `REGIMEKIT_TYPECHECK`, `REGIMEKIT_RECOVERY_T`, `.rkmodel`
-  bundles and the `regimekit` CLI keep their names. The `hsmmkit` renames (Part II overview §2.3) happen only in
-  the `hsmmkit` repository (E10-T08).
-- **EM.** `estimation/em.py` (E5-T06) is moved, not rewritten, during M7a. E13-T02a in `hsmmkit` supersedes it.
-- **Spikes.** `statespace/factorial.py` (E9-T02) goes to `hsmmkit` with the core; the MS-GARCH spike (E9-T03,
-  `model/emission/msgarch.py`) moves to `regimekit.finance.emission` in E10-T06 and to `regimekit.emission.msgarch` in E10-T09.
-- **Feature gates** (Part II overview §5.11) are introduced in `hsmmkit` (E10-T10). Do not add gated Part II
-  features here.
+- **Baseline.** `hsmmkit` 0.1.0 was extracted from `RegimeDetectionAndForecast` at its E10-T07b merge commit
+  (`42528543b9f0a4b7856e72c809016aee5b12a3e9`). The core golden and reference tests (`tests/golden`,
+  `tests/reference`) must pass unchanged; never regenerate golden values to make a test pass (regeneration needs a
+  documented toolchain change and the owner's approval, recorded in STATUS).
+- **Contracts.** The `PreparedDataset` / `ObservationSet` field sets stay frozen except where a ticket changes
+  them explicitly.
+- **Neutral names.** No allow-list: `tests/unit/test_e10_t01_neutral_names.py` finds no finance term in the core
+  and no import of an application package. Never weaken or special-case it.
+- **Extensions.** Applications register components (registries), subclass config sections and `Project`, and build
+  their CLI with `build_app`; they never patch core objects (D24).
+- **Feature gates** (Part II overview §5.11) are introduced by E10-T10; each ticket removes its own gate.
+- **Tests that were dropped in the extraction.** About 50 test modules of `RegimeDetectionAndForecast` needed the
+  finance package (Appendix A configs, providers, strategies) and were not carried over; the core-relevant
+  scenarios they covered (fits, backtests, bundles, CLI on non-finance configs) are re-created with `gaussian`
+  fixtures by the tickets that touch those areas (see STATUS → Follow-ups).
 
 ## 4. Invariants (short form; details in the overviews)
 
 1. Layer rule: `model/`, `statespace/`, `engine/`, `estimation/`, `inference/` import nothing from
-   `regimekit.data` except `data.contracts` (and `data.batch` once it exists in `hsmmkit`). They contain no I/O and
+   `hsmmkit.data` except `data.contracts` (and `data.batch` once it exists in `hsmmkit`). They contain no I/O and
    no logging inside jitted code.
-2. Profile/dependency rule: no core package imports `regimekit.finance`. From E10-T01 on, `cli/` and `project.py` are
-   no longer exempt; until E10-T07b their remaining imports are listed in the allow-list. Never weaken or
-   special-case the AST tests.
-3. Neutral-name rule (from E10-T01): no finance term in core modules beyond the allow-list (Part II overview §5.3).
+2. Dependency rule: no core package imports an application package (`hsmmkit` or any other); `hsmmkit` never imports `hsmmkit`. `cli/`, `project.py` and `__init__.py` are in scope. Never weaken or special-case the AST tests.
+3. Neutral-name rule: no finance term in core modules (Part II overview §5.3); there is no allow-list.
 4. The series dimension `M` is always present.
 5. Structure lives in builders, never as special cases inside engines (D2). All parameters go through
    `ParamSpec`/`ParamManager`.
 6. No NaN/Inf leaves a public function (→ `NumericalError`, checked outside jit). Errors carry `path=`.
 7. No new runtime dependency without an ADR. Dev-group additions need a one-line reason in the commit body.
-8. Guardrail during M7a (E10-T01…T07b): no new behaviour, no batch dimension `B`, no new families, no new extras.
-   Those belong to `hsmmkit` tickets (E11–E16).
+8. Feature gates: a key whose implementation has not landed is rejected at model build (E10-T10).
 
 ## 5. JAX gotchas
 
 - `jnp.where` does not stop NaN gradients from the untaken branch. When masking `log(0)`, `−inf` or a division,
   sanitize the input too ("double where"). An all-`−inf` row in `logsumexp` gives NaN gradients — guard it.
-- x64 must be on before any array exists: `tests/conftest.py` imports `regimekit` before anything creates arrays.
+- x64 must be on before any array exists: `tests/conftest.py` imports `hsmmkit` before anything creates arrays.
 - `jax.devices("gpu")` **raises** when no GPU backend exists (e.g. `JAX_PLATFORMS=cpu`); catch it in `setup("auto")`
   and in the GPU fixture.
 - Static structure (`ModelSpec`, `StateSpace`, `StateIndex`, `ParamManager`) is closed over or marked
@@ -252,13 +221,13 @@ resolved-dump test in the same ticket. Appendix A (v1) must keep validating thro
 
 - Test functions are prefixed with the ticket id in snake case: `test_e10_t02a_…`; files as listed under the
   ticket's "Creates".
-- Test directories: the Part I overview list plus `tests/finance/`, `tests/live/` (every test `@pytest.mark.live`),
+- Test directories: the Part I overview list plus `tests/live/` (every test `@pytest.mark.live`),
   `tests/spikes/`, and from Part II `tests/contract/` and `tests/golden/v0_2_0/`.
-- `tests/reference/` is pure NumPy/SciPy and never imports `regimekit` numerics.
+- `tests/reference/` is pure NumPy/SciPy and never imports `hsmmkit` numerics.
 - Tolerances come from the overviews (Part I §4.7, Part II §5.7). **Never loosen a tolerance, add retries, shrink
   sample sizes, regenerate golden values or skip/xfail/delete a test to get green.**
 - No network in default tests; providers take injectable downloaders/clocks. Tests never touch
-  `~/.cache/regimekit` — use `tmp_path`.
+  `~/.cache` — use `tmp_path`.
 - Fixtures are synthetic or trimmed to a few rows; raw provider data is never committed (NFR-08).
 - NFR-02 timings refer to an 8-core x86 CPU. Record measured numbers and the hardware in STATUS; do not tune
   thresholds to the machine you run on (cloud VMs differ from the reference machine).
@@ -283,7 +252,7 @@ Part I overview §4.8 and Part II overview §5.8 apply. In addition:
 - The squash commit message (or PR description) replaces the PR description of Part I overview §4.8:
 
   ```
-  feat(config): E10-T02b Config extension, FinanceConfig, schema v2
+  feat(estimation): E13-T02a EMEstimator: closed-form M-steps
 
   Requirements: FR-G05, FR-G07, D24
   Acceptance: AC1 → test_e10_t02b_appendix_a_v1_migrates; AC2 → …
@@ -298,8 +267,8 @@ Part I overview §4.8 and Part II overview §5.8 apply. In addition:
 
 - `FRED_API_KEY`, `STOOQ_API_KEY`, `TIINGO_API_KEY` come from the environment only: never hardcode, log or write
   them. In cloud sessions they are configured on the cloud environment, not in the repository.
-- Other env vars: `REGIMEKIT_TYPECHECK`, `REGIMEKIT_RECOVERY_T` (base size, default 20000, `order2` runs at 2.5x),
-  `HSMM_CORE_ONLY` (E10-T01: blocks `regimekit.finance` and the provider packages), `CI` (JSON logs),
+- Other env vars: `HSMMKIT_TYPECHECK`, `HSMMKIT_RECOVERY_T` (base size, default 20000, `order2` runs at 2.5x),
+  `CI` (JSON logs),
   `JAX_PLATFORMS`.
 - Linux/WSL2, CPU by default; nothing may require a GPU. `-m live` runs only when the user allows it.
 

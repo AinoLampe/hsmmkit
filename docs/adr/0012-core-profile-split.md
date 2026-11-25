@@ -29,4 +29,4 @@ non-finance profiles are built out.
 
 ## Status
 
-accepted
+superseded by ADR-0014

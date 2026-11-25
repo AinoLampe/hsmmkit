@@ -5,7 +5,7 @@ with the schemas below; `time` columns are `timestamp[ns]` (UTC, naive).
 
 ## `forecast.parquet` (long)
 
-Written by `regimekit forecast CONFIG --model DIR [--horizon H] [--n-sim N] [--scenario PATH] [--samples]`.
+Written by `hsmmkit forecast CONFIG --model DIR [--horizon H] [--n-sim N] [--scenario PATH] [--samples]`.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -21,7 +21,7 @@ Written by `regimekit forecast CONFIG --model DIR [--horizon H] [--n-sim N] [--s
 `covariate_forecaster`, `seed`, `quantile_levels`, `snapshot_ids`). With `--samples`,
 `forecast_samples.parquet` (`path`, `step`, `series`, `value`; all int64 except `value` float64) holds the
 per-step simulated log-returns; without it any older samples file is removed. `read_forecast(dir)`
-(`regimekit.persistence.results`) restores a `ForecastResult` bit for bit (`samples` is empty without the
+(`hsmmkit.persistence.results`) restores a `ForecastResult` bit for bit (`samples` is empty without the
 samples file).
 
 `--scenario PATH` is a CSV with one column per covariate (names as in `prepared.parquet`, `h` rows; a
@@ -30,7 +30,7 @@ samples file).
 
 ## `simulation.parquet` (long)
 
-Written by `regimekit simulate CONFIG [--params config|model] [--model DIR] [--steps T] [--n-paths P]`.
+Written by `hsmmkit simulate CONFIG [--params config|model] [--model DIR] [--steps T] [--n-paths P]`.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -48,7 +48,7 @@ its length. The explicit-duration engine cannot be simulated (it has no `A_t`).
 
 ## Backtest files
 
-Written by `regimekit backtest CONFIG` into the output directory (the data come through the cache, so
+Written by `hsmmkit backtest CONFIG` into the output directory (the data come through the cache, so
 `--offline` replays a run). `horizon == 0` marks metrics that are not forecast metrics: the in-sample
 criteria and regime shares of each fold's fit, and the strategy metrics of each fold's slice.
 
@@ -61,12 +61,12 @@ criteria and regime shares of each fold's fit, and the strategy metrics of each 
 | `backtest.json` | `config`, `seed`, `snapshot_ids` (primary first, then the covariates), `n_free`, `versions`, `wall_s`; read by `compare --reuse` |
 | `report.md` | header, model, fit, diagnostics (with warnings), backtest summary, strategy, timings |
 
-`read_backtest(dir)` (`regimekit.persistence.results`) restores the `BacktestResult` and the metadata.
+`read_backtest(dir)` (`hsmmkit.persistence.results`) restores the `BacktestResult` and the metadata.
 `output.write` is not consulted: `backtest` always writes these files.
 
 ## `compare.parquet` and `compare.md`
 
-Written by `regimekit compare CONFIG... [--reuse] [--allow-mixed] [--metric M]...` into the output directory
+Written by `hsmmkit compare CONFIG... [--reuse] [--allow-mixed] [--metric M]...` into the output directory
 (`--out`, default `runs/compare`). Each configuration is backtested into its own `project.output_dir`
 (`--reuse` takes a stored result instead of re-running). The runs must share their data snapshot ids,
 otherwise the command exits 3 before fitting anything, unless `--allow-mixed` is given. One row per

@@ -139,7 +139,7 @@ engine, order above 1 and irregular grids raise `ConfigError`.
 |---|---|
 | `\hat u` | `FitResult.uparams` |
 | objective | `estimation.objective.make_objective`, `value_and_grad` |
-| fit | `regimekit.estimation.fit(spec, data, cfg, seed)` |
+| fit | `hsmmkit.estimation.fit(spec, data, cfg, seed)` |
 | restarts | `FitResult.restarts` (one row per start) |
 | standard errors | `estimation.report.std_errors` |
 | EM | `estimation.em.em_fit`, `GBMFamily.sufficient_stats` |

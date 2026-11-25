@@ -1,16 +1,16 @@
 # Configuration
 
-::: regimekit.config.schema
+::: hsmmkit.config.schema
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.config.yaml_io
+::: hsmmkit.config.yaml_io
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.config.migrate
+::: hsmmkit.config.migrate
     options:
       show_root_heading: true
       heading_level: 3

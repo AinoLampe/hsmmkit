@@ -51,17 +51,11 @@ Time columns are parsed as UTC (`pd.to_datetime(utc=True)`); timestamps that do 
   variables, `time_column` a coordinate, `sequence_column` a coordinate or variable. The library loads lazily; if it
   is missing the error says `pip install hsmmkit[xarray]`.
 
-## The finance `provider` source
-
-The finance application registers one more kind, `provider` (E10-T04b): `data.source` takes `provider, symbols,
-interval, start, end, adjusted, field`; a covariate's `source: {kind: provider, provider, series}` takes
-`provider, series`. Loading goes through the parquet cache of `regimekit.finance.cache` (snapshot ids,
-`max_age_days`, `--offline` replay); the core keeps only the content hashes of `regimekit.data.provenance`.
 
 ## Loading from the configuration
 
 ```python
-from regimekit.data.sources import load_data
+from hsmmkit.data.sources import load_data
 
 obs, covariates = load_data(cfg.data, obj=my_dataframe)
 ```
@@ -85,6 +79,6 @@ Implement the `Source` protocol (`name`, `options_model`, `load`) and register a
 REGISTRY.register("source", "mine", MySource(), provenance=provenance_of(__name__))
 ```
 
-Then add a `SourceCase` to `regimekit.testing.source_contract` and run `check_source` on it: it checks a valid
+Then add a `SourceCase` to `hsmmkit.testing.source_contract` and run `check_source` on it: it checks a valid
 `ObservationSet`, `M`, aligned covariates, the time-less load, a deterministic snapshot id and the error for a
 missing column.

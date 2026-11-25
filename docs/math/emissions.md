@@ -35,8 +35,8 @@ clean joint semantics, so `from_config` raises `ConfigError` for `increasing` wi
 
 The log-density keeps the operation order `\sigma_t = \sigma_i e^{\delta^\top z}`, `\text{var} = \sigma_t^2 \Delta`,
 `\text{mean} = (\mu_t - \tfrac12 \sigma_t^2)\Delta`, so that `scale_by_dt: true, ito_correction: true` reproduces
-the Part I GBM density bit for bit (the finance application registers that case as `gbm`, see
-[finance emissions](../guide/finance_emissions.md)).
+the Part I GBM density bit for bit (an application can register that case under its own name; the
+`regimekit` example extension registers it as `gbm`).
 
 ## Student-t (`StudentTFamily`, E3-T02)
 

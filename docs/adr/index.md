@@ -18,10 +18,10 @@ Part II, or raised during implementation) are added by the tickets that need the
 | [0009](0009-pydantic-v2-yaml-config.md) | pydantic v2 + YAML configuration |
 | [0010](0010-typer-cli-pandas-pyarrow.md) | typer CLI; pandas in the data layer; pyarrow parquet |
 | [0011](0011-safetensors.md) | safetensors for the model bundle (new runtime dependency) |
-| [0012](0012-core-profile-split.md) | Core/profile split |
-| [0013](0013-three-clocks.md) | Three clocks, including `steps` |
-| [0014](0014-two-repo-split.md) | Two repositories: `hsmmkit` library and `regimekit` application (proposed) |
+| [0012](0012-core-profile-split.md) | Core/profile split (superseded by 0014) |
+| [0013](0013-three-clocks.md) | Three clocks, including `steps` (amended by 0015) |
+| [0014](0014-two-repo-split.md) | Two repositories: `hsmmkit` library and `regimekit` application (accepted) |
 | [0015](0015-clock-registry.md) | Clock registry; `trading` in the finance application |
 | [0016](0016-config-extension.md) | Registries and config subclassing instead of the `profile` key |
 | [0022](0022-in-scan-emissions.md) | Recurrent emissions (carry) and the annualization exception |
-| [0023](0023-endogenous-covariates.md) | Endogenous covariates as emission channels (proposed) |
+| [0023](0023-endogenous-covariates.md) | Endogenous covariates as emission channels (accepted) |

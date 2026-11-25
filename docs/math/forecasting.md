@@ -53,4 +53,4 @@ is refused with a `NumericalError`.
 | `Y_k` quantiles | `ForecastResult.cum_quantiles` `(h, Q, M)` at `quantile_levels` |
 | per-step samples | `ForecastResult.samples` `(n_sim, h, M)` |
 | regime probabilities | `ForecastResult.regime_probs` `(h, N)` |
-| sampler | `regimekit.inference.forecast.MonteCarloForecaster` |
+| sampler | `hsmmkit.inference.forecast.MonteCarloForecaster` |

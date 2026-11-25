@@ -1,46 +1,46 @@
 # Model
 
-::: regimekit.model.spec
+::: hsmmkit.model.spec
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.model.build
+::: hsmmkit.model.build
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.model.params
+::: hsmmkit.model.params
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.model.transition
+::: hsmmkit.model.transition
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.model.lattice
+::: hsmmkit.model.lattice
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.model.emission
+::: hsmmkit.model.emission
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.model.duration
+::: hsmmkit.model.duration
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.statespace.index
+::: hsmmkit.statespace.index
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.statespace.builders
+::: hsmmkit.statespace.builders
     options:
       show_root_heading: true
       heading_level: 3

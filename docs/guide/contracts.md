@@ -1,6 +1,6 @@
 # Data contracts
 
-`regimekit.data.contracts` defines the frozen dataclasses that are the only shared types between
+`hsmmkit.data.contracts` defines the frozen dataclasses that are the only shared types between
 the data layer and the model layer (FR-D07):
 
 - `ObservationSet`, `CovariateSeries` — raw data of a source before alignment. `ObservationSet` is
@@ -20,12 +20,12 @@ observations where observed, mismatched covariate metadata, or out-of-range boun
 `PreparedDataset.window(start, end)` slices `[start, end)` along `T` without re-fitting
 `prep_stats`, used by the backtester's walk-forward folds.
 
-Only `regimekit.data.contracts` may be imported from `model`, `statespace`, `engine`,
+Only `hsmmkit.data.contracts` may be imported from `model`, `statespace`, `engine`,
 `estimation`, or `inference` — enforced by an AST-based layer-rule test (ADR-0012).
 
 ## Calendar and alignment
 
-`regimekit.data.calendar` turns raw provider data into the time axis of a `PreparedDataset`:
+`hsmmkit.data.calendar` turns raw provider data into the time axis of a `PreparedDataset`:
 
 - **Master grid.** `build_grid(obs, missing_returns, clock=..., bars_per_day=...)` takes the primary
   instrument's timestamps `τ_0 < … < τ_T`. Under `missing_returns: drop`, every row where the primary
@@ -52,7 +52,7 @@ Only `regimekit.data.contracts` may be imported from `model`, `statespace`, `eng
 
 ## Preparation
 
-`regimekit.data.prepare.Preparer(cfg.data)` builds the `PreparedDataset`, sklearn-style:
+`hsmmkit.data.prepare.Preparer(cfg.data)` builds the `PreparedDataset`, sklearn-style:
 `Preparer(cfg).fit(obs, covs, train_end).transform(obs, covs)`. Covariate series are passed in
 `data.covariates` order; each series id must match the configured `series`.
 

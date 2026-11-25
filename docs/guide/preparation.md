@@ -56,7 +56,5 @@ Covariates without timestamps are aligned by row; lag and staleness count rows.
 
 ## Quality report
 
-`regimekit.data.quality` holds the generic checks (duplicated timestamps, index gaps `> 1.5 x` the median
-spacing, `|y - median| > 8 MAD` outliers, covariate staleness). The finance application adds weekday gaps,
-non-positive prices and adjustment discontinuities between cache generations (`regimekit.finance.quality`);
-its report carries the generic findings under `generic`.
+`hsmmkit.data.quality` holds the generic checks (duplicated timestamps, index gaps `> 1.5 x` the median
+spacing, `|y - median| > 8 MAD` outliers, covariate staleness). An application adds its own checks on top.

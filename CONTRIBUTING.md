@@ -1,6 +1,6 @@
-# Contributing to regimekit
+# Contributing to hsmmkit
 
-regimekit is built ticket by ticket from `spec/tickets/`, under the conventions in
+hsmmkit is built ticket by ticket from `spec/tickets/`, under the conventions in
 `spec/tickets/00-OVERVIEW-build-order-and-conventions.md` and the harmonization decisions in
 [`CLAUDE.md`](CLAUDE.md). This file summarizes the parts of that process a human contributor needs.
 
@@ -28,7 +28,7 @@ spec gap worth raising.
 1. Every acceptance criterion is met by a test named after the ticket (`test_<id>_...`).
 2. Coverage of touched modules is not decreased; the global and per-package gates
    (`scripts/check_package_coverage.py`) pass.
-3. `ruff`, `mypy --strict`, and `jaxtyped`/beartype checks (`REGIMEKIT_TYPECHECK=1`) pass.
+3. `ruff`, `mypy --strict`, and `jaxtyped`/beartype checks (`HSMMKIT_TYPECHECK=1`) pass.
 4. Docstrings and the relevant guide/math docs are updated; an ADR is added if a decision was taken.
 5. No new runtime dependency without an ADR.
 6. The PR (or, for solo/scripted work, the commit body) references requirement IDs and lists deviations from

@@ -1,38 +1,23 @@
 # Data
 
-::: regimekit.data.contracts
+::: hsmmkit.data.contracts
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.finance.cache
+::: hsmmkit.data.calendar
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.data.calendar
+::: hsmmkit.data.prepare
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.data.prepare
+::: hsmmkit.data.transforms
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.data.transforms
-    options:
-      show_root_heading: true
-      heading_level: 3
-
-::: regimekit.data.quality
-
-::: regimekit.finance.quality
-    options:
-      show_root_heading: true
-      heading_level: 3
-
-::: regimekit.finance.providers
-    options:
-      show_root_heading: true
-      heading_level: 3
+::: hsmmkit.data.quality

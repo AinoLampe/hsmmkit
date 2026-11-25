@@ -1,12 +1,12 @@
 # Python API and CLI parity
 
-`regimekit.Project` is the single Python entry point; every CLI command is a thin wrapper over one of its
+`hsmmkit.Project` is the single Python entry point; every CLI command is a thin wrapper over one of its
 methods (the CLI passes `write=True`). Methods return their result objects and **write nothing unless
-`write=True`**. Importing `regimekit` or constructing a `Project` triggers no network access and no file
+`write=True`**. Importing `hsmmkit` or constructing a `Project` triggers no network access and no file
 writes.
 
 ```python
-from regimekit import Project
+from hsmmkit import Project
 
 p = Project.from_yaml("dax_3state.yaml", overrides={"project.seed": 7})
 data = p.fetch()  # PreparedDataset (quality report on p.last_quality)
@@ -15,8 +15,8 @@ post = p.decode(fit, data)  # PosteriorResult
 fc = p.forecast(fit, data, horizon=20)
 bt = p.backtest()  # BacktestResult (fetches the raw inputs itself)
 sim = p.simulate(params="config", steps=500, n_paths=1, data=data)
-p.save(fit, "runs/dax_3state.rkmodel")
-fit2 = Project.load("runs/dax_3state.rkmodel")
+p.save(fit, "runs/dax_3state.hsmm")
+fit2 = Project.load("runs/dax_3state.hsmm")
 table = Project.compare(["a.yaml", "b.yaml"], allow_mixed=False)
 ```
 
@@ -24,7 +24,7 @@ table = Project.compare(["a.yaml", "b.yaml"], allow_mixed=False)
 |---|---|---|
 | `validate-config` | `validate()` | `config.resolved.yaml` |
 | `fetch` | `fetch()` | `prepared.parquet`, `prep_stats.json`, `snapshots.json`, `quality.json/md` |
-| `fit` | `fit(data)` | `<name>.rkmodel/`, `fit_report.json`, `config.resolved.yaml` |
+| `fit` | `fit(data)` | `<name>.hsmm/`, `fit_report.json`, `config.resolved.yaml` |
 | `decode --model` | `decode(fit, data)` | `posterior.parquet`, `segments.json`, `criteria.json` |
 | `forecast --model` | `forecast(fit, data)` | `forecast.parquet`, `forecast.json` |
 | `simulate` | `simulate(...)` | `simulation.parquet`, `simulation_segments.json` |

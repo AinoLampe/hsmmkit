@@ -1,31 +1,26 @@
 # Evaluation
 
-::: regimekit.evaluation.backtest
+::: hsmmkit.evaluation.backtest
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.finance.strategies
+::: hsmmkit.evaluation.compare
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.evaluation.compare
+::: hsmmkit.evaluation.report
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.evaluation.report
+::: hsmmkit.evaluation.results
     options:
       show_root_heading: true
       heading_level: 3
 
-::: regimekit.evaluation.results
-    options:
-      show_root_heading: true
-      heading_level: 3
-
-::: regimekit.evaluation.metrics
+::: hsmmkit.evaluation.metrics
     options:
       show_root_heading: true
       heading_level: 3

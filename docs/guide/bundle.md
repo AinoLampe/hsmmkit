@@ -1,7 +1,7 @@
 # Model bundle
 
-A fitted model is stored as a directory `<name>.rkmodel/` by `regimekit.persistence.store.ModelStore`
-(ADR-0011). `ModelStore.save(fit, path, cfg, data, extensions=...)` writes it (`ModelStore(suffix=".rkmodel")` names the directories); `ModelStore.load(path)` returns the
+A fitted model is stored as a directory `<name>.hsmm/` by `hsmmkit.persistence.store.ModelStore`
+(ADR-0011). `ModelStore.save(fit, path, cfg, data, extensions=...)` writes it (`ModelStore(suffix=".hsmm")` names the directories); `ModelStore.load(path)` returns the
 `FitResult` without needing data. `decode`, `forecast` and `simulate --params model` take such a directory as
 `--model DIR`.
 
@@ -14,7 +14,7 @@ A fitted model is stored as a directory `<name>.rkmodel/` by `regimekit.persiste
 | `prep_stats.json` | the standardization statistics and covariate transforms/lags |
 | `provenance.json` | the data snapshot ids |
 | `fit_report.json` | `objective`, `loglik`, `converged`, `n_iter`, the restarts table (`init_method`), diagnostics and standard errors |
-| `extensions/<name>.json` | opaque payloads of extension packages; the finance application writes its data-source metadata to `extensions/regimekit.json` |
+| `extensions/<name>.json` | opaque payloads of extension packages; the finance application writes its data-source metadata to `extensions/hsmmkit.json` |
 
 `load` rebuilds the `ModelSpec` from the configuration and the stored build inputs through the family
 registries, then checks that the stored parameters have the expected names and shapes and equal
@@ -27,5 +27,5 @@ The log-likelihood is not recomputed by `load`; the caller checks it against a d
 
 Bundles of `bundle_version 1` (0.1.x and 0.2.x: `snapshots.json`, `profile` in the manifest, `init_strategy` in
 the restarts table) still load: `snapshots.json` is read as the provenance and as the payload of the
-`regimekit` extension (`ModelStore.load_extensions`), `profile` is ignored and the restarts column is renamed
+`hsmmkit` extension (`ModelStore.load_extensions`), `profile` is ignored and the restarts column is renamed
 to `init_method`. Saving always writes version 2.

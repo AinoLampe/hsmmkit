@@ -40,4 +40,4 @@ repository is `hsmmkit`.
 
 ## Status
 
-proposed (accepted in E10-T08)
+accepted (E10-T08: `hsmmkit` extracted with history, 0.1.0)

@@ -19,8 +19,8 @@ tells the family:
 - **No restart produced a finite fit.** Too few observations for the model size (regimes, phases `r_i`,
   covariates), or starting values far from the data. Reduce `model.n_states` or `model.duration.r`, add
   restarts (`estimation.restarts`) or initializations (`estimation.init`).
-- **`x64 disabled`.** Something initialized JAX in 32-bit mode before regimekit was imported. Import
-  `regimekit` first; regimekit requires float64.
+- **`x64 disabled`.** Something initialized JAX in 32-bit mode before hsmmkit was imported. Import
+  `hsmmkit` first; hsmmkit requires float64.
 - **`--device gpu` fails.** No CUDA backend is installed. Use `--device cpu` or `auto`, or install the `gpu`
   extra on Linux.
 - **Forecast too large.** `n_sim * horizon * M > 2e8`; reduce `forecast.n_sim` or the horizon.
@@ -41,7 +41,7 @@ tells the family:
   parameters that do not match the data.
 - **Sojourn estimates look unstable.** Mean sojourn and jump probabilities need many regime visits: a few
   hundred visits for a 25 % relative error, which is thousands of daily observations for slow regimes (see
-  [Validation](validation.md)). `regimekit selftest` is a smoke test, not a precision check.
+  [Validation](validation.md)). `hsmmkit selftest` is a smoke test, not a precision check.
 
 ## Backtests
 

@@ -4,7 +4,7 @@ See [Math → Evaluation](../math/evaluation.md) for the governing metric formul
 
 ## Metrics
 
-`regimekit.evaluation.metrics` holds a name-resolved registry (`resolve(names)`; an unknown name raises
+`hsmmkit.evaluation.metrics` holds a name-resolved registry (`resolve(names)`; an unknown name raises
 `ConfigError` at `evaluation.metrics`). A metric is a function of a context (`forecast`, `realized`,
 `horizon`, `posterior`, `fit`, `labels`, `strategy`) with declared `needs`; a runner skips metrics whose
 needs it cannot meet. Predictive metrics compare the realized cumulative return `Y_h = sum_{k<=h} y_{t+k}`
@@ -28,7 +28,7 @@ scalar metrics return `<name>_<m>` entries.
 
 ## Walk-forward folds
 
-`regimekit.evaluation.backtest.schedule_folds(times, dt, cfg, max_horizon)` turns `evaluation.backtest`
+`hsmmkit.evaluation.backtest.schedule_folds(times, dt, cfg, max_horizon)` turns `evaluation.backtest`
 into a fold table (pure index arithmetic; indices are grid rows, ends exclusive, like
 `PreparedDataset.window`).
 
@@ -86,44 +86,11 @@ Viterbi path of the last rows is not invariant to trailing masked rows. Their de
 per distinct train length (per fold under the expanding scheme); the fit and the filter compile once per
 padded length.
 
-## Strategies
-
-`evaluation.strategy` maps the state of knowledge at an origin to positions in `[-1, 1]`
-(`regimekit.finance.strategies.make_strategy(cfg, nominal_dt, n_series)`). A position is *decided* at an
-origin from its filtered regime probabilities and forecast and *held* over the next step; the strategy
-return of a step is, in the log-return approximation,
-
-`r_t = pos_{t-1} . y_t - cost_bps * 1e-4 * sum_m |pos_{t-1,m} - pos_{t-2,m}|`  (flat before the first trade),
-
-and the equity curve is `exp(cumsum(r))`.
-
-* `regime_long_flat` (`flat_if: {regime, prob_above, use}`): position 1, flat (0) when
-  `P(regime) > prob_above` (strict). `use: smoothed` is look-ahead: it warns, and a backtest uses the filtered
-  probabilities of the origin instead.
-* `regime_target_vol` (`target_vol`, `cap = 1.0`, `allow_short = False`): magnitude
-  `min(cap, target_vol / sigma_pred)` with `sigma_pred = sqrt(var[0] / nominal_dt)` from the origin's
-  one-step forecast (annualized on the trading/calendar clocks, per step on `steps`); long when the
-  predictive mean is non-negative, otherwise flat, or short with the same magnitude when `allow_short`.
-
-`run_backtest(cfg, data_loader, seed, hooks=[StrategyHook(...)])` returns the trace in
-`BacktestResult.extras["strategy"]` (`regimekit.finance.strategy_frame(result)`): `fold, time, position`
-(`position_<m>` for `M > 1`), `return`, `gross` (`position . y`, before costs), `equity`, `turnover`
-(`sum_m |change|`) and `dt`; `time` is the end of the step the position was held over. Where an origin's
-next return is missing no position is recorded. The metrics are evaluated on each fold's slice (equity restarts
-at 1) and stored with `horizon == 0`:
-
-| Metric | Value |
-|---|---|
-| `sharpe` | `mean(r) / std(r) * sqrt(1 / mean(dt))`; a constant non-zero return gives `+-inf`, an all-zero one 0 |
-| `max_drawdown` | largest peak-to-trough fall of the equity curve as a fraction of the peak, `>= 0` (equity starts at 1) |
-| `turnover` | `sum |change in position|` per unit of clock time (per year on the trading/calendar clocks) |
-| `hit_rate` | share of the invested periods with `position . y > 0` |
-
 ## Command line
 
-`regimekit backtest CONFIG` fetches the data (respecting `--offline`), runs `run_backtest` with the
+`hsmmkit backtest CONFIG` fetches the data (respecting `--offline`), runs `run_backtest` with the
 configured strategy and writes the files listed in [Outputs](outputs.md#backtest-files), including
-`report.md`. `regimekit compare CONFIG... [--reuse] [--allow-mixed] [--metric M]` backtests several
+`report.md`. `hsmmkit compare CONFIG... [--reuse] [--allow-mixed] [--metric M]` backtests several
 configurations on the same data snapshot and writes `compare.parquet` / `compare.md`.
 
 ## Origin hooks

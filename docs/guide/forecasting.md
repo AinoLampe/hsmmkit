@@ -4,11 +4,11 @@ See [Math → Forecasting](../math/forecasting.md) for the governing Monte Carlo
 
 ## Decode
 
-`regimekit decode CONFIG --model DIR [--augmented]` turns a fitted model plus `CONFIG`'s prepared
+`hsmmkit decode CONFIG --model DIR [--augmented]` turns a fitted model plus `CONFIG`'s prepared
 dataset into a decoded posterior: filtered and smoothed regime probabilities, the Viterbi path, its
 run-length-encoded segments, and the AIC/BIC/ICL information criteria.
 
-`--model DIR` points at a model bundle (`<name>.rkmodel/`, see [Model bundle](bundle.md)) written by
+`--model DIR` points at a model bundle (`<name>.hsmm/`, see [Model bundle](bundle.md)) written by
 `ModelStore.save`. `prepared.parquet` is read from the output directory, or fetched first if missing and
 `--offline` is not set.
 
@@ -21,13 +21,13 @@ Outputs, written to the output directory:
 | `segments.json` | Run-length encoding of the Viterbi regime path: `{"start", "end", "regime"}` (`end` inclusive) |
 | `criteria.json` | `loglik`, `aic`, `bic`, `icl` |
 
-The same logic is available as a library call: `regimekit.inference.decode.decode(fit, data) ->
+The same logic is available as a library call: `hsmmkit.inference.decode.decode(fit, data) ->
 PosteriorResult`.
 
 ## Covariate forecasters
 
 Multi-step forecasting needs future values for every covariate the model conditions on
-(`forecast.covariate_forecaster`). Four strategies (`regimekit.inference.covariate_forecasters`):
+(`forecast.covariate_forecaster`). Four strategies (`hsmmkit.inference.covariate_forecasters`):
 
 | `type` | Behaviour |
 |---|---|
@@ -42,7 +42,7 @@ can drive more than one part of the model.
 
 ## Forecast paths
 
-`regimekit.inference.forecast.forecast_paths` samples `n_sim` future paths of horizon `h` from the
+`hsmmkit.inference.forecast.forecast_paths` samples `n_sim` future paths of horizon `h` from the
 filtered posterior at the origin: each path starts in a state drawn from `softmax(log_alpha_T)`, then
 applies `A_{T+k}` (covariate row `k-1`, `Δ` from `future_grid`) and draws the return from the new
 regime's emission. `forecast_paths_explicit` does the same for the explicit-duration engine: it draws the
@@ -50,8 +50,8 @@ origin segment's remaining sojourn from the pmf conditioned on `d >= elapsed` (r
 origin), then fresh durations for later segments. Durations use `nominal_dt` (regular-grid
 assumption, ADR-0007).
 
-`future_grid(last_time, h, clock, bars_per_day)` (in `regimekit.utils.clock`, re-exported by
-`regimekit.data.calendar`) builds the horizon timestamps on a **weekday calendar** -- Saturdays and
+`future_grid(last_time, h, clock, bars_per_day)` (in `hsmmkit.utils.clock`, re-exported by
+`hsmmkit.data.calendar`) builds the horizon timestamps on a **weekday calendar** -- Saturdays and
 Sundays are skipped, exchange holidays are *not* (no holiday calendar in 0.1.0). `Δ` is `1/252`
 (trading), the real gap in days / 365.25 (calendar) or `1` (steps).
 

@@ -1,4 +1,4 @@
-# regimekit
+# hsmmkit
 
 JAX-based Hidden Semi-Markov Model framework for market-regime detection and probabilistic return
 forecasting.

@@ -17,7 +17,7 @@ hyperparameters, chosen by these criteria and by the out-of-sample scores, not b
 ## Out-of-sample criteria
 
 The per-horizon log score and CRPS of the walk-forward backtest are the primary selection criteria (see
-[Evaluation](evaluation.md)); `regimekit compare` tabulates them for several configurations on one data
+[Evaluation](evaluation.md)); `hsmmkit compare` tabulates them for several configurations on one data
 snapshot.
 
 ## Diagnostics emitted with every fit
@@ -43,4 +43,4 @@ from the diagnostics; where the Hessian is not positive definite no standard err
 | `p` | `ParamManager.n_free` |
 | `\gamma` | smoothed expanded posterior `(T, S)` (`Posterior`) |
 | AIC, BIC, ICL | `engine.criteria.information_criteria`; exposed as `PosteriorResult.aic`, `.bic`, `.icl` (`inference.results`) |
-| diagnostics | `regimekit.estimation.report.diagnose` |
+| diagnostics | `hsmmkit.estimation.report.diagnose` |

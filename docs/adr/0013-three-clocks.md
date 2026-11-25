@@ -25,4 +25,4 @@ own clock units via `mean_sojourn(theta, nominal_dt)` (never a clock-specific `m
 
 ## Status
 
-accepted
+accepted; amended by ADR-0015 (clock registry)
