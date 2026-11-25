@@ -236,6 +236,10 @@ class PreparedDataset:
     labels: Array | None = None  # (T, N) bool
     boundaries: BoundaryConstraints | None = None
     group: str | None = None
+    series_support: tuple[Support, ...] | None = None
+    """Per-series supports of a mixed-family model (`None`: every series has `support`). With mixed blocks
+    `support` holds the first non-real support and `series_support` is authoritative; `observations` stay
+    float and each column is validated against its own support."""
 
     def __hash__(self) -> int:
         """Identity-based hash; equality below is value-based (fine: only used for `is`-safety)."""
@@ -263,6 +267,7 @@ class PreparedDataset:
             and _array_equal(self.labels, other.labels)
             and self.boundaries == other.boundaries
             and self.group == other.group
+            and self.series_support == other.series_support
         )
 
     def window(self, start: int, end: int) -> PreparedDataset:
@@ -341,6 +346,9 @@ class PreparedDataset:
         self._validate_boundaries(t)
 
     def _validate_support(self, obs_np: np.ndarray, mask_np: np.ndarray) -> None:
+        if self.series_support is not None:
+            self._validate_series_support(obs_np, mask_np)
+            return
         observed = obs_np[mask_np]
         if self.support == "real":
             if not _is_float_dtype(obs_np.dtype):
@@ -363,6 +371,29 @@ class PreparedDataset:
                 raise DataError(
                     f"support='categorical' requires integers in [0, {self.n_categories})",
                     path="observations",
+                )
+
+    def _validate_series_support(self, obs_np: np.ndarray, mask_np: np.ndarray) -> None:
+        """Mixed supports: every column against its own support (`categorical` is not allowed in a mix)."""
+        assert self.series_support is not None
+        if len(self.series_support) != obs_np.shape[1]:
+            raise DataError(
+                f"series_support has {len(self.series_support)} entries for {obs_np.shape[1]} series",
+                path="series_support",
+            )
+        for m, support in enumerate(self.series_support):
+            col = obs_np[mask_np[:, m], m]
+            if support == "count":
+                ok = bool(np.all((col >= 0) & (col == np.rint(col))))
+            elif support == "binary":
+                ok = bool(np.all(np.isin(col, [0, 1])))
+            elif support == "real":
+                ok = bool(np.all(np.isfinite(col)))
+            else:
+                raise DataError(f"series {m}: support {support!r} cannot be mixed", path="series_support")
+            if not ok:
+                raise DataError(
+                    f"series {m}: observations violate support {support!r}", path=f"observations[:, {m}]"
                 )
 
     def _validate_covariates(self, t: int) -> None:
@@ -448,6 +479,7 @@ def _flatten_prepared_dataset(
         dataset.n_categories,
         dataset.boundaries,
         dataset.group,
+        dataset.series_support,
     )
     return children, aux
 
@@ -464,6 +496,7 @@ def _unflatten_prepared_dataset(aux: tuple[Any, ...], children: tuple[Array | No
         n_categories,
         boundaries,
         group,
+        series_support,
     ) = aux
     observations, dt, mask, cov_transition, cov_duration, cov_emission, labels = children
     assert observations is not None
@@ -487,6 +520,7 @@ def _unflatten_prepared_dataset(aux: tuple[Any, ...], children: tuple[Array | No
         labels=labels,
         boundaries=boundaries,
         group=group,
+        series_support=series_support,
     )
 
 

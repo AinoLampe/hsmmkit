@@ -221,6 +221,8 @@ The whole resolved configuration of the domain-neutral core.
 | `mixture` | `MixtureCfg \| None` | `None` |
 | `per_series` | `bool` | `True` |
 | `ar` | `ArCfg \| None` | `None` |
+| `columns` | `list[int \| str] \| None` | `None` |
+| `blocks` | `list[EmissionCfg] \| None` | `None` |
 
 ## `model.duration`
 

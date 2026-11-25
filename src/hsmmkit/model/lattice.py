@@ -187,6 +187,8 @@ def post_sort_states(theta: Params, spec: ModelSpec, by: str | None = None) -> t
     columns, so the model is unchanged up to labels (`jump_probs` is invariant). The caller recomputes
     `u` from the sorted `theta` (`ParamManager.flatten`).
     """
+    if by is None and hasattr(spec.emission, "default_sort_name"):
+        by = spec.emission.default_sort_name(theta)
     if by is None:
         by = next((n for n in _SCALE_NAMES if n in theta), _SCALE_NAMES[0])
     if by not in theta:

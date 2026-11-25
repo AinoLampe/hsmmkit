@@ -144,7 +144,9 @@ def check_sample(case: FamilyCase) -> None:
         regime = jnp.full((n,), i, dtype=jnp.int32)
         s = np.asarray(fam.sample(jax.random.key(10 + i), regime, dt, theta, z))
         assert s.shape == (n, case.n_series), f"{case.name}: sample shape {s.shape}, expected (n, M)"
-        assert _valid_support(fam.support, s), f"{case.name}: sample leaves the '{fam.support}' support"
+        per_series = getattr(fam, "series_support", None) or (fam.support,) * s.shape[1]  # mixed: per column
+        for m, support in enumerate(per_series):
+            assert _valid_support(support, s[:, m]), f"{case.name}: series {m} leaves the '{support}' support"
         moments = fam.moments(regime, dt, theta, z)
         if moments is None:
             continue
