@@ -194,8 +194,10 @@ def rolling_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params
     labels = relabel[labels]
     sigma = np.sort(centers)
 
+    # a mixture's component axis is not a state axis: its location/scale start at the configured baseline
+    is_mixture = hasattr(spec.emission, "n_components")
     scale_name = next((s.name for s in spec.param_specs if s.name in _SCALE_NAMES), None)
-    if scale_name is not None:
+    if scale_name is not None and not is_mixture:
         if multi:
             rv_m = np.stack(
                 [_rolling_realized_vol(y_all[:, m], data.nominal_dt) for m in range(y_all.shape[1])], axis=1
@@ -214,7 +216,7 @@ def rolling_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params
             theta[scale_name] = jnp.asarray(sigma)
 
     loc_name = next((s.name for s in spec.param_specs if s.name in _LOCATION_NAMES), None)
-    if loc_name is not None:
+    if loc_name is not None and not is_mixture:
         if multi:
             y_win_m = y_all[_ROLL_WINDOW - 1 :] / data.nominal_dt  # (W, M)
             mu_nm = np.array(

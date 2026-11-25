@@ -54,6 +54,10 @@ def _base_bijector(spec: ParamSpec) -> Bijector:
         return PmfBijector()
     if spec.domain == "cholesky":
         return CholeskyLowerBijector()
+    if spec.domain == "increasing":
+        return IncreasingBijector(base=IdentityBijector())
+    if spec.domain == "increasing_positive":
+        return IncreasingBijector(base=PositiveBijector())
     raise ConfigError(f"unknown domain {spec.domain!r}", path=spec.name)
 
 

@@ -133,6 +133,11 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
     n = m.n_states
     n_series = inputs.n_series
 
+    if (m.emission.family == "mixture") != (m.emission.mixture is not None):
+        raise ConfigError(
+            "model.emission.mixture goes with family 'mixture' (and only with it)",
+            path="model.emission.mixture",
+        )
     emis_cls = EMISSION_FAMILIES.get(m.emission.family)
     if emis_cls is None:
         raise ConfigError(f"unknown emission family {m.emission.family!r}", path="model.emission.family")

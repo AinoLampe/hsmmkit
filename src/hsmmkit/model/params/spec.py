@@ -10,7 +10,20 @@ import numpy as np
 from hsmmkit.utils.typing import Array
 
 Mode = Literal["free", "fixed", "tied", "bounded", "prior"]
-Domain = Literal["real", "positive", "interval", "simplex_ref", "nu_gt_2", "pmf", "cholesky"]
+Domain = Literal[
+    "real",
+    "positive",
+    "interval",
+    "simplex_ref",
+    "nu_gt_2",
+    "pmf",
+    "cholesky",
+    "increasing",
+    "increasing_positive",
+]
+"""`increasing` / `increasing_positive`: each *row cell* (the trailing axes, a vector) is strictly increasing
+(a real, resp. positive, first entry plus cumulative-softplus steps): the within-state ordering of the
+components of a mixture (E11-T06), as opposed to `constraint="increasing"` which orders the state axis."""
 
 
 class Prior(Protocol):

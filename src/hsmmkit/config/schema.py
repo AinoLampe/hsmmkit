@@ -737,19 +737,30 @@ def _check_per_state_lengths(config: ProjectConfig) -> None:
     if duration.r is not None and len(duration.r) != n:
         raise ConfigError(f"r must have length n_states={n}", path="model.duration.r")
 
-    def _check(section_path: str, params: dict[str, ParamCfg]) -> None:
+    def _check(section_path: str, params: dict[str, ParamCfg], allowed: tuple[int, ...] = (n,)) -> None:
         for key, pc in params.items():
-            if key in ("chol", "probs"):  # packed / categorical vectors: validated by the family
+            if key in (
+                "chol",
+                "probs",
+                "weights",
+            ):  # packed / categorical / mixture vectors: the family checks
                 continue
             for field_name in ("values", "init", "init_mean_sojourn_steps"):
                 value = getattr(pc, field_name)
-                if isinstance(value, list) and len(value) != n:
+                if isinstance(value, list) and len(value) not in allowed:
                     raise ConfigError(
-                        f"{field_name} must have length n_states={n}",
+                        f"{field_name} must have length n_states={n}"
+                        + (
+                            ""
+                            if allowed == (n,)
+                            else f" (or {' or '.join(str(a) for a in allowed[1:])} for a mixture)"
+                        ),
                         path=f"{section_path}.params.{key}.{field_name}",
                     )
 
-    _check("model.emission", config.model.emission.params)
+    mixture = config.model.emission.mixture
+    allowed = (n,) if mixture is None else (n, n * mixture.components, mixture.components)
+    _check("model.emission", config.model.emission.params, tuple(dict.fromkeys(allowed)))
     _check("model.duration", config.model.duration.params)
 
 
