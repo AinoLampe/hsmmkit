@@ -100,6 +100,14 @@ class ProductEmission(BaseEmission):
         """`(T, M)` samples: one independent draw per series from the active regime's density."""
         return cast("Array", self.base.sample(key, regime, dt, self._per_series_theta(theta), z))
 
+    def moments(
+        self, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None
+    ) -> tuple[Array, Array] | None:
+        """Delegated to the base family (independent series: the moments are per series)."""
+        return cast(
+            "tuple[Array, Array] | None", self.base.moments(regime, dt, self._per_series_theta(theta), z)
+        )
+
     def init_carry(self) -> object:
         """No path-dependent state (the base families have none)."""
         return self.base.init_carry()

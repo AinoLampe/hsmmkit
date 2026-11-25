@@ -78,14 +78,24 @@ family_contract.register_case(
         covariate_factory=lambda: GaussianFamily(mean_idx=(0,), scale_idx=(0,)),
     )
 )
-_GBM_OPTIONS = GaussianFamily(scale_by_dt=True, ito_correction=True)
+
+
+def _gbm_ref(y: jax.Array, dt: jax.Array, theta: dict[str, jax.Array], z: jax.Array | None) -> np.ndarray:
+    """Closed form of the GBM log-return density, N((mu - s^2/2) dt, s^2 dt), independent of the family."""
+    del z
+    mu, s, d = np.asarray(theta["emission.mean"]), np.asarray(theta["emission.scale"]), np.asarray(dt)
+    mean = (mu[None] - 0.5 * s[None] ** 2) * d[:, None, None]
+    sd = s[None] * np.sqrt(d)[:, None, None]
+    return stats.norm.logpdf(np.asarray(y)[:, None, :], mean, sd).sum(-1)
+
+
 family_contract.register_case(
     FamilyCase(
         name="gaussian-gbm-options",
         factory=lambda: GaussianFamily(scale_by_dt=True, ito_correction=True),
         theta_factory=_gauss_theta,
         data_factory=_real_data,
-        scipy_logpdf=_gauss_ref(_GBM_OPTIONS),
+        scipy_logpdf=_gbm_ref,
     )
 )
 family_contract.register_case(
@@ -107,3 +117,21 @@ family_contract.register_case(
         scipy_logpdf=_gauss_ref(GaussianFamily()),
     )
 )
+
+
+def test_e11_t01_student_t_moments_edge_cases() -> None:
+    """Variance is `inf` for `nu <= 2` and the mean is `nan` for `nu <= 1`; otherwise the closed forms."""
+    fam = StudentTFamily()
+    theta = {
+        "emission.m": jnp.array([[0.1], [0.2], [0.3]]),
+        "emission.s": jnp.full((3, 1), 0.5),
+        "emission.nu": jnp.array([0.9, 1.5, 5.0]),
+    }
+    regime, dt = jnp.array([0, 1, 2]), jnp.ones(3)
+    mean, var = fam.moments(regime, dt, theta, None)
+    assert np.isnan(mean[0, 0])
+    assert np.isinf(var[0, 0])
+    assert np.isclose(mean[1, 0], 0.2)
+    assert np.isinf(var[1, 0])
+    assert np.isclose(mean[2, 0], 0.3)
+    assert np.isclose(var[2, 0], 0.25 * 5.0 / 3.0)

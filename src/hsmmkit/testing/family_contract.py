@@ -261,7 +261,10 @@ def check_optional_methods(case: FamilyCase) -> None:
             return jnp.sum(gamma * fam.log_prob(y, dt, th, z))
 
         grad = jax.grad(q)(theta_hat)
-        worst = max(float(jnp.max(jnp.abs(grad[k]))) for k in theta_hat if k in grad)
+        updated = [
+            k for k in theta_hat if k in (fam.m_step(stats) or {})
+        ]  # an ECM-style step updates a subset
+        worst = max(float(jnp.max(jnp.abs(grad[k]))) for k in updated)
         scale = max(1.0, abs(float(q(theta_hat))))
         assert worst / scale <= 1e-8, f"{case.name}: m_step is not a stationary point (|grad| = {worst:.2e})"
     prior = fam.conjugate_prior()

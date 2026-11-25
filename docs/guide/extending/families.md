@@ -22,16 +22,18 @@ registers a `FamilyCase` and imports the test function and the parametrization h
 ```python
 from hsmmkit.testing import family_contract
 from hsmmkit.testing.family_contract import (  # noqa: F401
-    FamilyCase, pytest_generate_tests, test_family_contract,
+    FamilyCase,
+    pytest_generate_tests,
+    test_family_contract,
 )
 
 family_contract.register_case(
     FamilyCase(
         name="my-family",
         factory=MyFamily,
-        theta_factory=lambda key, n, m, k: {...},      # parameters of n regimes, m series, k covariates
-        data_factory=lambda key, t, m: (y, dt, z),     # valid for the family's support
-        scipy_logpdf=my_reference_density,             # optional (T, N) reference
+        theta_factory=lambda key, n, m, k: {...},  # parameters of n regimes, m series, k covariates
+        data_factory=lambda key, t, m: (y, dt, z),  # valid for the family's support
+        scipy_logpdf=my_reference_density,  # optional (T, N) reference
     )
 )
 ```

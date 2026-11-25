@@ -89,6 +89,7 @@ Release 0.1.0 is prepared (tag `v0.1.0` is an owner action, see "Blocked / needs
 ## Findings for the owner
 
 ## Follow-ups
+- E11-T01 gaps (review): no built-in family has `m_step` yet (the Gaussian M-step lives in `estimation/em.py`), so check 7 only exercises `m_step` on the test family; the zero-data posterior-equals-prior check needs the `PriorFamily` API of E11-T04/E13-T05a (check 7 only asserts `update` exists); check 2 passes silently without `moments` (support only); `pytest_generate_tests` parametrizes over every registered case, so a second test module importing `test_family_contract` repeats them (E11-T02 should add a per-module filter if it adds cases elsewhere).
 - About 50 test modules of `RegimeDetectionAndForecast` needed the finance package and were not carried over.
   The core-relevant scenarios they covered (fit/backtest/bundle/CLI round trips, the product emission on two
   series, lattice and padding tests, strategy-free parts of the report) should be re-created with `gaussian`
