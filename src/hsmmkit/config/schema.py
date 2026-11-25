@@ -832,7 +832,9 @@ def _check_part2_keys(config: ProjectConfig) -> None:
 
 
 def _non_conjugate_components(config: ProjectConfig) -> list[str]:
-    """Components whose family has no `conjugate_prior()` (VB / MCMC fall back to Laplace / NUTS)."""
+    """Components whose family does not override `conjugate_prior()` (VB and MCMC fall back)."""
+    from hsmmkit.model.emission.base import BaseEmission
+
     _registered_names("emission")
     out: list[str] = []
     families = [("emission", config.model.emission.family)]
@@ -843,7 +845,7 @@ def _non_conjugate_components(config: ProjectConfig) -> list[str]:
     for kind, name in families:
         entry = next((e for e in REGISTRY.entries(kind) if e.name == name), None)  # type: ignore[arg-type]
         fn = getattr(entry.obj, "conjugate_prior", None) if entry is not None else None
-        if (fn is None or fn() is None) and f"{kind}.{name}" not in out:
+        if (fn is None or fn is BaseEmission.conjugate_prior) and f"{kind}.{name}" not in out:
             out.append(f"{kind}.{name}")
     return out
 

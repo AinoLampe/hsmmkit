@@ -20,7 +20,7 @@ from typing import Any, Literal, cast
 
 import jax.numpy as jnp
 
-from hsmmkit.model.emission.base import EmissionFamily, Support
+from hsmmkit.model.emission.base import BaseEmission, EmissionFamily, Support
 from hsmmkit.model.params import ParamSpec
 from hsmmkit.plugins import register
 from hsmmkit.utils.typing import Array
@@ -28,7 +28,7 @@ from hsmmkit.utils.typing import Array
 
 @register("emission", "product")
 @dataclass(frozen=True)
-class ProductEmission:
+class ProductEmission(BaseEmission):
     """Product of independent per-series emission densities over a shared regime (`n_series` series).
 
     Attributes:
@@ -100,6 +100,14 @@ class ProductEmission:
         """`(T, M)` samples: one independent draw per series from the active regime's density."""
         return cast("Array", self.base.sample(key, regime, dt, self._per_series_theta(theta), z))
 
+    def moments(
+        self, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None
+    ) -> tuple[Array, Array] | None:
+        """Delegated to the base family (independent series: the moments are per series)."""
+        return cast(
+            "tuple[Array, Array] | None", self.base.moments(regime, dt, self._per_series_theta(theta), z)
+        )
+
     def init_carry(self) -> object:
         """No path-dependent state (the base families have none)."""
         return self.base.init_carry()
@@ -108,6 +116,6 @@ class ProductEmission:
         """Delegated to the base family (identity for GBM / Student-t)."""
         return self.base.step_carry(carry, y_t, theta)
 
-    def sufficient_stats(self, y: Array, dt: Array, gamma: Array) -> object | None:
+    def sufficient_stats(self, y: Array, dt: Array, gamma: Array, z: Array | None = None) -> object | None:
         """Delegated to the base family."""
-        return cast("object | None", self.base.sufficient_stats(y, dt, gamma))
+        return cast("object | None", self.base.sufficient_stats(y, dt, gamma, z))

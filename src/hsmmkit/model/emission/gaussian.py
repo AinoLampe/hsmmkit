@@ -22,7 +22,7 @@ import jax.scipy.stats
 import numpy as np
 
 from hsmmkit.model.dists import normal_logpdf, sample_normal
-from hsmmkit.model.emission.base import Support
+from hsmmkit.model.emission.base import BaseEmission, Support
 from hsmmkit.model.params import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior, Prior
 from hsmmkit.model.params.spec import Domain, Mode, ParamSpec
 from hsmmkit.plugins import register
@@ -121,7 +121,7 @@ def _coef_spec(name: str, n_states: int, n_coef: int) -> ParamSpec:
 
 @register("emission", "gaussian")
 @dataclass(frozen=True)
-class GaussianFamily:
+class GaussianFamily(BaseEmission):
     """Per-state Gaussian emission with diagonal covariance and optional covariate links.
 
     `mean_idx`/`scale_idx` select, by column, which entries of the `(T, K_e)` emission covariate block `z`
@@ -332,6 +332,14 @@ class GaussianFamily:
         sd_sel = sd_t[idx, regime, :]
         return sample_normal(key, mean_sel, sd_sel, shape=mean_sel.shape)
 
+    def moments(
+        self, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None
+    ) -> tuple[Array, Array]:
+        """Mean and variance `(T, M)` of the active regime's density."""
+        mean_t, sd_t = self._mean_sd(dt, theta, z)
+        idx = jnp.arange(dt.shape[0])
+        return mean_t[idx, regime, :], sd_t[idx, regime, :] ** 2
+
     def init_carry(self) -> object:
         """No path-dependent state."""
         return None
@@ -341,7 +349,7 @@ class GaussianFamily:
         del y_t, theta
         return carry
 
-    def sufficient_stats(self, y: Array, dt: Array, gamma: Array) -> dict[str, Array]:
+    def sufficient_stats(self, y: Array, dt: Array, gamma: Array, z: Array | None = None) -> dict[str, Array]:
         """Weighted sums for the closed-form M-step (E5-T06), covariate-free, single series.
 
         `y (T, 1)` (or `(T,)`), `dt (T,)`, `gamma (T, N)` regime weights (zero at unobserved steps).
