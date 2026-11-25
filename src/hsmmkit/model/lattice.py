@@ -198,9 +198,12 @@ def post_sort_states(theta: Params, spec: ModelSpec, by: str | None = None) -> t
 
     sorted_theta: dict[str, jnp.ndarray] = {}
     transition_done = False
+    shared = set(getattr(spec.emission, "shared_param_names", ()))  # emission parameters with no state axis
     for name, value in theta.items():
         arr = jnp.asarray(value)
-        if name.startswith("emission."):
+        if name in shared:
+            sorted_theta[name] = arr
+        elif name.startswith("emission."):
             sorted_theta[name] = arr[jnp.asarray(perm)]
         elif name == "duration.rate" and spec.duration_conditioning == "pair":
             sorted_theta[name] = arr[jnp.asarray(_pair_rate_permutation(n, perm))]

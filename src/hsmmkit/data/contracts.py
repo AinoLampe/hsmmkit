@@ -21,6 +21,33 @@ Clock = str  # the name of a registered clock (`hsmmkit.data.clocks`, `PreparedD
 Support = Literal["real", "count", "binary", "categorical"]
 
 
+LAG_PREFIX = "__lag"
+"""Prefix of the own-lag emission covariates generated for autoregressive emissions (`msar`)."""
+
+
+def lag_names(series_names: tuple[str, ...], p: int) -> tuple[str, ...]:
+    """Names of the own-lag covariate columns: `__lag{l}_{series}` for `l = 1..p`, lag-major order."""
+    return tuple(f"{LAG_PREFIX}{lag}_{name}" for lag in range(1, p + 1) for name in series_names)
+
+
+def own_lag_columns(observations: np.ndarray, mask: np.ndarray, p: int) -> tuple[np.ndarray, np.ndarray]:
+    """`(lags (T, p M), ok (T,))`: row `t` holds `y_{t-1}, ..., y_{t-p}` (lag-major, then series).
+
+    `ok[t]` is true when `t >= p` and every series was observed at the `p` previous steps; a row that is not
+    `ok` has zeros where a lag is unavailable and must be masked by the caller. Lags are `>= 1` by
+    construction: row `t` never reads `observations[t:]`.
+    """
+    t, m = observations.shape
+    y = np.where(mask, observations, 0.0)
+    lags = np.zeros((t, p * m))
+    ok = np.arange(t) >= p
+    observed = mask.all(axis=1)
+    for lag in range(1, p + 1):
+        lags[lag:, (lag - 1) * m : lag * m] = y[: t - lag]
+        ok[lag:] &= observed[: t - lag]
+    return lags, ok
+
+
 def _is_float_dtype(dtype: np.dtype[Any]) -> bool:
     return np.issubdtype(dtype, np.floating)
 

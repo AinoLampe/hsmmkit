@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+import jax
 import jax.numpy as jnp
 
 from hsmmkit.model.params import Params
@@ -33,6 +34,8 @@ def _log_with_structural_zeros(a: Array) -> Array:
 
 def make_transition_fn(spec: ModelSpec, space: StateSpace) -> TransitionFn:
     """Build the per-step `(A_t, log A_t)` function for `spec`'s transition mode."""
+    if spec.memory_mode == "steps":
+        return _make_steps_transition_fn(spec, space)
     if spec.transition.mode == "generator":
         return _make_generator_transition_fn(spec)
     return _make_jump_transition_fn(spec, space)
@@ -90,6 +93,36 @@ def _make_jump_transition_fn(spec: ModelSpec, space: StateSpace) -> TransitionFn
         exit_contrib = jnp.where(valid_exit, a_state[:, None] * pi_state, 0.0)
         a = a.at[diag_idx[:, None], safe_exit].add(exit_contrib)  # exit
 
+        return a, _log_with_structural_zeros(a)
+
+    return transition_fn
+
+
+def _make_steps_transition_fn(spec: ModelSpec, space: StateSpace) -> TransitionFn:
+    """`A_t` of the time-step memory space: `(s_{t-p..t}) -> (s_{t-p+1..t}, j)`.
+
+    Geometric durations: the chain stays in `s_t` with probability `1 - a_{s_t}` and jumps to `j != s_t`
+    with probability `a_{s_t} pi_{s_t j}`; every row has exactly `N` possible successors.
+    """
+    s = space.n_expanded
+    regime_of = space.index.regime_of
+    exit_targets = space.exit_targets  # (S, N): the successor tuple for each next regime
+    rows = jnp.arange(s)[:, None]
+
+    def transition_fn(
+        theta: Params, z_pi_t: Array | None, z_d_t: Array | None, dt_t: Array
+    ) -> tuple[Array, Array]:
+        a_rate = spec.duration.advance_prob_t(theta, dt_t, z_d_t)  # (N,)
+        if a_rate.shape[0] != space.n_rates:
+            raise DataError(
+                f"theta['duration.rate'] has {a_rate.shape[0]} rows, expected n_rates={space.n_rates}",
+                path="duration.rate",
+            )
+        a_state = a_rate[regime_of]  # (S,)
+        pi_state = spec.transition.jump_probs_t(theta, z_pi_t, space.layout)[regime_of]  # (S, N), 0 on stay
+        stay = jax.nn.one_hot(regime_of, space.index.n_states, dtype=pi_state.dtype)  # (S, N)
+        probs = stay * (1.0 - a_state)[:, None] + a_state[:, None] * pi_state
+        a = jnp.zeros((s, s)).at[rows, exit_targets].add(probs)
         return a, _log_with_structural_zeros(a)
 
     return transition_fn

@@ -18,7 +18,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from hsmmkit.data.contracts import PreparedDataset, PrepStats
+from hsmmkit.data.contracts import PreparedDataset, PrepStats, lag_names, own_lag_columns
 from hsmmkit.engine.viterbi import segments
 from hsmmkit.statespace.builders import initial_log_rho
 from hsmmkit.utils.errors import NumericalError
@@ -83,7 +83,11 @@ def _simulate_one_path(
         states = init_state[None]
 
     regimes = space.index.regime_of[states]
-    values = spec.emission.sample(emit_key, regimes, dt, theta, z_e)
+    if hasattr(spec.emission, "sample_path"):
+        # Autoregressive emissions (`msar`) feed each draw back into the next lags.
+        values = spec.emission.sample_path(emit_key, regimes, dt, theta)
+    else:
+        values = spec.emission.sample(emit_key, regimes, dt, theta, z_e)
     return states, regimes, values
 
 
@@ -171,6 +175,14 @@ def simulate_dataset(
     result = simulate_paths(key, theta, spec, space, dt, z_pi, z_d, z_e, n_paths=1)
     y = result.values[0]
     t_len = y.shape[0]
+    mask = jnp.ones(y.shape, dtype=bool)
+    emission_names: tuple[str, ...] = ()
+    p = int(getattr(spec.emission, "requires_own_lags", 0))
+    if p:  # an autoregressive emission: the own lags are emission covariates and the first `p` steps masked
+        lags, ok = own_lag_columns(np.asarray(y), np.ones(y.shape, dtype=bool), p)
+        z_e = jnp.asarray(lags) if z_e is None else jnp.concatenate([z_e, jnp.asarray(lags)], axis=1)
+        emission_names = lag_names(tuple(f"y{m}" for m in range(y.shape[1])), p)
+        mask = jnp.asarray(np.broadcast_to(ok[:, None], y.shape))
     stats = PrepStats(
         cov_mean=np.zeros(0), cov_std=np.ones(0), train_window=("", ""), cov_names=(), transforms={}, lags={}
     )
@@ -178,11 +190,11 @@ def simulate_dataset(
         times=np.arange(t_len).astype("datetime64[D]").astype("datetime64[ns]"),
         observations=y,
         dt=dt,
-        mask=jnp.ones(y.shape, dtype=bool),
+        mask=mask,
         cov_transition=z_pi,
         cov_duration=z_d,
         cov_emission=z_e,
-        cov_names={"transition": (), "duration": (), "emission": ()},
+        cov_names={"transition": (), "duration": (), "emission": emission_names},
         clock=clock,
         nominal_dt=float(jnp.median(dt)) if nominal_dt is None else nominal_dt,
         prep_stats=stats,

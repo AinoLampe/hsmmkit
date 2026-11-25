@@ -8,7 +8,7 @@ calls from starting points cycled over `cfg.init`'s methods, and keeps the best 
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -148,6 +148,19 @@ def fit(
     # canonical data: the engine's own kernel, without a retrace per walk-forward fold
     loglik = float(engine.loglik(theta, spec, space, canonical_data(data)))
 
+    diagnostics: dict[str, Any] = {}
+    spectral_radius = getattr(spec.emission, "spectral_radius", None)
+    if spectral_radius is not None:  # autoregressive emission: stationarity is a diagnostic, not a constraint
+        radius = np.asarray(spectral_radius(theta))
+        diagnostics["ar_spectral_radius"] = radius.tolist()
+        if bool(np.any(radius >= 1.0)):
+            warnings.warn(
+                f"non-stationary autoregression: spectral radius {radius.round(4).tolist()} "
+                "(>= 1 in regimes " + str(np.flatnonzero(radius >= 1.0).tolist()) + ")",
+                UserWarning,
+                stacklevel=2,
+            )
+
     return FitResult(
         estimator="map",
         params=theta,
@@ -158,7 +171,7 @@ def fit(
         converged=best.converged,
         n_iter=best.n_iter,
         std_errors=None,
-        diagnostics={},
+        diagnostics=diagnostics,
         spec=spec,
         prep_stats=data.prep_stats,
         config_resolved={},

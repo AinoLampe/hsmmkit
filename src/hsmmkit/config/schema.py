@@ -280,6 +280,15 @@ class MixtureCfg(_Base):
     base: str
 
 
+class ArCfg(_Base):
+    """`model.emission.ar:` — order and form of an `msar` (Markov-switching autoregression) emission."""
+
+    p: int = Field(default=1, ge=1)
+    """Autoregressive order (number of own lags)."""
+    form: Literal["coefficients", "mean_adjusted"] = "coefficients"
+    """`coefficients`: regime-dependent intercept and AR coefficients; `mean_adjusted`: Hamilton, `p <= 2`."""
+
+
 class EmissionCfg(_Base):
     """`model.emission:` — emission family, per-parameter configs, covariate links."""
 
@@ -296,6 +305,8 @@ class EmissionCfg(_Base):
     """Per-state finite mixture of `base` components (not available before E11-T06)."""
     per_series: bool = True
     """`True`: own location/scale per series, `(N, M)`; `False`: one per regime, shared."""
+    ar: ArCfg | None = None
+    """`msar`: autoregressive order and form (required by that family, rejected by every other)."""
 
     @field_validator("family")
     @classmethod

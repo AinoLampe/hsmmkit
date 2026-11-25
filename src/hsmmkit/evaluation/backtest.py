@@ -32,7 +32,7 @@ from hsmmkit.evaluation.results import BacktestResult
 from hsmmkit.inference.covariate_forecasters import make_forecaster
 from hsmmkit.inference.decode import decode
 from hsmmkit.inference.forecast import MonteCarloForecaster
-from hsmmkit.model.build import build_model_spec
+from hsmmkit.model.build import build_model_spec, required_own_lags
 from hsmmkit.statespace.builders import build_expanded, build_explicit
 from hsmmkit.utils.clock import future_grid
 from hsmmkit.utils.errors import ConfigError, DataError
@@ -347,7 +347,11 @@ def run_backtest(
     obs, covs = data_loader()
 
     # The grid does not depend on the fitted statistics: one full-sample preparation fixes the fold table.
-    grid = Preparer(cfg.data).fit(obs, covs, train_end=obs.require_times()[-1]).transform(obs, covs)
+    grid = (
+        Preparer(cfg.data, own_lags=required_own_lags(cfg))
+        .fit(obs, covs, train_end=obs.require_times()[-1])
+        .transform(obs, covs)
+    )
     folds = schedule_folds(np.asarray(grid.times), np.asarray(grid.dt), bt, horizons[-1])
     spec = build_model_spec(cfg, grid)
     space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
@@ -380,7 +384,7 @@ def run_backtest(
     fit_rows: list[dict[str, object]] = []
     warm: Array | None = None
     for fold in folds:
-        prep = Preparer(cfg.data).fit(
+        prep = Preparer(cfg.data, own_lags=required_own_lags(cfg)).fit(
             obs,
             covs,
             train_end=grid.times[fold.train_end - 1],
