@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.engine.base import Posterior
-    from regimekit.model.params import Params
-    from regimekit.statespace.factorial import FactorialSpace
-    from regimekit.utils.typing import Array
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.engine.base import Posterior
+    from hsmmkit.model.params import Params
+    from hsmmkit.statespace.factorial import FactorialSpace
+    from hsmmkit.utils.typing import Array
 
 
 @dataclass(frozen=True)

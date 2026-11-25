@@ -19,17 +19,17 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 
-from regimekit.engine.base import Posterior
-from regimekit.model.emission.product import ProductEmission
-from regimekit.statespace.builders import initial_log_rho
-from regimekit.utils.errors import NumericalError
-from regimekit.utils.typing import Array
+from hsmmkit.engine.base import Posterior
+from hsmmkit.model.emission.product import ProductEmission
+from hsmmkit.statespace.builders import initial_log_rho
+from hsmmkit.utils.errors import NumericalError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.model.params import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.model.params import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
 
 
 def _safe_logsumexp(x: Array, axis: int) -> Array:
@@ -212,7 +212,7 @@ class ExpandedHMMEngine:
 
     def viterbi(self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
         """The most likely expanded-state path `(T,)` (int); see `engine.viterbi.viterbi_path`."""
-        from regimekit.engine.viterbi import viterbi_path
+        from hsmmkit.engine.viterbi import viterbi_path
 
         return viterbi_path(theta, spec, space, data)
 
@@ -221,7 +221,7 @@ class ExpandedHMMEngine:
     ) -> tuple[Array, Array, Array, Array]:
         """`(log_alpha, log_beta, smoothed, loglik)`: sequential scan, or the parallel one if enabled."""
         if self.parallel_scan:
-            from regimekit.engine import parallel
+            from hsmmkit.engine import parallel
 
             cells = data.observations.shape[0] * space.n_expanded**2
             if cells <= parallel.MAX_CELLS:

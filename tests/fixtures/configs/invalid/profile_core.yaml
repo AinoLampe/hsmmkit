@@ -17,7 +17,7 @@ data:
     field: close
   clock: trading
   bars_per_day: 1
-  cache: {dir: ~/.cache/regimekit, snapshot: latest, max_age_days: 1}
+  cache: {dir: ~/.cache/hsmmkit, snapshot: latest, max_age_days: 1}
   covariates: []
   preparation: {returns: log, standardize_covariates: true, missing_returns: drop}
 model:

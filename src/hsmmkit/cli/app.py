@@ -1,9 +1,9 @@
 """The CLI app factory (E10-T07b): `build_app` makes a Typer app over a `Project` class and its config class.
 
-The core ships a complete domain-neutral application (`regimekit-core`): `validate-config`, `config-schema`,
+The core ships a complete domain-neutral application (`hsmmkit`): `validate-config`, `config-schema`,
 `fit`, `decode`, `forecast`, `simulate`, `backtest`, `compare` and `selftest`, all taking their data from
-`data.source`. An application builds its own app with extra commands (the finance application adds `fetch`
-and registers its own exit codes, see `regimekit.finance.cli`).
+`data.source`. An application builds its own app with extra commands and registers its own exit codes (see the
+`hsmmkit` application, an example extension).
 """
 
 from __future__ import annotations
@@ -17,21 +17,21 @@ from pathlib import Path
 
 import typer
 
-from regimekit.config.schema import ProjectConfig
-from regimekit.config.yaml_io import export_json_schema, load_config
-from regimekit.data.contracts import PreparedDataset
-from regimekit.estimation.selftest import SelftestResult
-from regimekit.persistence.results import read_prepared
-from regimekit.project import Project, apply_overrides, check_simulate_args
-from regimekit.utils.errors import (
+from hsmmkit.config.schema import ProjectConfig
+from hsmmkit.config.yaml_io import export_json_schema, load_config
+from hsmmkit.data.contracts import PreparedDataset
+from hsmmkit.estimation.selftest import SelftestResult
+from hsmmkit.persistence.results import read_prepared
+from hsmmkit.project import Project, apply_overrides, check_simulate_args
+from hsmmkit.utils.errors import (
     ConfigError,
     DataError,
+    HsmmkitError,
     NumericalError,
     PersistenceError,
-    RegimekitError,
 )
-from regimekit.utils.jax_setup import setup as jax_setup
-from regimekit.utils.logging import configure_logging, get_logger
+from hsmmkit.utils.jax_setup import setup as jax_setup
+from hsmmkit.utils.logging import configure_logging, get_logger
 
 EXIT_CODES: dict[type[BaseException], int] = {
     ConfigError: 2,
@@ -118,10 +118,10 @@ class CliApp(typer.Typer):
 
 @contextmanager
 def exit_on_error() -> Iterator[None]:
-    """Map a `RegimekitError` to its message on stderr and its exit code (overview section 4.4)."""
+    """Map a `HsmmkitError` to its message on stderr and its exit code (overview section 4.4)."""
     try:
         yield
-    except RegimekitError as exc:
+    except HsmmkitError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=exit_code_of(exc)) from exc
 
@@ -311,23 +311,23 @@ def build_app(
 
 
 def run(app: typer.Typer) -> None:
-    """Run `app`: `RegimekitError`s map to their exit codes, anything else to 1 (traceback at DEBUG)."""
+    """Run `app`: `HsmmkitError`s map to their exit codes, anything else to 1 (traceback at DEBUG)."""
     try:
         app()
-    except RegimekitError as exc:
+    except HsmmkitError as exc:
         typer.echo(str(exc), err=True)
         sys.exit(exit_code_of(exc))
     except Exception as exc:
-        get_logger("regimekit.cli").debug("unexpected_error", traceback=traceback.format_exc())
+        get_logger("hsmmkit.cli").debug("unexpected_error", traceback=traceback.format_exc())
         typer.echo(f"unexpected error: {exc!r} (rerun with --log-level DEBUG for the traceback)", err=True)
         sys.exit(1)
 
 
-app = build_app(name="regimekit-core", config_cls=ProjectConfig, project_cls=Project)
+app = build_app(name="hsmmkit", config_cls=ProjectConfig, project_cls=Project)
 
 
 def main() -> None:
-    """Entry point of the core console script `regimekit-core`."""
+    """Entry point of the core console script `hsmmkit`."""
     run(app)
 
 

@@ -1,9 +1,9 @@
-"""Result writers/readers: the prepared dataset of `regimekit fetch`, decode, forecast and simulation outputs.
+"""Result writers/readers: the prepared dataset of `hsmmkit fetch`, decode, forecast and simulation outputs.
 
 `prepared.parquet` layout: one row per observation; columns `time` (timestamp[ns]), `obs_<m>`,
 `mask_<m>`, `dt`, `cov_<entry point>_<k>` and `label_<n>`; everything else (`clock`, `nominal_dt`,
 covariate names per entry point, `snapshot_ids`, `prep_stats`, the Part II hooks) is JSON in the
-schema metadata under `regimekit`. Arrays round-trip bit for bit.
+schema metadata under `hsmmkit`. Arrays round-trip bit for bit.
 """
 
 from __future__ import annotations
@@ -18,16 +18,16 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from regimekit.data.contracts import BoundaryConstraints, PreparedDataset
-from regimekit.data.prepare import prep_stats_from_json, prep_stats_to_json
-from regimekit.evaluation.results import BacktestResult
-from regimekit.inference.results import ForecastResult
-from regimekit.utils.errors import PersistenceError
+from hsmmkit.data.contracts import BoundaryConstraints, PreparedDataset
+from hsmmkit.data.prepare import prep_stats_from_json, prep_stats_to_json
+from hsmmkit.evaluation.results import BacktestResult
+from hsmmkit.inference.results import ForecastResult
+from hsmmkit.utils.errors import PersistenceError
 
 if TYPE_CHECKING:
-    from regimekit.inference.results import PosteriorResult
+    from hsmmkit.inference.results import PosteriorResult
 
-_META_KEY = b"regimekit"
+_META_KEY = b"hsmmkit"
 _FORMAT = 1
 _ENTRY_POINTS = ("transition", "duration", "emission")
 
@@ -91,7 +91,7 @@ def read_prepared(path: Path | str) -> PreparedDataset:
     """Read a dataset written by `write_prepared`.
 
     Raises:
-        PersistenceError: missing file, not a regimekit dataset, or an unsupported format version.
+        PersistenceError: missing file, not a hsmmkit dataset, or an unsupported format version.
     """
     path = Path(path)
     try:
@@ -100,7 +100,7 @@ def read_prepared(path: Path | str) -> PreparedDataset:
         raise PersistenceError(f"cannot read prepared dataset {path}: {exc}", path=str(path)) from exc
     raw = (table.schema.metadata or {}).get(_META_KEY)
     if raw is None:
-        raise PersistenceError(f"{path} is not a regimekit prepared dataset", path=str(path))
+        raise PersistenceError(f"{path} is not a hsmmkit prepared dataset", path=str(path))
     meta = json.loads(raw)
     if meta.get("format") != _FORMAT:
         raise PersistenceError(f"unsupported prepared-dataset format {meta.get('format')!r}", path=str(path))

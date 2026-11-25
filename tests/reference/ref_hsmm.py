@@ -1,6 +1,6 @@
 """Pure NumPy explicit-duration HSMM forward-backward (Guedon 2003 / Yu 2010), Viterbi, brute force.
 
-No `regimekit` import (CLAUDE.md §6). Segment-based (not elapsed-time-expanded) forward/backward,
+No `hsmmkit` import (CLAUDE.md §6). Segment-based (not elapsed-time-expanded) forward/backward,
 with right-censoring of the final, possibly-incomplete segment.
 
 Inputs: `log_rho (N,)` (initial state distribution), `log_trans (N, N)` (segment-to-segment jump

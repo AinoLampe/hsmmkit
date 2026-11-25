@@ -27,23 +27,23 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.inference.covariate_forecasters import ColumnMap, _unified_covariates
-from regimekit.inference.results import ForecastResult
-from regimekit.inference.simulate import _simulate_one_path
-from regimekit.utils.clock import future_grid
-from regimekit.utils.errors import ConfigError, NumericalError
-from regimekit.utils.rng import FORECAST_COVARIATES, FORECAST_PATHS, PURPOSE_FORECAST, key_for
+from hsmmkit.inference.covariate_forecasters import ColumnMap, _unified_covariates
+from hsmmkit.inference.results import ForecastResult
+from hsmmkit.inference.simulate import _simulate_one_path
+from hsmmkit.utils.clock import future_grid
+from hsmmkit.utils.errors import ConfigError, NumericalError
+from hsmmkit.utils.rng import FORECAST_COVARIATES, FORECAST_PATHS, PURPOSE_FORECAST, key_for
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import ForecastSection
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.engine.base import InferenceEngine, Posterior
-    from regimekit.estimation.results import FitResult
-    from regimekit.inference.covariate_forecasters import CovariateForecaster
-    from regimekit.model.params.manager import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
-    from regimekit.utils.typing import Array
+    from hsmmkit.config.schema import ForecastSection
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.engine.base import InferenceEngine, Posterior
+    from hsmmkit.estimation.results import FitResult
+    from hsmmkit.inference.covariate_forecasters import CovariateForecaster
+    from hsmmkit.model.params.manager import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
+    from hsmmkit.utils.typing import Array
 
 MAX_SAMPLE_FLOATS = 2e8
 

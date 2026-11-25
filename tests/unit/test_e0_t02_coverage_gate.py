@@ -11,8 +11,8 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "check_package_covera
 def _write_coverage_json(path: Path, *, model_percent: float) -> None:
     covered = round(model_percent)
     files = {
-        "src/regimekit/model/spec.py": {"summary": {"covered_lines": covered, "num_statements": 100}},
-        "src/regimekit/engine/base.py": {"summary": {"covered_lines": 100, "num_statements": 100}},
+        "src/hsmmkit/model/spec.py": {"summary": {"covered_lines": covered, "num_statements": 100}},
+        "src/hsmmkit/engine/base.py": {"summary": {"covered_lines": 100, "num_statements": 100}},
     }
     (path / "coverage.json").write_text(json.dumps({"files": files}))
 

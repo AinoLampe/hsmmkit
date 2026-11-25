@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 from scipy.special import logsumexp
 
-from regimekit.engine import expanded_hmm
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.model.params import ParamManager, ParamSpec
-from regimekit.model.spec import ModelSpec
-from regimekit.utils.errors import NumericalError
+from hsmmkit.engine import expanded_hmm
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.model.params import ParamManager, ParamSpec
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.utils.errors import NumericalError
 from tests.golden.test_e4_t03a_forward import reference
 from tests.helpers.engine_fixtures import Scenario, make_dataset, make_scenario
 

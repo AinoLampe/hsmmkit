@@ -111,21 +111,21 @@ def test_e10_t01_every_hit_is_allow_listed_and_no_entry_is_stale() -> None:
 
 
 def _finance_imports(path: Path, package: tuple[str, ...] | None = None) -> list[str]:
-    pkg = list(package) if package is not None else ["regimekit", *path.relative_to(SRC).parts[:-1]]
+    pkg = list(package) if package is not None else ["hsmmkit", *path.relative_to(SRC).parts[:-1]]
     found: list[str] = []
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
-            found += [a.name for a in node.names if a.name.startswith("regimekit.finance")]
+            found += [a.name for a in node.names if a.name.startswith("hsmmkit.finance")]
         elif isinstance(node, ast.ImportFrom):
             if node.level:
                 base = pkg[: len(pkg) - (node.level - 1)]
                 module = ".".join([*base, *([node.module] if node.module else [])])
             else:
                 module = node.module or ""
-            if module.startswith("regimekit.finance"):
+            if module.startswith("hsmmkit.finance"):
                 found.append(module)
-            elif module == "regimekit":
-                found += [f"regimekit.{a.name}" for a in node.names if a.name == "finance"]
+            elif module == "hsmmkit":
+                found += [f"hsmmkit.{a.name}" for a in node.names if a.name == "finance"]
     return found
 
 
@@ -135,7 +135,7 @@ def _scope_python_files() -> list[Path]:
 
 
 def test_e10_t01_no_finance_import_beyond_the_allow_list() -> None:
-    """The core scope (including `cli/`, `project.py`, `__init__.py`) imports `regimekit.finance` nowhere."""
+    """The core scope (including `cli/`, `project.py`, `__init__.py`) imports `hsmmkit.finance` nowhere."""
     found = {
         f"{p.relative_to(SRC).as_posix()}:{m}" for p in _scope_python_files() for m in _finance_imports(p)
     }
@@ -146,10 +146,10 @@ def test_e10_t01_finance_import_scanner_catches_absolute_and_relative(tmp_path: 
     """Finance import scanner catches absolute and relative."""
     sample = tmp_path / "probe.py"
     sample.write_text(
-        "import regimekit.finance.providers\nfrom ..finance import clocks\nfrom regimekit import finance\n"
+        "import hsmmkit.finance.providers\nfrom ..finance import clocks\nfrom hsmmkit import finance\n"
     )
-    found = _finance_imports(sample, ("regimekit", "cli"))
-    assert found == ["regimekit.finance.providers", "regimekit.finance", "regimekit.finance"]
+    found = _finance_imports(sample, ("hsmmkit", "cli"))
+    assert found == ["hsmmkit.finance.providers", "hsmmkit.finance", "hsmmkit.finance"]
 
 
 @pytest.mark.parametrize("name", ["neutral_names_allowlist.txt", "finance_import_allowlist.txt"])

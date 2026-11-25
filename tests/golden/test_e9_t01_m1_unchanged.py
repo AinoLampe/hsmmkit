@@ -13,7 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.engine.expanded_hmm import _regime_log_emis
+from hsmmkit.engine.expanded_hmm import _regime_log_emis
 from tests.golden.e9_t01_m1_cases import CASES, GOLDEN_PATH, build, compute
 
 GOLDEN = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "regimekit"
-version = "0.2.0"
-description = "JAX-based Hidden Semi-Markov Model framework for market-regime detection and probabilistic return forecasting."
+name = "hsmmkit"
+version = "0.1.0"
+description = "Domain-neutral JAX framework for hidden semi-Markov models: regime detection, durations and probabilistic forecasting."
 readme = "README.md"
 requires-python = ">=3.13"
 license = "Apache-2.0"
@@ -27,7 +27,6 @@ dependencies = [
 
 [project.optional-dependencies]
 gpu = ["jax[cuda12]>=0.11"]
-providers = ["yfinance>=1.7", "curl_cffi>=0.15", "pandas-datareader>=0.10", "fredapi>=0.5"]
 mcmc = ["numpyro>=0.20"]
 
 [dependency-groups]
@@ -56,14 +55,13 @@ dev = [
 ]
 
 [project.scripts]
-regimekit = "regimekit.finance.cli:main"
-regimekit-core = "regimekit.cli.app:main"
+hsmmkit = "hsmmkit.cli.app:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/regimekit"]
+packages = ["src/hsmmkit"]
 
 [tool.coverage.run]
-source = ["regimekit"]
+source = ["hsmmkit"]
 branch = true
 
 [tool.coverage.report]
@@ -99,7 +97,7 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PT", "RUF", "D", "ANN", "N
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"src/regimekit/cli/*.py" = ["B008"]  # typer's Option()/Argument() defaults require call-in-default
+"src/hsmmkit/cli/*.py" = ["B008"]  # typer's Option()/Argument() defaults require call-in-default
 
 [tool.pytest.ini_options]
 pythonpath = ["."]  # `examples/` (tutorial helpers) is imported by tests
@@ -108,7 +106,7 @@ markers = [
   "live: network tests",
   "benchmark: pytest-benchmark",
   "gpu: requires GPU",
-  "finance: needs regimekit.finance or a finance provider package (excluded by the core-only job)",
+  "finance: needs hsmmkit.finance or a finance provider package (excluded by the core-only job)",
 ]
 addopts = "-m 'not slow and not live and not benchmark and not gpu' --import-mode=importlib"
 

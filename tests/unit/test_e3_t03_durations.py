@@ -8,8 +8,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.duration.geometric import GeometricDuration
+from hsmmkit.model.duration.negbin import NegBinDuration
 
 GEO = GeometricDuration()
 

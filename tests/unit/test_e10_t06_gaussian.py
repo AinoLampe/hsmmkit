@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from regimekit.config.schema import EmissionCfg, ParamCfg
-from regimekit.model.build import EMISSION_FAMILIES
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.plugins import REGISTRY
-from regimekit.utils.errors import ConfigError
+from hsmmkit.config.schema import EmissionCfg, ParamCfg
+from hsmmkit.model.build import EMISSION_FAMILIES
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.plugins import REGISTRY
+from hsmmkit.utils.errors import ConfigError
 
 N, T = 3, 50
 MU = np.array([[0.05, -0.02], [0.01, 0.03], [-0.04, 0.0]])
@@ -30,7 +30,7 @@ def _y(m: int, seed: int = 0) -> jax.Array:
 def test_e10_t06_registered_as_gaussian_in_the_core() -> None:
     """`gaussian` is a core family with a `from_config`; `gbm` is not part of the core registry entries."""
     entry = next(e for e in REGISTRY.entries("emission") if e.name == "gaussian")
-    assert entry.provenance == "regimekit.core"
+    assert entry.provenance == "hsmmkit.core"
     assert EMISSION_FAMILIES["gaussian"] is GaussianFamily
 
 

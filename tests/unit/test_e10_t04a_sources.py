@@ -10,12 +10,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regimekit.config.schema import DataSection
-from regimekit.data.sources import load_data
-from regimekit.data.sources.base import Source, get_source
-from regimekit.plugins import REGISTRY
-from regimekit.testing.source_contract import FIXTURES, SourceCase, check_source, core_cases
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.config.schema import DataSection
+from hsmmkit.data.sources import load_data
+from hsmmkit.data.sources.base import Source, get_source
+from hsmmkit.plugins import REGISTRY
+from hsmmkit.testing.source_contract import FIXTURES, SourceCase, check_source, core_cases
+from hsmmkit.utils.errors import ConfigError, DataError
 
 CASES = core_cases()
 
@@ -30,7 +30,7 @@ def test_e10_t04a_core_sources_are_registered_with_provenance() -> None:
     get_source("csv")  # registers on first use
     prov = {e.name: e.provenance for e in REGISTRY.entries("source")}
     for name in ("numpy", "pandas", "csv", "parquet"):
-        assert prov[name] == "regimekit.core"
+        assert prov[name] == "hsmmkit.core"
         assert isinstance(get_source(name), Source)
 
 

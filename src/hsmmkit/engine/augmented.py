@@ -13,12 +13,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.utils.typing import Array
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.engine.base import Posterior
-    from regimekit.model.params import Params
-    from regimekit.model.spec import ModelSpec
+    from hsmmkit.engine.base import Posterior
+    from hsmmkit.model.params import Params
+    from hsmmkit.model.spec import ModelSpec
 
 
 def collapse_to_regimes(x: Array, collapse: Array) -> Array:

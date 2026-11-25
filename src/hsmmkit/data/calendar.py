@@ -24,10 +24,10 @@ from typing import Any, Literal
 
 import numpy as np
 
-from regimekit.data.contracts import Clock, CovariateSeries, ObservationSet
-from regimekit.utils.clock import future_grid as future_grid  # re-export (E6-T04a)
-from regimekit.utils.clock import get_clock, is_irregular, parse_clock_options
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.data.contracts import Clock, CovariateSeries, ObservationSet
+from hsmmkit.utils.clock import future_grid as future_grid  # re-export (E6-T04a)
+from hsmmkit.utils.clock import get_clock, is_irregular, parse_clock_options
+from hsmmkit.utils.errors import ConfigError, DataError
 
 MissingObservations = Literal["mask", "drop", "error"]
 

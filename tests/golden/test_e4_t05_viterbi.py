@@ -6,8 +6,8 @@ import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st
 
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.viterbi import segments
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.viterbi import segments
 from tests.golden.test_e4_t03a_forward import reference_inputs
 from tests.helpers.engine_fixtures import Scenario, make_scenario
 from tests.reference import ref_hmm

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from regimekit.utils.clock import future_grid, get_clock, parse_clock_options
+from hsmmkit.utils.clock import future_grid, get_clock, parse_clock_options
 
 HORIZON = 5
 

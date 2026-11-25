@@ -16,19 +16,19 @@ import jax.numpy as jnp
 import jax.scipy.special
 import numpy as np
 
-from regimekit.estimation.results import FitResult
-from regimekit.evaluation.metrics.registry import metric
-from regimekit.inference.results import ForecastResult
-from regimekit.statespace.builders import initial_log_rho
-from regimekit.utils.errors import ConfigError, NumericalError
+from hsmmkit.estimation.results import FitResult
+from hsmmkit.evaluation.metrics.registry import metric
+from hsmmkit.inference.results import ForecastResult
+from hsmmkit.statespace.builders import initial_log_rho
+from hsmmkit.utils.errors import ConfigError, NumericalError
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.engine.base import Posterior
-    from regimekit.model.params.manager import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
-    from regimekit.utils.typing import Array
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.engine.base import Posterior
+    from hsmmkit.model.params.manager import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
+    from hsmmkit.utils.typing import Array
 
 
 def _block(x: Array | None, t: int) -> Array:

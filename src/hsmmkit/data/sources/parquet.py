@@ -8,9 +8,9 @@ import pandas as pd
 import pyarrow as pa
 from pydantic import BaseModel
 
-from regimekit.data.sources.base import Loaded, TabularOpts, frame_to_loaded, sha256_file
-from regimekit.plugins import REGISTRY, provenance_of
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.data.sources.base import Loaded, TabularOpts, frame_to_loaded, sha256_file
+from hsmmkit.plugins import REGISTRY, provenance_of
+from hsmmkit.utils.errors import ConfigError, DataError
 
 
 class ParquetSource:

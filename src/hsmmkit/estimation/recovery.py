@@ -23,34 +23,34 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.config.schema import EstimationSection
-from regimekit.data.contracts import PreparedDataset, PrepStats
-from regimekit.engine.base import InferenceEngine
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.estimation.map import fit
-from regimekit.estimation.objective import make_objective
-from regimekit.estimation.report import std_errors
-from regimekit.estimation.results import FitResult
-from regimekit.inference.simulate import simulate_dataset
-from regimekit.model.duration.gamma import GammaDuration
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.params.manager import ParamManager, Params
-from regimekit.model.params.priors import DirichletPrior, NormalPrior
-from regimekit.model.params.spec import Mode, ParamSpec
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition, build_memory_layout
-from regimekit.plugins import REGISTRY
-from regimekit.statespace.builders import build_expanded, build_explicit
-from regimekit.statespace.index import StateSpace
-from regimekit.utils.clock import get_clock
-from regimekit.utils.rng import key_for
+from hsmmkit.config.schema import EstimationSection
+from hsmmkit.data.contracts import PreparedDataset, PrepStats
+from hsmmkit.engine.base import InferenceEngine
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.estimation.map import fit
+from hsmmkit.estimation.objective import make_objective
+from hsmmkit.estimation.report import std_errors
+from hsmmkit.estimation.results import FitResult
+from hsmmkit.inference.simulate import simulate_dataset
+from hsmmkit.model.duration.gamma import GammaDuration
+from hsmmkit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.params.manager import ParamManager, Params
+from hsmmkit.model.params.priors import DirichletPrior, NormalPrior
+from hsmmkit.model.params.spec import Mode, ParamSpec
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import JumpTransition, build_memory_layout
+from hsmmkit.plugins import REGISTRY
+from hsmmkit.statespace.builders import build_expanded, build_explicit
+from hsmmkit.statespace.index import StateSpace
+from hsmmkit.utils.clock import get_clock
+from hsmmkit.utils.rng import key_for
 
 if TYPE_CHECKING:
-    from regimekit.model.duration.base import DurationFamily
-    from regimekit.model.emission.base import EmissionFamily
-    from regimekit.model.transition import TransitionModel
+    from hsmmkit.model.duration.base import DurationFamily
+    from hsmmkit.model.emission.base import EmissionFamily
+    from hsmmkit.model.transition import TransitionModel
 
 # --- truth values shared by every scenario (concept Appendix D worked example) -----------------
 
@@ -84,7 +84,7 @@ MU_STAR = np.array([0.10, 0.00, -0.20])
 MEAN_SOJOURN_DAYS = np.array([60.0, 120.0, 30.0])  # steps, one bar/day
 R_PHASES = (3, 3, 2)
 # Row r = current regime r's jump distribution over targets, in ascending-target-index order
-# (`regimekit.model.transition._target_order`'s convention: first entry is the reference target).
+# (`hsmmkit.model.transition._target_order`'s convention: first entry is the reference target).
 PI_ROWS_TARGETS = np.array([[0.7, 0.3], [0.5, 0.5], [0.2, 0.8]])
 TRANS_COEF_STAR = np.array([0.5, -0.5])  # two transition covariates
 # One duration covariate, per state. Owner decision (E5-T05a): the ticket's (0.3, -0.3, 0.2) has the same
@@ -108,13 +108,13 @@ DEFAULT_RECOVERY_T = 20000
 
 
 def _default_t_len() -> int:
-    """`REGIMEKIT_RECOVERY_T` env var, default `DEFAULT_RECOVERY_T` = 20000 (the sizing knob of AC3).
+    """`HSMMKIT_RECOVERY_T` env var, default `DEFAULT_RECOVERY_T` = 20000 (the sizing knob of AC3).
 
     At `T=5000` the truth gives only ~64 regime visits per path, so even an oracle that reads the true
     regime path meets the sojourn and jump tolerances together in only half of the seeds; at `T=20000`
     (~256 visits) it does in ~99 % (docs/guide/validation.md).
     """
-    return int(os.environ.get("REGIMEKIT_RECOVERY_T", str(DEFAULT_RECOVERY_T)))
+    return int(os.environ.get("HSMMKIT_RECOVERY_T", str(DEFAULT_RECOVERY_T)))
 
 
 # --- covariate generation (synthetic exogenous AR(1) series, standardized) ----------------------

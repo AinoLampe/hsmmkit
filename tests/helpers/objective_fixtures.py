@@ -13,20 +13,20 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.data.contracts import PreparedDataset
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.model.duration.gamma import GammaDuration
-from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gaussian import GaussianFamily, _coef_spec
-from regimekit.model.emission.student_t import StudentTFamily
-from regimekit.model.params import ParamManager, ParamSpec
-from regimekit.model.params.priors import DirichletPrior, LogNormalPrior, NormalPrior
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition, build_memory_layout
-from regimekit.statespace.builders import build_expanded, build_explicit
-from regimekit.statespace.index import StateSpace
+from hsmmkit.data.contracts import PreparedDataset
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.model.duration.gamma import GammaDuration
+from hsmmkit.model.duration.geometric import GeometricDuration
+from hsmmkit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily, _coef_spec
+from hsmmkit.model.emission.student_t import StudentTFamily
+from hsmmkit.model.params import ParamManager, ParamSpec
+from hsmmkit.model.params.priors import DirichletPrior, LogNormalPrior, NormalPrior
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import JumpTransition, build_memory_layout
+from hsmmkit.statespace.builders import build_expanded, build_explicit
+from hsmmkit.statespace.index import StateSpace
 from tests.helpers.engine_fixtures import DT, make_dataset
 
 
@@ -108,7 +108,7 @@ def make_case(
             dur_specs[i] = dataclasses.replace(dur_specs[i], init=init)
     specs += dur_specs
     if cov_du:
-        from regimekit.model.duration.base import coef_spec
+        from hsmmkit.model.duration.base import coef_spec
 
         specs.append(coef_spec("duration.c", n, 1))
 

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Literal, Protocol
 
-from regimekit.model.params import Params, ParamSpec
-from regimekit.utils.typing import Array
+from hsmmkit.model.params import Params, ParamSpec
+from hsmmkit.utils.typing import Array
 
 Support = Literal["real", "count", "binary", "categorical"]
 

@@ -9,12 +9,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regimekit.data.contracts import PreparedDataset
-from regimekit.data.prepare import Preparer
-from regimekit.engine.base import Posterior
-from regimekit.evaluation.backtest import OriginHook, run_backtest, schedule_folds
-from regimekit.evaluation.metrics.registry import FunctionMetric, register
-from regimekit.inference.results import ForecastResult
+from hsmmkit.data.contracts import PreparedDataset
+from hsmmkit.data.prepare import Preparer
+from hsmmkit.engine.base import Posterior
+from hsmmkit.evaluation.backtest import OriginHook, run_backtest, schedule_folds
+from hsmmkit.evaluation.metrics.registry import FunctionMetric, register
+from hsmmkit.inference.results import ForecastResult
 from tests.helpers import core_config as cc
 
 

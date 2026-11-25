@@ -8,16 +8,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from regimekit.config.schema import DataSection
-from regimekit.data.contracts import CovariateSeries, ObservationSet
-from regimekit.data.sources import csv as csv  # registers `csv`
-from regimekit.data.sources import numpy as numpy  # registers `numpy`
-from regimekit.data.sources import pandas as pandas  # registers `pandas`
-from regimekit.data.sources import parquet as parquet  # registers `parquet`
-from regimekit.data.sources import xarray as xarray  # registers `xarray` (the library loads lazily)
-from regimekit.data.sources.base import Source, TabularOpts, get_source, validate_options
-from regimekit.utils.clock import get_clock
-from regimekit.utils.errors import ConfigError
+from hsmmkit.config.schema import DataSection
+from hsmmkit.data.contracts import CovariateSeries, ObservationSet
+from hsmmkit.data.sources import csv as csv  # registers `csv`
+from hsmmkit.data.sources import numpy as numpy  # registers `numpy`
+from hsmmkit.data.sources import pandas as pandas  # registers `pandas`
+from hsmmkit.data.sources import parquet as parquet  # registers `parquet`
+from hsmmkit.data.sources import xarray as xarray  # registers `xarray` (the library loads lazily)
+from hsmmkit.data.sources.base import Source, TabularOpts, get_source, validate_options
+from hsmmkit.utils.clock import get_clock
+from hsmmkit.utils.errors import ConfigError
 
 __all__ = ["Source", "TabularOpts", "get_source", "load_data", "validate_options"]
 

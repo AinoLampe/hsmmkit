@@ -9,11 +9,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regimekit.config.schema import DataSection
-from regimekit.data.contracts import Support
-from regimekit.data.prepare import Preparer
-from regimekit.data.sources import load_data
-from regimekit.utils.errors import DataError
+from hsmmkit.config.schema import DataSection
+from hsmmkit.data.contracts import Support
+from hsmmkit.data.prepare import Preparer
+from hsmmkit.data.sources import load_data
+from hsmmkit.utils.errors import DataError
 
 
 def _prepare(values: Any, support: Support, *, names: list[str] | None = None, **kw: Any) -> Any:  # noqa: ANN401

@@ -18,15 +18,15 @@ from typing import Any, ClassVar, Literal
 import pydantic
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from regimekit.config.defaults import (
+from hsmmkit.config.defaults import (
     D_MAX_CAP,
     D_MAX_SOJOURN_MULTIPLIER,
     D_MAX_WARN_SOJOURN_MULTIPLIER,
     MAX_ORDER_WARN,
 )
-from regimekit.plugins import REGISTRY, Kind
-from regimekit.utils.clock import get_clock, parse_clock_options
-from regimekit.utils.errors import ConfigError
+from hsmmkit.plugins import REGISTRY, Kind
+from hsmmkit.utils.clock import get_clock, parse_clock_options
+from hsmmkit.utils.errors import ConfigError
 
 CURRENT_SCHEMA_VERSION = 1
 
@@ -43,12 +43,12 @@ class _Base(BaseModel):
 
 def _registered_names(kind: Kind, *, needs: str | None = None) -> list[str]:
     """Registered names of `kind` (optionally only objects with attribute `needs`); loads the components."""
-    importlib.import_module("regimekit.model.emission")  # the families register on import
-    importlib.import_module("regimekit.model.duration")
-    importlib.import_module("regimekit.inference.covariate_forecasters")
-    importlib.import_module("regimekit.estimation.init")
+    importlib.import_module("hsmmkit.model.emission")  # the families register on import
+    importlib.import_module("hsmmkit.model.duration")
+    importlib.import_module("hsmmkit.inference.covariate_forecasters")
+    importlib.import_module("hsmmkit.estimation.init")
     if kind == "metric":
-        from regimekit.evaluation.metrics.registry import available
+        from hsmmkit.evaluation.metrics.registry import available
 
         return list(available())
     return [e.name for e in REGISTRY.entries(kind) if needs is None or hasattr(e.obj, needs)]
@@ -68,14 +68,14 @@ def _check_name(kind: Kind, name: str, path: str, *, needs: str | None = None) -
 
 def _register_core_sources() -> None:
     """Import the core sources (lazy: they import this module) so that their kinds are registered."""
-    importlib.import_module("regimekit.data.sources")
+    importlib.import_module("hsmmkit.data.sources")
 
 
 def _validate_source_options(
     kind: str, options: dict[str, Any], path: str, *, covariate: bool = False
 ) -> None:
     """Validate a core source's options with its `options_model` (lazy: the sources import this module)."""
-    from regimekit.data.sources.base import validate_options
+    from hsmmkit.data.sources.base import validate_options
 
     validate_options(kind, options, path, covariate=covariate)
 
@@ -96,8 +96,7 @@ class SourceCfg(_Base):
     """`data.source:` — where the observations come from.
 
     `kind` names a registered source (`REGISTRY` kind `source`); the other keys are the options of that
-    source and are validated by the options model it registers (for the finance application:
-    `regimekit.finance.config`).
+    source and are validated by the options model it registers.
     """
 
     model_config = ConfigDict(extra="allow", validate_assignment=True)
@@ -216,7 +215,7 @@ class ParamCfg(_Base):
 class EmissionCovariates(_Base):
     """`model.emission.covariates:` — which covariates drive the location and the log-scale.
 
-    `mean` / `log_scale` are the keys of the `gaussian` family; `drift` / `log_vol` those of the finance
+    `mean` / `log_scale` are the keys of the `gaussian` family; `drift` / `log_vol` those of an application's
     `gbm` family and of `student_t`.
     """
 
@@ -436,7 +435,7 @@ class ProjectConfig(_Base):
     """The whole resolved configuration of the domain-neutral core.
 
     Applications extend it by subclassing (D24): they replace sections by subclasses, set `SCHEMA_ID` and
-    `SCHEMA_VERSION`, and register their own migrations (`regimekit.config.migrate`).
+    `SCHEMA_VERSION`, and register their own migrations (`hsmmkit.config.migrate`).
     """
 
     SCHEMA_ID: ClassVar[str] = "core"

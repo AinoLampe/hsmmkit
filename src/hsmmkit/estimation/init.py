@@ -15,16 +15,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model.params.manager import ParamManager
-from regimekit.model.transition import build_memory_layout
-from regimekit.plugins import register
+from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.model.transition import build_memory_layout
+from hsmmkit.plugins import register
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.model.params.manager import Params
-    from regimekit.model.params.spec import ParamSpec
-    from regimekit.model.spec import ModelSpec
-    from regimekit.utils.typing import Array
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.model.params.manager import Params
+    from hsmmkit.model.params.spec import ParamSpec
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.utils.typing import Array
 
 _LOCATION_NAMES = frozenset({"emission.mean", "emission.mu", "emission.m"})
 _SCALE_NAMES = frozenset({"emission.scale", "emission.sigma", "emission.s"})

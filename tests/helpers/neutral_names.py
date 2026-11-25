@@ -14,7 +14,7 @@ import re
 import tokenize
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "regimekit"
+SRC = Path(__file__).resolve().parents[2] / "src" / "hsmmkit"
 
 # Everything that will become `hsmmkit` (Part II overview 5.3, rule 3).
 SCOPE_PACKAGES = (
@@ -122,7 +122,7 @@ def scope_files() -> list[Path]:
 
 
 def scan_tree() -> list[str]:
-    """All hits of the real tree as `path:line:term` (path relative to `src/regimekit`)."""
+    """All hits of the real tree as `path:line:term` (path relative to `src/hsmmkit`)."""
     out: list[str] = []
     for path in scope_files():
         rel = path.relative_to(SRC).as_posix()

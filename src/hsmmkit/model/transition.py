@@ -13,13 +13,13 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model.params import DirichletPrior, NormalPrior, Params
-from regimekit.model.params.spec import Mode, ParamSpec
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.params import DirichletPrior, NormalPrior, Params
+from hsmmkit.model.params.spec import Mode, ParamSpec
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import TransitionCfg
+    from hsmmkit.config.schema import TransitionCfg
 
 
 @dataclass(frozen=True, eq=False)

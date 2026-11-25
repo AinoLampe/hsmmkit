@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      REGIMEKIT_TYPECHECK: "1"
+      HSMMKIT_TYPECHECK: "1"
       JAX_PLATFORMS: cpu
       CI: "1"
     steps:
@@ -24,7 +24,7 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     env:
-      REGIMEKIT_TYPECHECK: "1"
+      HSMMKIT_TYPECHECK: "1"
       JAX_PLATFORMS: cpu
       CI: "1"
     steps:
@@ -41,17 +41,52 @@ jobs:
           name: benchmark
           path: bench.json
 
-  examples:
+  downstream:
+    # The application built on this library must keep working with this library's HEAD (E10-T08).
+    # Expected red until E10-T09 (RegimeDetectionAndForecast depends on hsmmkit) has merged.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     env:
-      REGIMEKIT_TYPECHECK: "1"
+      HSMMKIT_TYPECHECK: "1"
       JAX_PLATFORMS: cpu
       CI: "1"
+      GH_TOKEN: ${{ secrets.DOWNSTREAM_TOKEN || github.token }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          path: hsmmkit
+      - uses: actions/checkout@v5
+        with:
+          repository: AinoLampe/RegimeDetectionAndForecast
+          ref: main
+          path: downstream
+          token: ${{ secrets.DOWNSTREAM_TOKEN || github.token }}
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --all-groups
-      - run: uv run nox -s examples
+      - name: Install the downstream environment with this repository's HEAD
+        working-directory: downstream
+        run: |
+          uv sync --all-groups
+          uv pip install --no-deps -e ../hsmmkit
+      - name: Run the downstream suite
+        id: suite
+        working-directory: downstream
+        run: uv run pytest -m "not live" -q -p no:cacheprovider -n 2
+        continue-on-error: true
+      - name: Open or update the `downstream` issue on failure
+        if: steps.suite.outcome == 'failure'
+        working-directory: hsmmkit
+        run: |
+          title="downstream: RegimeDetectionAndForecast fails against hsmmkit ${GITHUB_SHA::7}"
+          body="The nightly downstream run failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          number=$(gh issue list --label downstream --state open --json number --jq '.[0].number' || true)
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh label create downstream --force >/dev/null 2>&1 || true
+            gh issue create --title "$title" --body "$body" --label downstream
+          fi
+      - name: Fail the job when the downstream suite failed
+        if: steps.suite.outcome == 'failure'
+        run: exit 1

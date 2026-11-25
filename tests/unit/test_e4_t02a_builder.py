@@ -5,12 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition
-from regimekit.statespace.builders import build_expanded
+from hsmmkit.model.duration.geometric import GeometricDuration
+from hsmmkit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import JumpTransition
+from hsmmkit.statespace.builders import build_expanded
 
 
 def _spec(
@@ -168,7 +168,7 @@ def test_e4_t02a_pair_conditioning_n_states_times_n_states_minus_1_distinct_valu
 
 def test_e4_t02a_pair_conditioning_requires_order_2() -> None:
     """`pair` conditioning at order 1 raises `ConfigError`."""
-    from regimekit.utils.errors import ConfigError
+    from hsmmkit.utils.errors import ConfigError
 
     duration = GeometricDuration()
     with pytest.raises(ConfigError):

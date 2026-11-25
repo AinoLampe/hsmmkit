@@ -14,7 +14,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from regimekit.utils.typing import Array, Float
+from hsmmkit.utils.typing import Array, Float
 
 
 class Bijector(Protocol):

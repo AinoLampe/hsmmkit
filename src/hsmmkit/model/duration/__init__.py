@@ -1,14 +1,14 @@
 """Sojourn-duration families."""
 
-from regimekit.model.duration.base import DurationFamily
-from regimekit.model.duration.gamma import GammaDuration
-from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.duration.hazard import hazard
-from regimekit.model.duration.lognormal import LogNormalDuration
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.duration.nonparametric import NonparametricDuration
-from regimekit.model.duration.poisson import PoissonDuration
-from regimekit.model.duration.weibull import WeibullDuration
+from hsmmkit.model.duration.base import DurationFamily
+from hsmmkit.model.duration.gamma import GammaDuration
+from hsmmkit.model.duration.geometric import GeometricDuration
+from hsmmkit.model.duration.hazard import hazard
+from hsmmkit.model.duration.lognormal import LogNormalDuration
+from hsmmkit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.duration.nonparametric import NonparametricDuration
+from hsmmkit.model.duration.poisson import PoissonDuration
+from hsmmkit.model.duration.weibull import WeibullDuration
 
 __all__ = [
     "DurationFamily",

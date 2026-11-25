@@ -9,9 +9,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.estimation import objective as obj
-from regimekit.estimation.objective import check_finite, make_objective
-from regimekit.utils.errors import NumericalError
+from hsmmkit.estimation import objective as obj
+from hsmmkit.estimation.objective import check_finite, make_objective
+from hsmmkit.utils.errors import NumericalError
 from tests.helpers.engine_fixtures import DT, make_dataset
 from tests.helpers.objective_fixtures import Case, make_case
 

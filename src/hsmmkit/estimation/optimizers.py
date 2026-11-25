@@ -20,11 +20,11 @@ import jax
 import jax.numpy as jnp
 import optax
 
-from regimekit.utils.typing import Array
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import EstimationSection
-    from regimekit.estimation.objective import Objective
+    from hsmmkit.config.schema import EstimationSection
+    from hsmmkit.estimation.objective import Objective
 
 _ADAM_LR = 1.0e-2
 _LOG_EVERY = 25

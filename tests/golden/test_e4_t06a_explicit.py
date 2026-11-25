@@ -9,7 +9,7 @@ from hypothesis import strategies as st
 from scipy.special import logsumexp
 from scipy.stats import norm
 
-from regimekit.engine.explicit_duration import ExplicitDurationEngine, _forward_backward_core
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine, _forward_backward_core
 from tests.helpers.engine_fixtures import Scenario, make_explicit_scenario
 from tests.reference import ref_hsmm
 

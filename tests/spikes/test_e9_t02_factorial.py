@@ -8,17 +8,17 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.engine.approx import ApproxInference, ApproxPosterior
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.statespace.factorial import (
+from hsmmkit.engine.approx import ApproxInference, ApproxPosterior
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.statespace.factorial import (
     CouplingSpec,
     FactorialSpace,
     build_factorial,
     chain_theta,
     joint_model_spec,
 )
-from regimekit.utils.errors import ConfigError
+from hsmmkit.utils.errors import ConfigError
 from tests.helpers.engine_fixtures import Scenario, make_scenario
 
 T_LEN = 60

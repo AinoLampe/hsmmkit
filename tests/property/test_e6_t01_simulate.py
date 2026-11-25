@@ -8,9 +8,9 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from regimekit.inference.simulate import SimResult, segments_of, simulate_paths
-from regimekit.model.params.manager import Params
-from regimekit.utils.rng import key_for
+from hsmmkit.inference.simulate import SimResult, segments_of, simulate_paths
+from hsmmkit.model.params.manager import Params
+from hsmmkit.utils.rng import key_for
 from tests.helpers.objective_fixtures import Case, make_case
 
 N_PATHS = 30

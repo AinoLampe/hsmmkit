@@ -9,10 +9,10 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-from regimekit.config.schema import EstimationSection
-from regimekit.estimation.objective import make_objective
-from regimekit.estimation.optimizers import _ADAM_LR, RunRecord, minimize
-from regimekit.utils.logging import get_logger
+from hsmmkit.config.schema import EstimationSection
+from hsmmkit.estimation.objective import make_objective
+from hsmmkit.estimation.optimizers import _ADAM_LR, RunRecord, minimize
+from hsmmkit.utils.logging import get_logger
 from tests.helpers.objective_fixtures import make_case
 
 LOG = get_logger("test_e5_t02")

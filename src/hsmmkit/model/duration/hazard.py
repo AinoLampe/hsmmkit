@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 
-from regimekit.utils.typing import Array
+from hsmmkit.utils.typing import Array
 
 _TINY = 1e-300
 

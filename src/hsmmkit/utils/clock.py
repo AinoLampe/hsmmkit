@@ -1,6 +1,6 @@
 """Clock-unit conversions: the registry-dispatching helpers (E10-T03, CLAUDE.md §3.2).
 
-The clocks themselves live in `regimekit.data.clocks` (core: `steps`, `calendar`) and in the
+The clocks themselves live in `hsmmkit.data.clocks` (core: `steps`, `calendar`) and in the
 application; this module looks them up in the registry, so that nothing else branches on a clock's name.
 `CALENDAR_DAYS_PER_YEAR` is the only year constant of the core.
 """
@@ -15,13 +15,13 @@ import numpy as np
 import pydantic
 from numpy.typing import ArrayLike
 
-from regimekit.plugins import REGISTRY
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.plugins import REGISTRY
+from hsmmkit.utils.errors import ConfigError, DataError
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
-    from regimekit.data.clocks import Clock
+    from hsmmkit.data.clocks import Clock
 
 CALENDAR_DAYS_PER_YEAR = 365.25
 IRREGULAR_RATIO = 1.5
@@ -33,7 +33,7 @@ def get_clock(name: str) -> Clock:
     Raises:
         ConfigError: unknown clock (`path="data.clock"`, the message lists the registered names).
     """
-    importlib.import_module("regimekit.data.clocks")  # registers the core clocks
+    importlib.import_module("hsmmkit.data.clocks")  # registers the core clocks
     names = REGISTRY.names("clock")
     if name not in names:
         raise ConfigError(f"unknown clock '{name}'; registered: {', '.join(names)}", path="data.clock")

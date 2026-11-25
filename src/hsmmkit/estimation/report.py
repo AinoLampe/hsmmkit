@@ -15,26 +15,26 @@ import jax.numpy as jnp
 import jax.scipy.stats
 import numpy as np
 
-from regimekit.engine.viterbi import segments
-from regimekit.evaluation.metrics.predictive import (
+from hsmmkit.engine.viterbi import segments
+from hsmmkit.evaluation.metrics.predictive import (
     ljung_box,
     pit_histogram,
     pit_values,
     predictive_regime_probs,
 )
-from regimekit.model.lattice import has_identifiability_guard
+from hsmmkit.model.lattice import has_identifiability_guard
 
 if TYPE_CHECKING:
     import pandas as pd
 
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.engine.base import InferenceEngine
-    from regimekit.estimation.objective import Objective
-    from regimekit.estimation.results import FitResult
-    from regimekit.model.params.manager import ParamManager
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
-    from regimekit.utils.typing import Array
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.engine.base import InferenceEngine
+    from hsmmkit.estimation.objective import Objective
+    from hsmmkit.estimation.results import FitResult
+    from hsmmkit.model.params.manager import ParamManager
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
+    from hsmmkit.utils.typing import Array
 
 OCCUPANCY_WARN_THRESHOLD = 0.02
 DISPERSION_WARN_THRESHOLD = 0.01

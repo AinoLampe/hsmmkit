@@ -10,11 +10,11 @@ from hypothesis import given
 from hypothesis import strategies as st
 from scipy.special import softmax
 
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition, build_memory_layout
-from regimekit.statespace.builders import build_expanded
+from hsmmkit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import JumpTransition, build_memory_layout
+from hsmmkit.statespace.builders import build_expanded
 
 
 def _spec(
@@ -218,7 +218,7 @@ def test_e4_t02b_differentiable_wrt_theta() -> None:
 
 def test_e4_t02b_transition_fn_rejects_mismatched_duration_rate_shape() -> None:
     """A `theta['duration.rate']` shaped for the wrong `duration_conditioning` raises `DataError`."""
-    from regimekit.utils.errors import DataError
+    from hsmmkit.utils.errors import DataError
 
     duration = NegBinDuration(r=(2, 2, 2))
     spec = _spec(3, 2, duration, JumpTransition(), duration_conditioning="pair")
@@ -239,7 +239,7 @@ def test_e4_t02b_transition_fn_rejects_mismatched_duration_rate_shape() -> None:
 @given(n_states=st.integers(2, 5), seed=st.integers(0, 2**31 - 1))
 def test_e4_t02b_stationary_distribution_never_nan(n_states: int, seed: int) -> None:
     """Power-iteration stationary distribution is never NaN, regardless of eigenvector sign quirks."""
-    from regimekit.statespace.builders import _stationary_distribution
+    from hsmmkit.statespace.builders import _stationary_distribution
 
     rng = np.random.default_rng(seed)
     a_bar = rng.dirichlet(np.ones(n_states), size=n_states)
@@ -252,7 +252,7 @@ def test_e4_t02b_stationary_distribution_never_nan(n_states: int, seed: int) -> 
 
 def test_e4_t02b_stationary_initial_distribution_differentiable() -> None:
     """`jax.grad` through the `stationary` initial distribution is finite (power iteration, not eig)."""
-    from regimekit.statespace.builders import initial_log_rho
+    from hsmmkit.statespace.builders import initial_log_rho
 
     duration = NegBinDuration(r=(2, 3))
     spec = _spec(2, 1, duration, JumpTransition(), initial="stationary")
@@ -268,7 +268,7 @@ def test_e4_t02b_stationary_initial_distribution_differentiable() -> None:
 
 def test_e4_t02b_stationary_with_transition_covariates_uses_zero_vector_not_none() -> None:
     """`stationary` evaluates covariate-logit transitions at `z=0`, not a shape-mismatch crash."""
-    from regimekit.statespace.builders import initial_log_rho
+    from hsmmkit.statespace.builders import initial_log_rho
 
     duration = NegBinDuration(r=(2, 3))
     transition = JumpTransition(cov_idx=(0,))

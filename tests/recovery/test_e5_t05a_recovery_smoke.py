@@ -12,7 +12,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from regimekit.estimation.recovery import run_recovery_suite
+from hsmmkit.estimation.recovery import run_recovery_suite
 
 pytestmark = pytest.mark.slow
 

@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
-from regimekit.utils.errors import ConfigError
+from hsmmkit.utils.errors import ConfigError
 
 Kind = Literal[
     "emission",
@@ -44,8 +44,7 @@ KINDS: tuple[str, ...] = (
 
 T = TypeVar("T")
 
-CORE_PROVENANCE = "regimekit.core"
-FINANCE_PROVENANCE = "regimekit.finance"
+CORE_PROVENANCE = "hsmmkit.core"
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,7 @@ class Entry:
         kind: The registry kind.
         name: The name (the config's own spelling).
         obj: The registered object (a class, a function, a factory, ...).
-        provenance: Where it came from, e.g. `"regimekit.core"`, `"regimekit.finance"`.
+        provenance: Where it came from, e.g. `"hsmmkit.core"` or an extension package.
     """
 
     kind: Kind
@@ -66,10 +65,8 @@ class Entry:
 
 
 def provenance_of(module: str) -> str:
-    """Provenance label of a module name: core, finance, or the top-level package of an extension."""
-    if module == "regimekit.finance" or module.startswith("regimekit.finance."):
-        return FINANCE_PROVENANCE
-    if module == "regimekit" or module.startswith("regimekit."):
+    """Provenance label of a module name: core, or the top-level package of an extension."""
+    if module == "hsmmkit" or module.startswith("hsmmkit."):
         return CORE_PROVENANCE
     return module.partition(".")[0] or "unknown"
 
@@ -99,7 +96,7 @@ class Registry:
             kind: Registry kind.
             name: Name under which the component is looked up.
             obj: The component.
-            provenance: Origin label (`"regimekit.core"`, `"regimekit.finance"`, an extension package).
+            provenance: Origin label (`"hsmmkit.core"` or an extension package).
             replace: Overwrite an existing entry (used by the metric facade's `replace=True`).
 
         Raises:
@@ -150,8 +147,8 @@ REGISTRY = Registry()
 def register(kind: Kind, name: str, *, provenance: str | None = None) -> Callable[[T], T]:
     """Decorator registering the decorated class or function in `REGISTRY`.
 
-    `provenance` defaults to the calling module's origin: `regimekit.finance` for modules under
-    `regimekit.finance`, `regimekit.core` for other `regimekit` modules, else the top-level package.
+    `provenance` defaults to the calling module's origin: `hsmmkit.core` for `hsmmkit` modules, else the
+    top-level package.
     """
     label = provenance if provenance is not None else _caller_provenance(2)
 

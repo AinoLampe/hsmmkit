@@ -7,12 +7,12 @@ import warnings
 import numpy as np
 import pytest
 
-from regimekit.config.schema import EstimationSection
-from regimekit.estimation.map import fit
-from regimekit.estimation.objective import make_objective
-from regimekit.estimation.report import std_errors
-from regimekit.inference.simulate import simulate_dataset
-from regimekit.utils.rng import key_for
+from hsmmkit.config.schema import EstimationSection
+from hsmmkit.estimation.map import fit
+from hsmmkit.estimation.objective import make_objective
+from hsmmkit.estimation.report import std_errors
+from hsmmkit.inference.simulate import simulate_dataset
+from hsmmkit.utils.rng import key_for
 from tests.helpers.objective_fixtures import make_case
 
 pytestmark = pytest.mark.slow

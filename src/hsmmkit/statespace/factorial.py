@@ -28,15 +28,15 @@ from typing import TYPE_CHECKING
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import build_memory_layout
-from regimekit.statespace.index import StateIndex, StateSpace
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import build_memory_layout
+from hsmmkit.statespace.index import StateIndex, StateSpace
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.model.emission.base import EmissionFamily
-    from regimekit.model.params import Params
+    from hsmmkit.model.emission.base import EmissionFamily
+    from hsmmkit.model.params import Params
 
 EXPERIMENTAL = True
 
@@ -166,7 +166,7 @@ def build_factorial(
     Raises:
         ConfigError: `experimental` is not set, fewer than two chains, or an unsupported chain.
     """
-    from regimekit.statespace.builders import build_expanded
+    from hsmmkit.statespace.builders import build_expanded
 
     if not experimental:
         raise ConfigError("statespace.factorial is experimental: pass experimental=True", path="factorial")

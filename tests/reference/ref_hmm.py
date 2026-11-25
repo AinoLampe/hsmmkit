@@ -1,6 +1,6 @@
 """Pure NumPy reference first-order HMM forward-backward and Viterbi.
 
-No `regimekit` import (CLAUDE.md §6). Index convention (CLAUDE.md §3.7): code index `t` (0-based)
+No `hsmmkit` import (CLAUDE.md §6). Index convention (CLAUDE.md §3.7): code index `t` (0-based)
 is math step `t+1`; `log_A[t]` moves from code index `t-1` to `t` (`t >= 1`; `log_A[0]` is unused).
 
 Hand-computed example (2-state, 3-step, doctest-style ground truth for AC1):

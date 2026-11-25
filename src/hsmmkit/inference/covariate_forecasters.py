@@ -28,13 +28,13 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.plugins import REGISTRY, register
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.plugins import REGISTRY, register
+from hsmmkit.utils.errors import ConfigError, DataError
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import CovariateForecasterCfg
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.utils.typing import Array
+    from hsmmkit.config.schema import CovariateForecasterCfg
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.utils.typing import Array
 
 _ENTRY_POINTS = ("transition", "duration", "emission")
 

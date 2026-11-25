@@ -1,10 +1,10 @@
-"""Typed exception hierarchy (overview §4.4); the CLI maps it to exit codes (`regimekit.cli.app`)."""
+"""Typed exception hierarchy (overview §4.4); the CLI maps it to exit codes (`hsmmkit.cli.app`)."""
 
 from __future__ import annotations
 
 
-class RegimekitError(Exception):
-    """Base class for every regimekit exception.
+class HsmmkitError(Exception):
+    """Base class for every hsmmkit exception.
 
     Args:
         message: Human-readable description of the failure.
@@ -18,17 +18,17 @@ class RegimekitError(Exception):
         super().__init__(full_message)
 
 
-class ConfigError(RegimekitError):
+class ConfigError(HsmmkitError):
     """Invalid or inconsistent configuration."""
 
 
-class DataError(RegimekitError):
+class DataError(HsmmkitError):
     """Invalid data contract, shape, or content."""
 
 
-class NumericalError(RegimekitError):
+class NumericalError(HsmmkitError):
     """A numerical guard (NaN/Inf, disabled x64, missing device, ...) was tripped."""
 
 
-class PersistenceError(RegimekitError):
+class PersistenceError(HsmmkitError):
     """A model bundle failed to save, load, or validate."""

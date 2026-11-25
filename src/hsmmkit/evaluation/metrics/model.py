@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from regimekit.evaluation.metrics.registry import metric
-from regimekit.inference.results import PosteriorResult
-from regimekit.utils.errors import ConfigError
+from hsmmkit.evaluation.metrics.registry import metric
+from hsmmkit.inference.results import PosteriorResult
+from hsmmkit.utils.errors import ConfigError
 
 
 def _posterior(ctx: dict[str, object]) -> PosteriorResult:

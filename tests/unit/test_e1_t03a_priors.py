@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from regimekit.model.params.priors import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior
+from hsmmkit.model.params.priors import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior
 
 
 @pytest.mark.parametrize("seed", range(5))

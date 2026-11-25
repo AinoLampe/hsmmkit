@@ -13,7 +13,7 @@ import jax
 import jax.numpy as jnp
 import jax.scipy.special as jsp_special
 
-from regimekit.utils.typing import Array
+from hsmmkit.utils.typing import Array
 
 _LOG_2PI = math.log(2.0 * math.pi)
 

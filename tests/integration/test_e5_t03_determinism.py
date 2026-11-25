@@ -6,8 +6,8 @@ import warnings
 
 import numpy as np
 
-from regimekit.config.schema import EstimationSection
-from regimekit.estimation import fit
+from hsmmkit.config.schema import EstimationSection
+from hsmmkit.estimation import fit
 from tests.helpers.objective_fixtures import make_case
 
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from regimekit.utils.errors import NumericalError
+from hsmmkit.utils.errors import NumericalError
 
 
 @dataclass(frozen=True)

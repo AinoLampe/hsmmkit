@@ -5,10 +5,10 @@ The CLI has no real commands yet (added by E6-T02/E6-T05/E8-T02); `main()` itsel
 commands registered.
 """
 
-import regimekit.cli.app
+import hsmmkit.cli.app
 
 
 def test_e0_t02_cli_app_module_imports() -> None:
     """The module imports cleanly and exposes a Typer `app` and a `main` entry point."""
-    assert callable(regimekit.cli.app.main)
-    assert regimekit.cli.app.app is not None
+    assert callable(hsmmkit.cli.app.main)
+    assert hsmmkit.cli.app.app is not None

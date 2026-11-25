@@ -8,9 +8,9 @@ from typing import Any
 
 from ruamel.yaml import YAML
 
-from regimekit.config.migrate import migrate
-from regimekit.config.schema import ProjectConfig, _registered_names, parse_project_config
-from regimekit.plugins import REGISTRY
+from hsmmkit.config.migrate import migrate
+from hsmmkit.config.schema import ProjectConfig, _registered_names, parse_project_config
+from hsmmkit.plugins import REGISTRY
 
 _SAFE_YAML = YAML(typ="safe")
 _ROUND_TRIP_YAML = YAML()

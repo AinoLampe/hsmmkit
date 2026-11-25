@@ -10,12 +10,12 @@ import jax.numpy as jnp
 import numpy as np
 from jax.scipy import special as jsp_special
 
-from regimekit.model.dists import poisson_shifted_logpmf
-from regimekit.model.duration.base import Params
-from regimekit.model.duration.explicit import ExplicitDurationBase, ParamDef
-from regimekit.plugins import register
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.dists import poisson_shifted_logpmf
+from hsmmkit.model.duration.base import Params
+from hsmmkit.model.duration.explicit import ExplicitDurationBase, ParamDef
+from hsmmkit.plugins import register
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 
 @register("duration", "poisson")

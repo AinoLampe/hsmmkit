@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from regimekit.config.schema import EmissionCfg
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.emission.student_t import StudentTFamily
-from regimekit.model.params import ParamManager
-from regimekit.utils.errors import ConfigError
+from hsmmkit.config.schema import EmissionCfg
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.emission.student_t import StudentTFamily
+from hsmmkit.model.params import ParamManager
+from hsmmkit.utils.errors import ConfigError
 
 FAMILY = StudentTFamily(scale_by_dt=True)
 

@@ -6,15 +6,15 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.config.schema import EstimationSection
-from regimekit.estimation.init import observed_rows, rolling_kmeans
-from regimekit.estimation.map import fit
-from regimekit.estimation.objective import make_objective
-from regimekit.evaluation.padding import PAD_MULTIPLE, pad_dataset, padded_length
-from regimekit.model.params.manager import ParamManager
-from regimekit.statespace.builders import build_expanded
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.rng import key_for
+from hsmmkit.config.schema import EstimationSection
+from hsmmkit.estimation.init import observed_rows, rolling_kmeans
+from hsmmkit.estimation.map import fit
+from hsmmkit.estimation.objective import make_objective
+from hsmmkit.evaluation.padding import pad_dataset, padded_length
+from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.statespace.builders import build_expanded
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.rng import key_for
 from tests.helpers.objective_fixtures import make_case
 
 
@@ -24,26 +24,6 @@ def test_e7_t02b_padded_length_is_the_next_multiple_of_256() -> None:
     assert padded_length(10, multiple=64) == 64
     with pytest.raises(ConfigError, match="multiple"):
         padded_length(10, multiple=0)
-
-
-@pytest.mark.finance
-def test_e7_t02b_pad_dataset_appends_masked_rows_and_keeps_the_original() -> None:
-    """Padded rows: `mask=False`, positive `dt`, zero covariates, increasing times; originals untouched."""
-    case = make_case("gbm", "negbin", 1, t_len=200, seed=3, cov_tr=True, cov_du=True, cov_em=True)
-    data = case.data
-    padded = pad_dataset(data)
-    t = data.times.shape[0]
-    assert padded.times.shape[0] == padded.observations.shape[0] == PAD_MULTIPLE * -(-t // PAD_MULTIPLE)
-    pad_dataset(make_case("gbm", "negbin", 1, t_len=200, seed=3).data).validate()  # contract-valid
-    for name in ("observations", "dt", "mask", "cov_transition", "cov_duration", "cov_emission"):
-        before, after = np.asarray(getattr(data, name)), np.asarray(getattr(padded, name))
-        np.testing.assert_array_equal(after[:t], before, err_msg=name)
-    assert not np.asarray(padded.mask)[t:].any()
-    assert np.all(np.asarray(padded.dt)[t:] == np.asarray(data.dt)[-1])
-    for name in ("cov_transition", "cov_duration", "cov_emission"):
-        assert not np.asarray(getattr(padded, name))[t:].any()
-    assert padded.prep_stats is data.prep_stats
-    assert pad_dataset(padded) is padded  # already a multiple of 256
 
 
 def test_e7_t02b_padded_loglik_and_filter_equal_the_unpadded_ones() -> None:

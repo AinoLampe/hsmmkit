@@ -9,22 +9,22 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regimekit.data.contracts import PreparedDataset
-from regimekit.engine.base import InferenceEngine
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.estimation.objective import make_objective
-from regimekit.estimation.report import diagnose, std_errors
-from regimekit.estimation.results import FitResult
-from regimekit.inference.simulate import simulate_dataset
-from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.params.manager import ParamManager, Params
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition
-from regimekit.statespace.builders import build_expanded
-from regimekit.statespace.index import StateSpace
-from regimekit.utils.rng import key_for
-from regimekit.utils.typing import Array
+from hsmmkit.data.contracts import PreparedDataset
+from hsmmkit.engine.base import InferenceEngine
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.estimation.objective import make_objective
+from hsmmkit.estimation.report import diagnose, std_errors
+from hsmmkit.estimation.results import FitResult
+from hsmmkit.inference.simulate import simulate_dataset
+from hsmmkit.model.duration.geometric import GeometricDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.params.manager import ParamManager, Params
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import JumpTransition
+from hsmmkit.statespace.builders import build_expanded
+from hsmmkit.statespace.index import StateSpace
+from hsmmkit.utils.rng import key_for
+from hsmmkit.utils.typing import Array
 from tests.helpers.engine_fixtures import DT, make_dataset
 from tests.helpers.objective_fixtures import make_case
 

@@ -13,10 +13,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 from scipy.stats import norm
 
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.model.spec import ModelSpec
-from regimekit.statespace.builders import build_explicit
-from regimekit.utils.errors import ConfigError, NumericalError
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.statespace.builders import build_explicit
+from hsmmkit.utils.errors import ConfigError, NumericalError
 from tests.helpers.engine_fixtures import DT, Scenario, make_dataset, make_explicit_scenario
 from tests.reference import ref_hsmm_by_start
 

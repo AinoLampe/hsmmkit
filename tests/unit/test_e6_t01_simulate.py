@@ -6,9 +6,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.inference.simulate import segments_of, simulate_dataset, simulate_paths
-from regimekit.utils.errors import NumericalError
-from regimekit.utils.rng import key_for
+from hsmmkit.inference.simulate import segments_of, simulate_dataset, simulate_paths
+from hsmmkit.utils.errors import NumericalError
+from hsmmkit.utils.rng import key_for
 from tests.helpers.objective_fixtures import make_case
 
 

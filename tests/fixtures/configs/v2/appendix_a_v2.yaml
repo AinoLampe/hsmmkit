@@ -51,7 +51,7 @@ data:
     standardize_covariates: true
     missing_observations: drop
   cache:
-    dir: ~/.cache/regimekit
+    dir: ~/.cache/hsmmkit
     snapshot: latest
     max_age_days: 1
 model:

@@ -9,13 +9,13 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from regimekit.model.params import ParamManager
-from regimekit.model.transition import JumpTransition, build_memory_layout, transition_matrix_generator
-from regimekit.utils.errors import ConfigError
+from hsmmkit.model.params import ParamManager
+from hsmmkit.model.transition import JumpTransition, build_memory_layout, transition_matrix_generator
+from hsmmkit.utils.errors import ConfigError
 
 
 def _cfg_module():  # noqa: ANN202
-    from regimekit.config import schema
+    from hsmmkit.config import schema
 
     return schema
 

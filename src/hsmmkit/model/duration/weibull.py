@@ -8,11 +8,11 @@ from typing import ClassVar
 import jax.numpy as jnp
 from jax.scipy import special as jsp_special
 
-from regimekit.model.dists import _weibull_cdf
-from regimekit.model.duration.base import Params
-from regimekit.model.duration.explicit import ExplicitDurationBase, ParamDef, grid_log_pmf
-from regimekit.plugins import register
-from regimekit.utils.typing import Array
+from hsmmkit.model.dists import _weibull_cdf
+from hsmmkit.model.duration.base import Params
+from hsmmkit.model.duration.explicit import ExplicitDurationBase, ParamDef, grid_log_pmf
+from hsmmkit.plugins import register
+from hsmmkit.utils.typing import Array
 
 _INIT_SHAPE = 1.5
 

@@ -8,10 +8,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.estimation.init import lattice_jitter, random, rolling_kmeans
-from regimekit.estimation.objective import make_objective
-from regimekit.model.params.manager import Params
-from regimekit.utils.rng import key_for
+from hsmmkit.estimation.init import lattice_jitter, random, rolling_kmeans
+from hsmmkit.estimation.objective import make_objective
+from hsmmkit.model.params.manager import Params
+from hsmmkit.utils.rng import key_for
 from tests.helpers.objective_fixtures import Case, make_case
 
 

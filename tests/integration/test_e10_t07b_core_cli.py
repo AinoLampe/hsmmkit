@@ -1,4 +1,4 @@
-"""E10-T07b: the core CLI (`regimekit-core`) end to end on a gaussian csv, without the finance package."""
+"""E10-T07b: the core CLI (`hsmmkit`) end to end on a gaussian csv, without the finance package."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ import pytest
 from ruamel.yaml import YAML
 from typer.testing import CliRunner
 
-from regimekit.cli.app import app, build_app, exit_code_of
-from regimekit.config.schema import ProjectConfig
-from regimekit.project import Project
-from regimekit.utils.errors import ConfigError, DataError, NumericalError, PersistenceError
+from hsmmkit.cli.app import app, build_app, exit_code_of
+from hsmmkit.config.schema import ProjectConfig
+from hsmmkit.project import Project
+from hsmmkit.utils.errors import ConfigError, DataError, NumericalError, PersistenceError
 from tests.helpers import core_config as cc
 
 _runner = CliRunner()
@@ -52,7 +52,7 @@ def test_e10_t07b_core_cli_runs_fit_decode_forecast_backtest_end_to_end(world: d
     assert result.exit_code == 0, result.output
     result = _runner.invoke(app, ["--out", str(out), "fit", config])
     assert result.exit_code == 0, result.output
-    model = out / "core_demo.rkmodel"
+    model = out / "core_demo.hsmm"
     assert (model / "manifest.json").is_file()
     assert (out / "prepared.parquet").is_file()
     assert (out / "provenance.json").is_file()
@@ -115,9 +115,9 @@ def test_e10_t07b_exit_codes_use_the_most_specific_class() -> None:
 def test_e10_t07b_the_core_app_in_a_fresh_process_has_no_provider_exit_code() -> None:
     """`ProviderError -> 5` is finance-only: a fresh process importing the core CLI has no such code."""
     code = (
-        "import regimekit.cli.app as a, sys\n"
+        "import hsmmkit.cli.app as a, sys\n"
         "print(sorted(set(a.EXIT_CODES.values())))\n"
-        "print('regimekit.finance' in sys.modules)\n"
+        "print('hsmmkit.finance' in sys.modules)\n"
     )
     out = subprocess.run(
         [sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True
@@ -129,9 +129,9 @@ def test_e10_t07b_time_less_data_loads_with_a_step_index_train_end(tmp_path: Pat
     """`_train_end` of time-less observations is a step index (`initial_train_steps - 1`, else the last)."""
     import numpy as np
 
-    from regimekit.config.schema import BacktestCfg
-    from regimekit.data.contracts import ObservationSet
-    from regimekit.project import _train_end
+    from hsmmkit.config.schema import BacktestCfg
+    from hsmmkit.data.contracts import ObservationSet
+    from hsmmkit.project import _train_end
 
     obs = ObservationSet(("x",), None, np.zeros((50, 1)), "memory", "s")
     cfg = cc.core_config(tmp_path).evaluation.backtest

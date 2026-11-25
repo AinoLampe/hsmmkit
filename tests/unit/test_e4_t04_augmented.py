@@ -9,15 +9,15 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.engine.augmented import (
+from hsmmkit.engine.augmented import (
     collapse_to_regimes,
     expected_elapsed_steps,
     expected_remaining_steps,
     memory_marginals,
     phase_marginals,
 )
-from regimekit.engine.base import Posterior
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.base import Posterior
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
 from tests.helpers.engine_fixtures import make_dataset, make_scenario
 
 ENGINE = ExpandedHMMEngine()

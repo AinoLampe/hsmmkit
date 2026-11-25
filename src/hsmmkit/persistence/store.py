@@ -1,4 +1,4 @@
-"""`ModelStore`: the `<name>.rkmodel/` bundle (E8-T01, ADR-0011; bundle v2 from E10-T07a).
+"""`ModelStore`: the `<name>.hsmm/` bundle (E8-T01, ADR-0011; bundle v2 from E10-T07a).
 
 A bundle persists a `FitResult` so that it reloads without data and reproduces its log-likelihood bitwise
 on the same backend (`bundle_version = 2`):
@@ -14,7 +14,7 @@ on the same backend (`bundle_version = 2`):
 - `provenance.json`: the data snapshot ids
 - `fit_report.json`: objective, loglik, convergence, restarts table, diagnostics, standard errors
 - `extensions/<name>.json`: opaque payloads of extension packages (the finance application writes its
-  data-source metadata to `extensions/regimekit.json`)
+  data-source metadata to `extensions/hsmmkit.json`)
 
 `load` rebuilds the `ModelSpec` from the resolved configuration and the stored build inputs through the
 family registries (`model.build.build_model_spec_from`), so no dataset is needed, then checks that the
@@ -22,7 +22,7 @@ stored `theta` has the expected names and shapes and equals `ParamManager.unflat
 every extension listed in the manifest is importable.
 
 Bundles of `bundle_version 1` (0.1.x / 0.2.x: `snapshots.json`, `profile` in the manifest) are read through
-a compatibility path (`snapshots.json` becomes the provenance and the `regimekit` extension, `profile` is
+a compatibility path (`snapshots.json` becomes the provenance and the `hsmmkit` extension, `profile` is
 ignored); saving always writes version 2.
 """
 
@@ -42,20 +42,20 @@ import numpy as np
 import pandas as pd
 from safetensors.numpy import load_file, save_file
 
-from regimekit.config.schema import ProjectConfig
-from regimekit.config.yaml_io import dump_resolved, load_config
-from regimekit.data.prepare import prep_stats_from_json, prep_stats_to_json
-from regimekit.estimation.results import FitResult
-from regimekit.model.build import BuildInputs, build_model_spec_from
-from regimekit.model.params.manager import ParamManager
-from regimekit.utils.errors import ConfigError, PersistenceError
+from hsmmkit.config.schema import ProjectConfig
+from hsmmkit.config.yaml_io import dump_resolved, load_config
+from hsmmkit.data.prepare import prep_stats_from_json, prep_stats_to_json
+from hsmmkit.estimation.results import FitResult
+from hsmmkit.model.build import BuildInputs, build_model_spec_from
+from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.utils.errors import ConfigError, PersistenceError
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.model.spec import ModelSpec
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.model.spec import ModelSpec
 
 BUNDLE_VERSION = 2
-PACKAGE = "regimekit"
+PACKAGE = "hsmmkit"
 EXTENSIONS_DIR = "extensions"
 U_KEY = "__u__"
 THETA_TOLERANCE = 1e-12
@@ -104,12 +104,12 @@ def _read_json(path: Path) -> Any:  # noqa: ANN401
 
 
 class ModelStore:
-    """Save and load `<name>.rkmodel/` bundles (see the module docstring).
+    """Save and load `<name>.hsmm/` bundles (see the module docstring).
 
-    `suffix` is the directory suffix of `bundle_path` (`.rkmodel` for `regimekit`).
+    `suffix` is the directory suffix of `bundle_path` (`.hsmm` for `hsmmkit`).
     """
 
-    def __init__(self, suffix: str = ".rkmodel") -> None:
+    def __init__(self, suffix: str = ".hsmm") -> None:
         """Choose the bundle directory suffix."""
         self.suffix = suffix
 
@@ -229,7 +229,7 @@ class ModelStore:
 
     @staticmethod
     def load_extensions(path: Path | str) -> dict[str, Any]:
-        """The extension payloads of a bundle (`{name: payload}`); a version-1 bundle gives `regimekit`.
+        """The extension payloads of a bundle (`{name: payload}`); a version-1 bundle gives `hsmmkit`.
 
         Raises:
             PersistenceError: an unreadable bundle or payload.
@@ -273,7 +273,7 @@ class ModelStore:
         if not isinstance(bundle_version, int) or bundle_version > BUNDLE_VERSION:
             raise PersistenceError(
                 f"{src} is bundle version {bundle_version!r}, newer than the supported {BUNDLE_VERSION}: "
-                "upgrade regimekit to load it",
+                "upgrade hsmmkit to load it",
                 path=str(src / MANIFEST),
             )
         for name in manifest.get("extensions", {}):

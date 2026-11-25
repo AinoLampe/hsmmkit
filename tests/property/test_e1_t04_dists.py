@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model import dists
+from hsmmkit.model import dists
 
 N = 20_000
 

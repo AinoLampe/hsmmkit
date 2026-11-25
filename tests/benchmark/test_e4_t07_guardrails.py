@@ -12,8 +12,8 @@ import numpy as np
 import pytest
 from pytest_benchmark.fixture import BenchmarkFixture
 
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
 from tests.helpers.engine_fixtures import make_explicit_scenario, make_scenario
 
 pytestmark = pytest.mark.benchmark

@@ -6,7 +6,7 @@ import jax
 import pytest
 from pytest_benchmark.fixture import BenchmarkFixture
 
-from regimekit.engine.expanded_hmm import _forward_core
+from hsmmkit.engine.expanded_hmm import _forward_core
 from tests.helpers.engine_fixtures import make_scenario
 
 pytestmark = pytest.mark.benchmark

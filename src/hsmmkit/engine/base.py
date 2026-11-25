@@ -11,14 +11,14 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 import jax
 
-from regimekit.statespace.index import StateIndex
-from regimekit.utils.typing import Array
+from hsmmkit.statespace.index import StateIndex
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.model.params import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.model.params import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,7 @@ class Posterior:
         explicit engine (where `phase_of` holds the elapsed duration); both are "how many
         phase/elapsed buckets a regime has", so one bucketing serves both `engine` tags.
         """
-        from regimekit.engine.augmented import phase_marginals
+        from hsmmkit.engine.augmented import phase_marginals
 
         return phase_marginals(self)
 

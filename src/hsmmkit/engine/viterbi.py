@@ -14,15 +14,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.engine.expanded_hmm import _emission_inputs
-from regimekit.utils.errors import NumericalError
-from regimekit.utils.typing import Array
+from hsmmkit.engine.expanded_hmm import _emission_inputs
+from hsmmkit.utils.errors import NumericalError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.model.params import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.model.params import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
 
 
 @partial(jax.jit, static_argnames=("spec",))

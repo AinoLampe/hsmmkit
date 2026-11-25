@@ -1,4 +1,4 @@
-"""`regimekit selftest`: a fast check that the installed package estimates on this machine and backend.
+"""`hsmmkit selftest`: a fast check that the installed package estimates on this machine and backend.
 
 The exit decision rests on non-statistical checks only (owner decision for E5-T05b): every fit is finite,
 and fitting the same data twice gives a bitwise-identical `u`. At the quick size (`T=1500`, about 15-20 regime
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import jax
 import numpy as np
 
-from regimekit.estimation.recovery import SCENARIOS, ParamCheck, RecoveryReport, run_scenario
+from hsmmkit.estimation.recovery import SCENARIOS, ParamCheck, RecoveryReport, run_scenario
 
 QUICK_SCENARIO = "gbm_negbin"
 QUICK_T = 1500

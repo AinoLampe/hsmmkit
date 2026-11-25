@@ -8,10 +8,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.model.spec import ModelSpec
-from regimekit.statespace.builders import build_explicit
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.statespace.builders import build_explicit
 from tests.helpers.engine_fixtures import DT, Scenario, make_dataset, make_scenario
 
 D_MAX = 400

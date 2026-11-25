@@ -12,7 +12,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
-from regimekit.model.params.bijectors import (
+from hsmmkit.model.params.bijectors import (
     Bijector,
     IdentityBijector,
     IncreasingBijector,

@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 480
     env:
-      REGIMEKIT_TYPECHECK: "1"
+      HSMMKIT_TYPECHECK: "1"
       JAX_PLATFORMS: cpu
       CI: "1"
     steps:

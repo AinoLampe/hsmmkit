@@ -16,10 +16,10 @@ import pandas as pd
 import pydantic
 from pydantic import BaseModel, ConfigDict, Field
 
-from regimekit.data.contracts import CovariateSeries, ObservationSet
-from regimekit.data.provenance import hash_arrays, hash_file
-from regimekit.plugins import REGISTRY
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.data.contracts import CovariateSeries, ObservationSet
+from hsmmkit.data.provenance import hash_arrays, hash_file
+from hsmmkit.plugins import REGISTRY
+from hsmmkit.utils.errors import ConfigError, DataError
 
 Loaded = tuple[ObservationSet, list[CovariateSeries]]
 
@@ -64,7 +64,7 @@ def get_source(name: str) -> Source:
     Raises:
         ConfigError: unknown name or not a source object (`path="data.source.kind"`).
     """
-    import regimekit.data.sources  # noqa: F401  (registers the core sources)
+    import hsmmkit.data.sources  # noqa: F401  (registers the core sources)
 
     entry = REGISTRY.get("source", name)
     if not isinstance(entry, Source):
@@ -84,7 +84,7 @@ def validate_options(
     Raises:
         ConfigError: unknown kind or an invalid option (`path="<path>.<key>"`).
     """
-    import regimekit.data.sources  # noqa: F401
+    import hsmmkit.data.sources  # noqa: F401
 
     entry = REGISTRY.get("source", kind)
     options_model = getattr(entry, "options_model", None)
@@ -102,12 +102,12 @@ def validate_options(
 
 
 def sha256_file(path: Path) -> str:
-    """Hex sha256 of the file's bytes (see `regimekit.data.provenance`)."""
+    """Hex sha256 of the file's bytes (see `hsmmkit.data.provenance`)."""
     return hash_file(path)
 
 
 def sha256_arrays(names: Sequence[str], arrays: Sequence[np.ndarray]) -> str:
-    """Hex sha256 over the column names and the array buffers (see `regimekit.data.provenance`)."""
+    """Hex sha256 over the column names and the array buffers (see `hsmmkit.data.provenance`)."""
     return hash_arrays(names, arrays)
 
 

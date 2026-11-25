@@ -24,7 +24,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      REGIMEKIT_TYPECHECK: "1"
+      HSMMKIT_TYPECHECK: "1"
       JAX_PLATFORMS: cpu
       CI: "1"
     steps:
@@ -51,35 +51,3 @@ jobs:
           enable-cache: true
       - run: uv sync --all-groups
       - run: uv run nox -s docs
-
-  core-only:
-    # Required since E10-T07b (the allow-lists are gone): the core suite runs with `regimekit.finance` blocked.
-    runs-on: ubuntu-latest
-    env:
-      REGIMEKIT_TYPECHECK: "1"
-      JAX_PLATFORMS: cpu
-      CI: "1"
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-      - run: uv sync --all-groups
-      - run: uv run nox -s core -- -rf --junitxml=core-only-junit.xml
-      - name: List failing test IDs
-        if: always()
-        run: |
-          python3 - <<'PY' > core-only-failures.txt
-          import xml.etree.ElementTree as ET, os
-          if os.path.exists("core-only-junit.xml"):
-              for case in ET.parse("core-only-junit.xml").getroot().iter("testcase"):
-                  if case.find("failure") is not None or case.find("error") is not None:
-                      print(f"{case.get('classname')}::{case.get('name')}")
-          PY
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: core-only-failures
-          path: |
-            core-only-failures.txt
-            core-only-junit.xml

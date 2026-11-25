@@ -12,10 +12,10 @@ import jax
 import pytest
 from pytest_benchmark.fixture import BenchmarkFixture
 
-from regimekit.config.schema import EstimationSection
-from regimekit.estimation.objective import make_objective
-from regimekit.estimation.optimizers import minimize
-from regimekit.utils.logging import get_logger
+from hsmmkit.config.schema import EstimationSection
+from hsmmkit.estimation.objective import make_objective
+from hsmmkit.estimation.optimizers import minimize
+from hsmmkit.utils.logging import get_logger
 from tests.helpers.objective_fixtures import make_case
 
 pytestmark = pytest.mark.benchmark

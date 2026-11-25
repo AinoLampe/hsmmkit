@@ -18,19 +18,19 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-import regimekit.model.duration
-import regimekit.model.emission  # noqa: F401  (registers the emission families)
-from regimekit.model.emission.product import ProductEmission
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition
-from regimekit.plugins import REGISTRY, Kind
-from regimekit.utils.clock import days_to_steps
-from regimekit.utils.errors import ConfigError
+import hsmmkit.model.duration
+import hsmmkit.model.emission  # noqa: F401  (registers the emission families)
+from hsmmkit.model.emission.product import ProductEmission
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import JumpTransition
+from hsmmkit.plugins import REGISTRY, Kind
+from hsmmkit.utils.clock import days_to_steps
+from hsmmkit.utils.errors import ConfigError
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import DurationCfg, ProjectConfig
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.model.transition import TransitionModel
+    from hsmmkit.config.schema import DurationCfg, ProjectConfig
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.model.transition import TransitionModel
 
 
 class _FamilyView(Mapping[str, Any]):

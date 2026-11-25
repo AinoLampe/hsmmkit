@@ -9,10 +9,10 @@ from typing import Any, Literal
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
-from regimekit.data.contracts import CovariateSeries, ObservationSet
-from regimekit.data.sources.base import Loaded, parse_times, sha256_arrays, sha256_file
-from regimekit.plugins import REGISTRY, provenance_of
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.data.contracts import CovariateSeries, ObservationSet
+from hsmmkit.data.sources.base import Loaded, parse_times, sha256_arrays, sha256_file
+from hsmmkit.plugins import REGISTRY, provenance_of
+from hsmmkit.utils.errors import ConfigError, DataError
 
 _KEYS = ("observations", "times", "covariates", "covariate_names", "sequence_ids")
 

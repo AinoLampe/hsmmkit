@@ -6,8 +6,8 @@ import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st
 
-from regimekit.data.calendar import align_covariate, build_grid
-from regimekit.data.contracts import CovariateSeries, ObservationSet
+from hsmmkit.data.calendar import align_covariate, build_grid
+from hsmmkit.data.contracts import CovariateSeries, ObservationSet
 
 HOUR_NS = 3_600 * 10**9
 ORIGIN = np.datetime64("2024-01-01T00:00", "ns")

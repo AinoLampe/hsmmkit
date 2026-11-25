@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model.params.bijectors import (
+from hsmmkit.model.params.bijectors import (
     Bijector,
     IdentityBijector,
     IncreasingBijector,
@@ -25,9 +25,9 @@ from regimekit.model.params.bijectors import (
     PositiveBijector,
     SimplexRefBijector,
 )
-from regimekit.model.params.spec import Mode, ParamSpec
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.params.spec import Mode, ParamSpec
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 Params = dict[str, Array]
 

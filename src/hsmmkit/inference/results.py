@@ -10,8 +10,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from regimekit.engine.base import Posterior
-from regimekit.utils.typing import Array
+from hsmmkit.engine.base import Posterior
+from hsmmkit.utils.typing import Array
 
 
 @dataclass(frozen=True)

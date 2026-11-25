@@ -6,8 +6,8 @@ import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st
 
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.engine.viterbi import segments
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.engine.viterbi import segments
 from tests.golden.test_e4_t06a_explicit import reference_inputs
 from tests.helpers.engine_fixtures import make_explicit_scenario
 from tests.property.test_e4_t06a_explicit import per_start_reference

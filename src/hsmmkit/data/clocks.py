@@ -12,9 +12,9 @@ from typing import Any, Literal, Protocol, cast
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from regimekit.plugins import REGISTRY, provenance_of
-from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
-from regimekit.utils.errors import ConfigError
+from hsmmkit.plugins import REGISTRY, provenance_of
+from hsmmkit.utils.clock import CALENDAR_DAYS_PER_YEAR
+from hsmmkit.utils.errors import ConfigError
 
 LastTime = np.datetime64 | int | np.integer
 

@@ -1,4 +1,4 @@
-"""Pure NumPy reference for the Gaussian GARCH(1,1) log-likelihood (E9-T03; no `regimekit` import).
+"""Pure NumPy reference for the Gaussian GARCH(1,1) log-likelihood (E9-T03; no `hsmmkit` import).
 
 `eps_t = y_t - m * dt_t`, `h_1 = omega / (1 - alpha - beta)`, `h_{t+1} = omega + alpha eps_t^2 + beta h_t`,
 `y_t ~ N(m dt_t, h_t)`; the log-likelihood is the sum of the normal log-densities. This is the model the

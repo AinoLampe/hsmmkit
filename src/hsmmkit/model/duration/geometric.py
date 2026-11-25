@@ -9,8 +9,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model.dists import geometric_logpmf
-from regimekit.model.duration.base import (
+from hsmmkit.model.dists import geometric_logpmf
+from hsmmkit.model.duration.base import (
     Params,
     advance_prob_core,
     advance_prob_entry,
@@ -18,12 +18,12 @@ from regimekit.model.duration.base import (
     cov_idx_from_names,
     rate_spec_from_cfg,
 )
-from regimekit.model.params.spec import ParamSpec
-from regimekit.plugins import register
-from regimekit.utils.typing import Array
+from hsmmkit.model.params.spec import ParamSpec
+from hsmmkit.plugins import register
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import DurationCfg
+    from hsmmkit.config.schema import DurationCfg
 
 
 @register("duration", "geometric")

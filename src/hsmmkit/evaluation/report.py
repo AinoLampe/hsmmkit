@@ -17,8 +17,8 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import ProjectConfig
-    from regimekit.evaluation.results import BacktestResult
+    from hsmmkit.config.schema import ProjectConfig
+    from hsmmkit.evaluation.results import BacktestResult
 
 SECTIONS = (
     "Header",
@@ -49,11 +49,11 @@ def versions() -> dict[str, str]:
     from importlib.metadata import PackageNotFoundError, version
 
     try:
-        package = version("regimekit")
+        package = version("hsmmkit")
     except PackageNotFoundError:  # running from a source tree without an installed distribution
         package = "unknown"
     return {
-        "regimekit": package,
+        "hsmmkit": package,
         "python": platform.python_version(),
         "jax": jax.__version__,
         "backend": jax.default_backend(),
@@ -128,7 +128,7 @@ def build_report(
         "",
         f"- config: `{name}`, seed {meta.get('seed', 'n/a')}",
         f"- data provenance (snapshot ids): {', '.join(f'`{s}`' for s in snaps) if snaps else 'n/a'}",
-        f"- versions: regimekit {ver.get('regimekit', 'n/a')}, python {ver.get('python', 'n/a')}, "
+        f"- versions: hsmmkit {ver.get('hsmmkit', 'n/a')}, python {ver.get('python', 'n/a')}, "
         f"jax {ver.get('jax', 'n/a')}",
         f"- backend: {ver.get('backend', 'n/a')}, x64 {ver.get('x64', 'n/a')}",
         f"- scheme `{cfg.evaluation.backtest.scheme}`, {len(folds)} folds, "

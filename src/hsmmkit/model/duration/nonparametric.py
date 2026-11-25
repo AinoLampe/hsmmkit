@@ -13,15 +13,15 @@ from typing import TYPE_CHECKING, ClassVar
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model.duration.base import Params, broadcast_per_state, prior_from_cfg
-from regimekit.model.duration.explicit import ExplicitDurationBase, ParamDef
-from regimekit.model.params.spec import ParamSpec
-from regimekit.plugins import register
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.duration.base import Params, broadcast_per_state, prior_from_cfg
+from hsmmkit.model.duration.explicit import ExplicitDurationBase, ParamDef
+from hsmmkit.model.params.spec import ParamSpec
+from hsmmkit.plugins import register
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import DurationCfg
+    from hsmmkit.config.schema import DurationCfg
 
 _MIN_PROB = 1e-12
 

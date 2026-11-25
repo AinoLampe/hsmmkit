@@ -19,16 +19,16 @@ import jax.numpy as jnp
 import jax.scipy.stats
 import numpy as np
 
-from regimekit.model.dists import sample_student_t, student_t_logpdf
-from regimekit.model.emission.base import Support
-from regimekit.model.emission.gaussian import _coef_spec, _spec_from_paramcfg
-from regimekit.model.params.spec import ParamSpec
-from regimekit.plugins import register
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.dists import sample_student_t, student_t_logpdf
+from hsmmkit.model.emission.base import Support
+from hsmmkit.model.emission.gaussian import _coef_spec, _spec_from_paramcfg
+from hsmmkit.model.params.spec import ParamSpec
+from hsmmkit.plugins import register
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import EmissionCfg
+    from hsmmkit.config.schema import EmissionCfg
 
 NU_TIE_GROUP = "nu"
 _DEFAULT_NU_INIT = 8.0

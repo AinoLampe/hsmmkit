@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.data.contracts import PreparedDataset, PrepStats
-from regimekit.inference.covariate_forecasters import (
+from hsmmkit.data.contracts import PreparedDataset, PrepStats
+from hsmmkit.inference.covariate_forecasters import (
     ARForecaster,
     BootstrapForecaster,
     ColumnMap,
@@ -15,8 +15,8 @@ from regimekit.inference.covariate_forecasters import (
     ScenarioForecaster,
     _bootstrap_source_indices,
 )
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.rng import key_for
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.rng import key_for
 
 
 def _make_dataset(z: np.ndarray, names: tuple[str, ...], train_frac: float = 0.8) -> PreparedDataset:

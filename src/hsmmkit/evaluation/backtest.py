@@ -19,37 +19,37 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
-from regimekit.data.prepare import Preparer
-from regimekit.engine.base import Posterior
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.estimation.map import fit as fit_map
-from regimekit.estimation.objective import canonical_data
-from regimekit.evaluation.metrics.predictive import one_step_mixture_weights, pit_histogram
-from regimekit.evaluation.metrics.registry import resolve
-from regimekit.evaluation.padding import pad_dataset
-from regimekit.evaluation.results import BacktestResult
-from regimekit.inference.covariate_forecasters import make_forecaster
-from regimekit.inference.decode import decode
-from regimekit.inference.forecast import MonteCarloForecaster
-from regimekit.model.build import build_model_spec
-from regimekit.statespace.builders import build_expanded, build_explicit
-from regimekit.utils.clock import future_grid
-from regimekit.utils.errors import ConfigError, DataError
-from regimekit.utils.logging import get_logger
-from regimekit.utils.rng import PURPOSE_BACKTEST_FIT, PURPOSE_BACKTEST_FORECAST, derive_seed
+from hsmmkit.data.prepare import Preparer
+from hsmmkit.engine.base import Posterior
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.estimation.map import fit as fit_map
+from hsmmkit.estimation.objective import canonical_data
+from hsmmkit.evaluation.metrics.predictive import one_step_mixture_weights, pit_histogram
+from hsmmkit.evaluation.metrics.registry import resolve
+from hsmmkit.evaluation.padding import pad_dataset
+from hsmmkit.evaluation.results import BacktestResult
+from hsmmkit.inference.covariate_forecasters import make_forecaster
+from hsmmkit.inference.decode import decode
+from hsmmkit.inference.forecast import MonteCarloForecaster
+from hsmmkit.model.build import build_model_spec
+from hsmmkit.statespace.builders import build_expanded, build_explicit
+from hsmmkit.utils.clock import future_grid
+from hsmmkit.utils.errors import ConfigError, DataError
+from hsmmkit.utils.logging import get_logger
+from hsmmkit.utils.rng import PURPOSE_BACKTEST_FIT, PURPOSE_BACKTEST_FORECAST, derive_seed
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import BacktestCfg, ProjectConfig
-    from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
-    from regimekit.engine.base import InferenceEngine
-    from regimekit.estimation.results import FitResult
-    from regimekit.evaluation.metrics.registry import Metric
-    from regimekit.inference.results import ForecastResult
-    from regimekit.statespace.index import StateSpace
-    from regimekit.utils.typing import Array
+    from hsmmkit.config.schema import BacktestCfg, ProjectConfig
+    from hsmmkit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
+    from hsmmkit.engine.base import InferenceEngine
+    from hsmmkit.estimation.results import FitResult
+    from hsmmkit.evaluation.metrics.registry import Metric
+    from hsmmkit.inference.results import ForecastResult
+    from hsmmkit.statespace.index import StateSpace
+    from hsmmkit.utils.typing import Array
 
-_LOG = get_logger("regimekit.backtest")
+_LOG = get_logger("hsmmkit.backtest")
 
 _YEARS_TOL = 1e-9  # elapsed-time comparisons: a sum of equal steps must count as the exact length
 

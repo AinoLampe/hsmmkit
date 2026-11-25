@@ -11,11 +11,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition, build_memory_layout
-from regimekit.statespace.builders import build_expanded, initial_log_rho
+from hsmmkit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import JumpTransition, build_memory_layout
+from hsmmkit.statespace.builders import build_expanded, initial_log_rho
 
 
 def _spec(n_states: int, order: int, duration: object, initial: str = "uniform") -> ModelSpec:
@@ -134,7 +134,7 @@ def test_e4_t02a_initial_log_rho_free() -> None:
 
 def test_e4_t02a_initial_log_rho_unknown_mode_raises() -> None:
     """An unrecognized `spec.initial` value raises `ConfigError` (`stationary` is real, E4-T02b)."""
-    from regimekit.utils.errors import ConfigError
+    from hsmmkit.utils.errors import ConfigError
 
     duration = NegBinDuration(r=(2, 3))
     spec = _spec(2, 1, duration, initial="bogus")

@@ -21,16 +21,16 @@ import jax.numpy as jnp
 import jax.scipy.stats
 import numpy as np
 
-from regimekit.model.dists import normal_logpdf, sample_normal
-from regimekit.model.emission.base import Support
-from regimekit.model.params import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior, Prior
-from regimekit.model.params.spec import Domain, Mode, ParamSpec
-from regimekit.plugins import register
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.dists import normal_logpdf, sample_normal
+from hsmmkit.model.emission.base import Support
+from hsmmkit.model.params import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior, Prior
+from hsmmkit.model.params.spec import Domain, Mode, ParamSpec
+from hsmmkit.plugins import register
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import EmissionCfg, ParamCfg, PriorCfg
+    from hsmmkit.config.schema import EmissionCfg, ParamCfg, PriorCfg
 
 
 def _prior_from_cfg(cfg: PriorCfg, init: np.ndarray | None) -> Prior:

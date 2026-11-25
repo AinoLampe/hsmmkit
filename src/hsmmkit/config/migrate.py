@@ -9,10 +9,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from regimekit.utils.errors import ConfigError
+from hsmmkit.utils.errors import ConfigError
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import ProjectConfig
+    from hsmmkit.config.schema import ProjectConfig
 
 CURRENT_SCHEMA_VERSION = 1  # of the core schema (`ProjectConfig.SCHEMA_VERSION`)
 

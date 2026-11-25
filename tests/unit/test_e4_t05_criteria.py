@@ -7,9 +7,9 @@ import math
 import numpy as np
 import pytest
 
-from regimekit.engine.criteria import information_criteria, posterior_entropy
-from regimekit.model.params import ParamManager, ParamSpec
-from regimekit.utils.errors import NumericalError
+from hsmmkit.engine.criteria import information_criteria, posterior_entropy
+from hsmmkit.model.params import ParamManager, ParamSpec
+from hsmmkit.utils.errors import NumericalError
 
 
 def test_e4_t05_aic_bic_hand_checked() -> None:

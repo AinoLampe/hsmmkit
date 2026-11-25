@@ -13,14 +13,14 @@ from typing import TYPE_CHECKING
 
 import jax.numpy as jnp
 
-from regimekit.model.params import Params
-from regimekit.model.transition import transition_matrix_generator
-from regimekit.utils.errors import DataError
-from regimekit.utils.typing import Array
+from hsmmkit.model.params import Params
+from hsmmkit.model.transition import transition_matrix_generator
+from hsmmkit.utils.errors import DataError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
 
 TransitionFn = Callable[[Params, "Array | None", "Array | None", Array], tuple[Array, Array]]
 

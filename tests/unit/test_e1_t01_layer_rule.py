@@ -1,10 +1,10 @@
 """E1-T01 AC4/AC5: layer rule and profile rule, enforced by an AST scan (overview §4.3).
 
 Layer rule: `model, statespace, engine, estimation, inference` must not import anything from
-`regimekit.data` except `regimekit.data.contracts`.
+`hsmmkit.data` except `hsmmkit.data.contracts`.
 
 Profile rule: no core package (`config, data, model, statespace, engine, estimation, inference,
-evaluation, persistence`) may import `regimekit.finance`; only `cli/` and `project.py` may.
+evaluation, persistence`) may import `hsmmkit.finance`; only `cli/` and `project.py` may.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "regimekit"
+SRC = Path(__file__).resolve().parents[2] / "src" / "hsmmkit"
 
 LAYER_RULE_PACKAGES = ("model", "statespace", "engine", "estimation", "inference")
 PROFILE_RULE_PACKAGES = (
@@ -61,7 +61,7 @@ def _find_disallowed_imports(
                 elif module.startswith(disallowed_prefix + "."):
                     violations.append(f"{path}: from {module} import ...")
                 elif module == parent:
-                    # e.g. `from regimekit import data` importing the disallowed package itself
+                    # e.g. `from hsmmkit import data` importing the disallowed package itself
                     for alias in node.names:
                         if alias.name == child:
                             violations.append(f"{path}: from {module} import {alias.name}")
@@ -69,34 +69,34 @@ def _find_disallowed_imports(
 
 
 def test_e1_t01_layer_rule_no_data_imports_beyond_contracts() -> None:
-    """`model/statespace/engine/estimation/inference` only import `regimekit.data.contracts`."""
+    """`model/statespace/engine/estimation/inference` only import `hsmmkit.data.contracts`."""
     files = _iter_python_files(*LAYER_RULE_PACKAGES)
     violations = _find_disallowed_imports(
-        files, disallowed_prefix="regimekit.data", allowed_exact="regimekit.data.contracts"
+        files, disallowed_prefix="hsmmkit.data", allowed_exact="hsmmkit.data.contracts"
     )
     assert not violations, "layer rule violated:\n" + "\n".join(violations)
 
 
 def test_e1_t01_profile_rule_no_core_package_imports_finance() -> None:
-    """No core package imports `regimekit.finance` (`cli/` and `project.py` are exempt)."""
+    """No core package imports `hsmmkit.finance` (`cli/` and `project.py` are exempt)."""
     files = _iter_python_files(*PROFILE_RULE_PACKAGES)
-    violations = _find_disallowed_imports(files, disallowed_prefix="regimekit.finance")
+    violations = _find_disallowed_imports(files, disallowed_prefix="hsmmkit.finance")
     assert not violations, "profile rule violated:\n" + "\n".join(violations)
 
 
 def test_e1_t01_layer_rule_scanner_catches_a_synthetic_violation(tmp_path: Path) -> None:
-    """Sanity check: the scanner actually flags a disallowed `regimekit.data.cache` import."""
+    """Sanity check: the scanner actually flags a disallowed `hsmmkit.data.cache` import."""
     bad_file = tmp_path / "bad.py"
-    bad_file.write_text("from regimekit.data import cache\n")
+    bad_file.write_text("from hsmmkit.data import cache\n")
     violations = _find_disallowed_imports(
-        [bad_file], disallowed_prefix="regimekit.data", allowed_exact="regimekit.data.contracts"
+        [bad_file], disallowed_prefix="hsmmkit.data", allowed_exact="hsmmkit.data.contracts"
     )
     assert violations
 
 
 def test_e1_t01_profile_rule_scanner_catches_a_synthetic_violation(tmp_path: Path) -> None:
-    """Sanity check: the scanner actually flags a disallowed `regimekit.finance` import."""
+    """Sanity check: the scanner actually flags a disallowed `hsmmkit.finance` import."""
     bad_file = tmp_path / "bad.py"
-    bad_file.write_text("import regimekit.finance.providers\n")
-    violations = _find_disallowed_imports([bad_file], disallowed_prefix="regimekit.finance")
+    bad_file.write_text("import hsmmkit.finance.providers\n")
+    violations = _find_disallowed_imports([bad_file], disallowed_prefix="hsmmkit.finance")
     assert violations

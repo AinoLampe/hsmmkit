@@ -1,5 +1,5 @@
 [tool.towncrier]
-name = "regimekit"
+name = "hsmmkit"
 directory = "changelog.d"
 filename = "CHANGELOG.md"
 start_string = "<!-- towncrier release notes start -->\n"

@@ -46,7 +46,8 @@ def test_e0_t04_adr_status_is_accepted(number: str) -> None:
     text = path.read_text(encoding="utf-8")
     match = re.search(r"## Status\s*\n+(\w+)", text)
     assert match is not None
-    assert match.group(1).strip().lower() == "accepted"
+    expected = "superseded" if number == "0012" else "accepted"  # ADR-0012 is superseded by ADR-0014
+    assert match.group(1).strip().lower() == expected
 
 
 @pytest.mark.parametrize("number", sorted(REQUIRED_ADR_NUMBERS))

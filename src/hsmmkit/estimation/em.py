@@ -30,25 +30,25 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine, _regime_log_emis
-from regimekit.estimation.init import observed_rows, rolling_kmeans
-from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.params.manager import ParamManager
-from regimekit.model.transition import JumpTransition
-from regimekit.statespace.builders import build_expanded
-from regimekit.utils.clock import is_irregular
-from regimekit.utils.errors import ConfigError, NumericalError
-from regimekit.utils.rng import PURPOSE_EM_INIT, key_for
-from regimekit.utils.typing import Array
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine, _regime_log_emis
+from hsmmkit.estimation.init import observed_rows, rolling_kmeans
+from hsmmkit.model.duration.geometric import GeometricDuration
+from hsmmkit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.model.transition import JumpTransition
+from hsmmkit.statespace.builders import build_expanded
+from hsmmkit.utils.clock import is_irregular
+from hsmmkit.utils.errors import ConfigError, NumericalError
+from hsmmkit.utils.rng import PURPOSE_EM_INIT, key_for
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import EstimationSection
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.model.params import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
+    from hsmmkit.config.schema import EstimationSection
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.model.params import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
 
 _COVARIATE_PARAMS = frozenset(
     {"emission.gamma", "emission.delta", "duration.c", "transition.a", "transition.b"}

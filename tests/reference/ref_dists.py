@@ -1,7 +1,7 @@
 """Pure NumPy/SciPy reference distributions: shifted negative-binomial/geometric pmf, GBM density.
 
-No `regimekit` import (CLAUDE.md §6). Slow, explicit-enumeration implementations -- ground truth
-for `regimekit.model.dists` golden tests.
+No `hsmmkit` import (CLAUDE.md §6). Slow, explicit-enumeration implementations -- ground truth
+for `hsmmkit.model.dists` golden tests.
 """
 
 from __future__ import annotations

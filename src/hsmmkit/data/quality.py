@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from regimekit.data.contracts import ObservationSet
+from hsmmkit.data.contracts import ObservationSet
 
 GAP_FACTOR = 1.5
 OUTLIER_MADS = 8.0

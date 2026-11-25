@@ -1,7 +1,7 @@
 """Data contracts: the only shared types between the data layer and the model layer (FR-D07).
 
 `PreparedDataset` is the sole contract the model layer (`model`, `statespace`, `engine`,
-`estimation`, `inference`) may import from `regimekit.data` (the layer rule, overview §4.3).
+`estimation`, `inference`) may import from `hsmmkit.data` (the layer rule, overview §4.3).
 """
 
 from __future__ import annotations
@@ -13,11 +13,11 @@ from typing import Any, Literal
 import jax
 import numpy as np
 
-from regimekit.utils.clock import get_clock
-from regimekit.utils.errors import DataError
-from regimekit.utils.typing import Array
+from hsmmkit.utils.clock import get_clock
+from hsmmkit.utils.errors import DataError
+from hsmmkit.utils.typing import Array
 
-Clock = str  # the name of a registered clock (`regimekit.data.clocks`, `PreparedDataset.clock`)
+Clock = str  # the name of a registered clock (`hsmmkit.data.clocks`, `PreparedDataset.clock`)
 Support = Literal["real", "count", "binary", "categorical"]
 
 

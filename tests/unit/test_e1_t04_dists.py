@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from regimekit.model import dists
+from hsmmkit.model import dists
 
 D_MAX = 20
 DT = 1.0 / 252.0

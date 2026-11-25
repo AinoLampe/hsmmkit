@@ -1,6 +1,6 @@
 """Enumeration reference for the explicit-duration HSMM with per-segment-start rows (E4-T06a).
 
-Pure NumPy (no `regimekit` import, CLAUDE.md §6). Kept apart from `ref_hsmm.py` (E4-T01 limits that
+Pure NumPy (no `hsmmkit` import, CLAUDE.md §6). Kept apart from `ref_hsmm.py` (E4-T01 limits that
 file to 300 lines); reuses its cumulative-emission and segment helpers.
 """
 

@@ -7,9 +7,9 @@ import dataclasses
 import numpy as np
 import pytest
 
-from regimekit.data.calendar import align_covariate, build_grid
-from regimekit.data.contracts import CovariateSeries, ObservationSet
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.data.calendar import align_covariate, build_grid
+from hsmmkit.data.contracts import CovariateSeries, ObservationSet
+from hsmmkit.utils.errors import ConfigError, DataError
 
 DAYS = np.arange("2024-01-01", "2024-01-13", dtype="datetime64[D]").astype(
     "datetime64[ns]"

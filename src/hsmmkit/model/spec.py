@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Literal
 import equinox as eqx
 
 if TYPE_CHECKING:
-    from regimekit.model.duration.base import DurationFamily
-    from regimekit.model.emission.base import EmissionFamily
-    from regimekit.model.params.spec import ParamSpec
-    from regimekit.model.transition import TransitionModel
+    from hsmmkit.model.duration.base import DurationFamily
+    from hsmmkit.model.emission.base import EmissionFamily
+    from hsmmkit.model.params.spec import ParamSpec
+    from hsmmkit.model.transition import TransitionModel
 
 
 class ModelSpec(eqx.Module):

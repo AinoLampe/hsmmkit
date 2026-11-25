@@ -12,9 +12,9 @@ from hypothesis import given
 from hypothesis import strategies as st
 from scipy.special import logsumexp
 
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.statespace.index import StateSpace
-from regimekit.utils.errors import NumericalError
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.statespace.index import StateSpace
+from hsmmkit.utils.errors import NumericalError
 from tests.golden.test_e4_t03a_forward import reference_full
 from tests.golden.test_e4_t03b_forward_backward import to_probs
 from tests.helpers.engine_fixtures import Scenario, make_dataset, make_scenario
@@ -128,7 +128,7 @@ def test_e4_t03b_posterior_is_a_pytree_and_grad_of_loglik_is_finite() -> None:
 @pytest.mark.parametrize("bad", ["log_alpha", "log_beta", "smoothed", "loglik"])
 def test_e4_t03b_each_boundary_guard_raises(bad: str) -> None:
     """AC6: every guard in `_check_posterior` fires on its own array."""
-    from regimekit.engine.expanded_hmm import _check_posterior
+    from hsmmkit.engine.expanded_hmm import _check_posterior
 
     ok = {"log_alpha": jnp.zeros((3, 2)), "log_beta": jnp.zeros((3, 2)), "smoothed": jnp.ones((3, 2)) / 2}
     ok["loglik"] = jnp.asarray(-1.0)

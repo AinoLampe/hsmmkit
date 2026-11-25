@@ -41,9 +41,9 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
-from regimekit.config.schema import CovariateCfg, DataSection, EntryPoint
-from regimekit.data.calendar import Grid, align_covariate, build_grid
-from regimekit.data.contracts import (
+from hsmmkit.config.schema import CovariateCfg, DataSection, EntryPoint
+from hsmmkit.data.calendar import Grid, align_covariate, build_grid
+from hsmmkit.data.contracts import (
     Clock,
     CovariateSeries,
     ObservationSet,
@@ -51,10 +51,10 @@ from regimekit.data.contracts import (
     PrepStats,
     Support,
 )
-from regimekit.data.transforms import apply_transforms, get_observation_transform
-from regimekit.utils.clock import get_clock, parse_clock_options
-from regimekit.utils.errors import ConfigError, DataError
-from regimekit.utils.logging import get_logger
+from hsmmkit.data.transforms import apply_transforms, get_observation_transform
+from hsmmkit.utils.clock import get_clock, parse_clock_options
+from hsmmkit.utils.errors import ConfigError, DataError
+from hsmmkit.utils.logging import get_logger
 
 MIN_STD = 1e-12
 ENTRY_POINTS: tuple[EntryPoint, ...] = get_args(EntryPoint)

@@ -1,4 +1,4 @@
-"""Nox sessions for regimekit's quality gates.
+"""Nox sessions for hsmmkit's quality gates.
 
 Sessions run inside the project's own uv-managed environment (`uv run ...`) rather than
 nox-managed virtualenvs, so `uv sync --all-groups` is the single source of truth for
@@ -29,7 +29,7 @@ def types(session: nox.Session) -> None:
 @nox.session
 def tests(session: nox.Session) -> None:
     """Fast test suite with coverage (excludes slow/live/benchmark/gpu)."""
-    env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
+    env = dict(os.environ, HSMMKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
     session.run(
         "uv",
         "run",
@@ -46,27 +46,9 @@ def tests(session: nox.Session) -> None:
 
 
 @nox.session
-def core(session: nox.Session) -> None:
-    """Core suite with `regimekit.finance` and the provider packages blocked (`HSMM_CORE_ONLY=1`, E10-T01)."""
-    env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu", HSMM_CORE_ONLY="1")
-    session.run(
-        "uv",
-        "run",
-        "pytest",
-        "-m",
-        "not finance and not live and not slow and not benchmark and not gpu",
-        "-n",
-        "auto",
-        *session.posargs,
-        env=env,
-        external=True,
-    )
-
-
-@nox.session
 def recovery(session: nox.Session) -> None:
     """Full parameter-recovery suite (slow: six scenarios, ~4 h on a laptop; the weekly CI job)."""
-    env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
+    env = dict(os.environ, HSMMKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
     session.run(
         "uv",
         "run",
@@ -74,7 +56,6 @@ def recovery(session: nox.Session) -> None:
         "-m",
         "slow",
         "--ignore=tests/recovery/test_e5_t05a_recovery_smoke.py",
-        "--ignore=tests/integration/test_e8_t03_notebook.py",
         env=env,
         external=True,
     )
@@ -83,7 +64,7 @@ def recovery(session: nox.Session) -> None:
 @nox.session
 def recovery_smoke(session: nox.Session) -> None:
     """Quick recovery smoke run at T=5000 (one scenario, a few minutes; the nightly CI job)."""
-    env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
+    env = dict(os.environ, HSMMKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
     session.run(
         "uv",
         "run",
@@ -91,22 +72,6 @@ def recovery_smoke(session: nox.Session) -> None:
         "-m",
         "slow",
         "tests/recovery/test_e5_t05a_recovery_smoke.py",
-        env=env,
-        external=True,
-    )
-
-
-@nox.session
-def examples(session: nox.Session) -> None:
-    """Execute the tutorial notebook offline on synthetic data (a few minutes)."""
-    env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
-    session.run(
-        "uv",
-        "run",
-        "pytest",
-        "-m",
-        "slow",
-        "tests/integration/test_e8_t03_notebook.py",
         env=env,
         external=True,
     )
@@ -122,5 +87,5 @@ def docs(session: nox.Session) -> None:
 @nox.session
 def bench(session: nox.Session) -> None:
     """Benchmark suite."""
-    env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
+    env = dict(os.environ, HSMMKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
     session.run("uv", "run", "pytest", "-m", "benchmark", env=env, external=True)

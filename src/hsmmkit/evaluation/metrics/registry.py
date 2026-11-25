@@ -19,8 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from regimekit.plugins import CORE_PROVENANCE, REGISTRY
-from regimekit.utils.errors import ConfigError
+from hsmmkit.plugins import CORE_PROVENANCE, REGISTRY
+from hsmmkit.utils.errors import ConfigError
 
 Need = str  # "forecast", "posterior", "fit", "labels", or the name of an origin hook's extras frame
 MetricValue = float | dict[str, float]
@@ -65,9 +65,9 @@ class FunctionMetric:
 
 
 _BUILTIN_MODULES = (
-    "regimekit.evaluation.metrics.predictive",
-    "regimekit.evaluation.metrics.model",
-    "regimekit.evaluation.metrics.labels",
+    "hsmmkit.evaluation.metrics.predictive",
+    "hsmmkit.evaluation.metrics.model",
+    "hsmmkit.evaluation.metrics.labels",
 )
 
 

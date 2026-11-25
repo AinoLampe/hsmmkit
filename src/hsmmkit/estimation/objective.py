@@ -27,16 +27,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.data.contracts import PreparedDataset, PrepStats
-from regimekit.utils.clock import is_irregular
-from regimekit.utils.errors import NumericalError
-from regimekit.utils.typing import Array
+from hsmmkit.data.contracts import PreparedDataset, PrepStats
+from hsmmkit.utils.clock import is_irregular
+from hsmmkit.utils.errors import NumericalError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.engine.base import InferenceEngine
-    from regimekit.model.params import ParamManager, Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
+    from hsmmkit.engine.base import InferenceEngine
+    from hsmmkit.model.params import ParamManager, Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
 
 _CANONICAL_STATS = PrepStats(
     cov_mean=np.zeros(0),

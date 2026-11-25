@@ -12,8 +12,8 @@ from typing import Protocol
 
 import numpy as np
 
-from regimekit.plugins import REGISTRY, provenance_of
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.plugins import REGISTRY, provenance_of
+from hsmmkit.utils.errors import ConfigError, DataError
 
 
 class ObservationTransform(Protocol):

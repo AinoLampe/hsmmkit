@@ -1,6 +1,6 @@
 """E4-T01: self-tests for the pure NumPy reference implementations themselves.
 
-No `regimekit` import (CLAUDE.md §6) -- these tests validate `tests/reference/` in isolation, so
+No `hsmmkit` import (CLAUDE.md §6) -- these tests validate `tests/reference/` in isolation, so
 later golden tests (E4-T03a, E4-T06a, ...) can trust it as ground truth.
 """
 
@@ -167,10 +167,10 @@ def test_e4_t01_phase_explicit_equivalence_r1_order1(seed: int) -> None:
     "filename", ["ref_hmm.py", "ref_hsmm.py", "ref_expansion.py", "ref_dists.py", "__init__.py"]
 )
 def test_e4_t01_reference_files_under_300_lines_no_jax(filename: str) -> None:
-    """Every `tests/reference/*.py` module is < 300 lines and never imports `jax` or `regimekit`."""
+    """Every `tests/reference/*.py` module is < 300 lines and never imports `jax` or `hsmmkit`."""
     text = (REFERENCE_DIR / filename).read_text(encoding="utf-8")
     n_lines = len(text.splitlines())
     assert n_lines < 300, f"{filename} has {n_lines} lines"
     assert "import jax" not in text
-    assert "import regimekit" not in text
-    assert "from regimekit" not in text
+    assert "import hsmmkit" not in text
+    assert "from hsmmkit" not in text

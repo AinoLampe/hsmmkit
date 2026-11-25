@@ -1,7 +1,7 @@
-"""Fail if any tracked regimekit package's line coverage is below its required threshold.
+"""Fail if any tracked hsmmkit package's line coverage is below its required threshold.
 
 Reads `coverage.json` (produced by `pytest --cov --cov-report=json`) and aggregates covered /
-statement counts per top-level package under `src/regimekit`.
+statement counts per top-level package under `src/hsmmkit`.
 """
 
 from __future__ import annotations
@@ -16,9 +16,9 @@ COVERAGE_JSON = Path("coverage.json")
 
 
 def package_of(file_path: str) -> str | None:
-    """Return the top-level regimekit package name for a coverage.json file path, if any."""
+    """Return the top-level hsmmkit package name for a coverage.json file path, if any."""
     normalized = file_path.replace("\\", "/")
-    marker = "src/regimekit/"
+    marker = "src/hsmmkit/"
     idx = normalized.find(marker)
     if idx == -1:
         return None

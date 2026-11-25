@@ -6,7 +6,7 @@ import sys
 import jax
 import numpy as np
 
-from regimekit.utils.rng import derive_seed, key_for, split_n
+from hsmmkit.utils.rng import derive_seed, key_for, split_n
 
 
 def test_e0_t05_key_for_deterministic_in_process() -> None:
@@ -20,7 +20,7 @@ def test_e0_t05_key_for_deterministic_across_processes() -> None:
     """`key_for(42, 1, 2)` is bitwise identical across two fresh processes."""
     code = (
         "import jax\n"
-        "from regimekit.utils.rng import key_for\n"
+        "from hsmmkit.utils.rng import key_for\n"
         "print(list(jax.random.key_data(key_for(42, 1, 2))))\n"
     )
     results = [

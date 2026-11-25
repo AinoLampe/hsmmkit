@@ -17,7 +17,7 @@ data:
   clock: steps
   bars_per_day: 1
   cache:
-    dir: ~/.cache/regimekit
+    dir: ~/.cache/hsmmkit
     snapshot: latest
     max_age_days: 1
   covariates:

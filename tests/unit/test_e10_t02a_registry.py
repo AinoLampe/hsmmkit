@@ -4,17 +4,14 @@ from __future__ import annotations
 
 import ast
 import importlib
-import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-from regimekit.plugins import KINDS, REGISTRY, Registry, provenance_of, register
-from regimekit.utils.errors import ConfigError
+from hsmmkit.plugins import KINDS, REGISTRY, Registry, provenance_of, register
+from hsmmkit.utils.errors import ConfigError
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "regimekit"
+SRC = Path(__file__).resolve().parents[2] / "src" / "hsmmkit"
 
 
 def test_e10_t02a_register_get_names_entries() -> None:
@@ -31,8 +28,8 @@ def test_e10_t02a_register_get_names_entries() -> None:
 def test_e10_t02a_duplicate_registration_names_both_provenances() -> None:
     """AC1: a duplicate raises ConfigError naming both provenances."""
     reg = Registry()
-    reg.register("metric", "m", 1, provenance="regimekit.core")
-    with pytest.raises(ConfigError, match=r"regimekit\.core.*ext\.pkg|ext\.pkg.*regimekit\.core"):
+    reg.register("metric", "m", 1, provenance="hsmmkit.core")
+    with pytest.raises(ConfigError, match=r"hsmmkit\.core.*ext\.pkg|ext\.pkg.*hsmmkit\.core"):
         reg.register("metric", "m", 2, provenance="ext.pkg")
     assert reg.get("metric", "m") == 1
 
@@ -80,12 +77,12 @@ def test_e10_t02a_all_kinds_exist_and_clock_transform_preset_start_empty_or_regi
 
 
 def test_e10_t02a_decorator_default_provenance_is_the_callers_origin() -> None:
-    """The decorator labels components registered from core, finance and extension modules."""
-    assert provenance_of("regimekit.model.emission.gaussian") == "regimekit.core"
-    assert provenance_of("regimekit.finance.providers.csv") == "regimekit.finance"
-    assert provenance_of("regimekit.finance") == "regimekit.finance"
+    """The decorator labels components registered from core and extension modules."""
+    assert provenance_of("hsmmkit.model.emission.gaussian") == "hsmmkit.core"
+    assert provenance_of("hsmmkit.data.sources.csv") == "hsmmkit.core"
+    assert provenance_of("regimekit.finance") == "regimekit"
     assert provenance_of("myext.emission.foo") == "myext"
-    assert REGISTRY.entries("emission")[0].provenance == "regimekit.core"
+    assert REGISTRY.entries("emission")[0].provenance == "hsmmkit.core"
 
 
 def test_e10_t02a_decorator_registers_and_returns_the_object() -> None:
@@ -102,47 +99,6 @@ def test_e10_t02a_decorator_registers_and_returns_the_object() -> None:
     finally:
         REGISTRY._entries["preset"].pop("__e10_t02a_probe__")
     assert REGISTRY.names("preset") == reg_before
-
-
-@pytest.mark.finance
-def test_e10_t02a_part_one_components_are_registered() -> None:
-    """Every Part I family, init strategy and forecaster resolves through the registry."""
-    import regimekit.evaluation.metrics.registry as metrics
-    import regimekit.finance.emission
-    import regimekit.inference.covariate_forecasters
-    import regimekit.model.build  # noqa: F401
-
-    assert set(REGISTRY.names("emission")) == {"gaussian", "gbm", "product", "student_t"}
-    assert set(REGISTRY.names("duration")) == {
-        "gamma",
-        "geometric",
-        "lognormal",
-        "negbin",
-        "nonparametric",
-        "poisson",
-        "weibull",
-    }
-    assert set(REGISTRY.names("init")) == {"lattice_jitter", "random", "rolling_kmeans", "rollvol_kmeans"}
-    assert set(REGISTRY.names("covariate_forecaster")) == {"ar", "bootstrap", "freeze", "scenario"}
-    assert set(REGISTRY.names("metric")) == set(metrics.available())
-    assert REGISTRY.names("clock") == ("calendar", "steps", "trading")  # E10-T03
-    assert REGISTRY.names("transform") == ("diff", "identity", "log_returns")  # E10-T05
-    assert REGISTRY.names("preset") == ()
-
-
-@pytest.mark.finance
-def test_e10_t02a_config_resolves_every_part_one_family_through_the_registry() -> None:
-    """The config -> ModelSpec lookups are views over the registry (no private dicts)."""
-    import regimekit.finance.emission  # noqa: F401  (registers `gbm`)
-    from regimekit.model.build import DURATION_FAMILIES, EMISSION_FAMILIES
-
-    assert not isinstance(EMISSION_FAMILIES, dict)
-    assert not isinstance(DURATION_FAMILIES, dict)
-    assert set(EMISSION_FAMILIES) == {"gaussian", "gbm", "student_t"}  # `product` has no config name
-    assert set(DURATION_FAMILIES) == set(REGISTRY.names("duration"))
-    for name in DURATION_FAMILIES:
-        assert DURATION_FAMILIES[name] is REGISTRY.get("duration", name)
-    assert EMISSION_FAMILIES.get("nope") is None
 
 
 def _is_dict_value(value: ast.expr | None) -> bool:
@@ -179,25 +135,17 @@ def test_e10_t02a_no_module_level_name_dicts_remain() -> None:
     assert not offenders, offenders
 
 
-def test_e10_t02a_core_only_registry_has_no_finance_emissions() -> None:
-    """AC4: with HSMM_CORE_ONLY=1 no emission has provenance regimekit.finance (vacuous until E10-T06)."""
-    code = (
-        "import sys; sys.path.insert(0, 'tests'); import conftest\n"
-        "from regimekit.plugins import REGISTRY\n"
-        "import regimekit.model.build\n"
-        "print(sorted({e.provenance for e in REGISTRY.entries('emission')}))\n"
-    )
-    root = SRC.parents[1]
-    env = dict(os.environ, HSMM_CORE_ONLY="1")
-    out = subprocess.run(
-        [sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True, check=True
-    )
-    assert out.stdout.strip().splitlines()[-1] == "['regimekit.core']"
+def test_e10_t02a_every_registered_emission_is_a_core_component() -> None:
+    """AC4: no emission in the registry has an application provenance."""
+    import hsmmkit.model.build  # noqa: F401
+    from hsmmkit.plugins import REGISTRY
+
+    assert {e.provenance for e in REGISTRY.entries("emission")} == {"hsmmkit.core"}
 
 
 def test_e10_t02a_metric_facade_keeps_its_messages_and_replace() -> None:
     """Metric facade keeps its messages and replace."""
-    from regimekit.evaluation.metrics import registry as m
+    from hsmmkit.evaluation.metrics import registry as m
 
     names = m.available()
     assert names == sorted(names)
@@ -207,4 +155,4 @@ def test_e10_t02a_metric_facade_keeps_its_messages_and_replace() -> None:
     assert m.register(first, replace=True) is first
     with pytest.raises(ConfigError, match=r"unknown metric\(s\) \['nope'\]; known:"):
         m.resolve(["nope"])
-    importlib.import_module("regimekit.evaluation.metrics.registry")
+    importlib.import_module("hsmmkit.evaluation.metrics.registry")

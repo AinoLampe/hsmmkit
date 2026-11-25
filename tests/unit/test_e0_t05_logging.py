@@ -8,10 +8,10 @@ import sys
 import pytest
 import structlog
 
-from regimekit.utils.logging import configure_logging, get_logger
+from hsmmkit.utils.logging import configure_logging, get_logger
 
 _CODE = (
-    "from regimekit.utils.logging import configure_logging, get_logger\n"
+    "from hsmmkit.utils.logging import configure_logging, get_logger\n"
     "configure_logging('INFO')\n"
     "get_logger('t').info('hello', x=1)\n"
 )

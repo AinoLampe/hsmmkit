@@ -9,7 +9,7 @@ jobs:
   gpu-tests:
     runs-on: [self-hosted, gpu]
     env:
-      REGIMEKIT_TYPECHECK: "1"
+      HSMMKIT_TYPECHECK: "1"
       CI: "1"
     steps:
       - uses: actions/checkout@v5

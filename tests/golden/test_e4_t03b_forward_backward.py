@@ -6,7 +6,7 @@ import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st
 
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
 from tests.golden.test_e4_t03a_forward import assert_matches, reference_full
 from tests.helpers.engine_fixtures import make_scenario
 

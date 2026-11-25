@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.model.params import ParamManager
-from regimekit.model.transition import (
+from hsmmkit.model.params import ParamManager
+from hsmmkit.model.transition import (
     JumpTransition,
     build_memory_layout,
     transition_matrix_generator,

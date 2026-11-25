@@ -6,7 +6,7 @@ import jax
 import pytest
 from pytest_benchmark.fixture import BenchmarkFixture
 
-from regimekit.engine.explicit_duration import _forward_backward_core, _loglik_core
+from hsmmkit.engine.explicit_duration import _forward_backward_core, _loglik_core
 from tests.helpers.engine_fixtures import make_explicit_scenario
 
 pytestmark = pytest.mark.benchmark

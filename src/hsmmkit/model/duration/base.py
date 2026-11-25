@@ -12,13 +12,13 @@ from typing import TYPE_CHECKING, Literal, Protocol
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model.params import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior, Prior
-from regimekit.model.params.spec import Mode, ParamSpec
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.params import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior, Prior
+from hsmmkit.model.params.spec import Mode, ParamSpec
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import ParamCfg, PriorCfg
+    from hsmmkit.config.schema import ParamCfg, PriorCfg
 
 Params = dict[str, Array]
 

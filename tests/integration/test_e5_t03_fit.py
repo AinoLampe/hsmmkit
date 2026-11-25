@@ -8,12 +8,12 @@ import warnings
 import numpy as np
 import pytest
 
-from regimekit.config.schema import EstimationSection
-from regimekit.estimation import fit
-from regimekit.estimation.init import lattice_jitter, random, rolling_kmeans
-from regimekit.estimation.objective import make_objective
-from regimekit.estimation.optimizers import RunRecord
-from regimekit.utils.rng import key_for
+from hsmmkit.config.schema import EstimationSection
+from hsmmkit.estimation import fit
+from hsmmkit.estimation.init import lattice_jitter, random, rolling_kmeans
+from hsmmkit.estimation.objective import make_objective
+from hsmmkit.estimation.optimizers import RunRecord
+from hsmmkit.utils.rng import key_for
 from tests.helpers.objective_fixtures import make_case
 
 
@@ -43,7 +43,7 @@ def test_e5_t03_best_of_restarts_selection(monkeypatch: pytest.MonkeyPatch) -> N
             u=u0,  # type: ignore[arg-type]
         )
 
-    monkeypatch.setattr("regimekit.estimation.map.minimize", fake_minimize)
+    monkeypatch.setattr("hsmmkit.estimation.map.minimize", fake_minimize)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         result = fit(case.spec, case.data, cfg, seed=1)
@@ -79,8 +79,8 @@ def test_e5_t03_no_guard_warns_and_sorts_by_sigma() -> None:
 
 
 def test_e5_t03_estimator_is_map_and_import_works() -> None:
-    """AC6 (part): `FitResult.estimator == "map"`; `from regimekit.estimation import fit` works."""
-    from regimekit.estimation import fit as reexported_fit
+    """AC6 (part): `FitResult.estimator == "map"`; `from hsmmkit.estimation import fit` works."""
+    from hsmmkit.estimation import fit as reexported_fit
 
     assert reexported_fit is fit
 

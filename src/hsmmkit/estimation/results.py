@@ -7,10 +7,10 @@ from typing import Any, Literal
 
 import pandas as pd
 
-from regimekit.data.contracts import PrepStats
-from regimekit.model.params import Params
-from regimekit.model.spec import ModelSpec
-from regimekit.utils.typing import Array
+from hsmmkit.data.contracts import PrepStats
+from hsmmkit.model.params import Params
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.utils.typing import Array
 
 
 @dataclass(frozen=True)

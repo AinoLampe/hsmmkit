@@ -18,10 +18,10 @@ from typing import TYPE_CHECKING
 import equinox as eqx
 import jax.numpy as jnp
 
-from regimekit.utils.typing import Array
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.model.transition import MemoryLayout
+    from hsmmkit.model.transition import MemoryLayout
 
 
 def _as_int_array(x: object) -> Array:

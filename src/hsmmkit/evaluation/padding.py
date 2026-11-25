@@ -17,9 +17,9 @@ import jax.numpy as jnp
 import numpy as np
 from jax.typing import DTypeLike
 
-from regimekit.data.contracts import PreparedDataset
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.data.contracts import PreparedDataset
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 PAD_MULTIPLE = 256
 

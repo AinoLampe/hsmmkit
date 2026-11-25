@@ -16,9 +16,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from regimekit.data.contracts import ObservationSet
-from regimekit.data.sources.base import get_source, validate_options
-from regimekit.utils.errors import DataError
+from hsmmkit.data.contracts import ObservationSet
+from hsmmkit.data.sources.base import get_source, validate_options
+from hsmmkit.utils.errors import DataError
 
 FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "sources"
 OBSERVATION_COLUMNS = ["y1", "y2"]

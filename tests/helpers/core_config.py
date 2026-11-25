@@ -11,8 +11,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from regimekit.config.schema import ProjectConfig, parse_project_config
-from regimekit.data.contracts import ObservationSet
+from hsmmkit.config.schema import ProjectConfig, parse_project_config
+from hsmmkit.data.contracts import ObservationSet
 
 N_OBS = 300
 

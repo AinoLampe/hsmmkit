@@ -13,31 +13,31 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.estimation.init import observed_rows
-from regimekit.estimation.objective import canonical_data, make_objective
-from regimekit.estimation.optimizers import minimize
-from regimekit.estimation.results import FitResult
-from regimekit.model.lattice import has_identifiability_guard, post_sort_states
-from regimekit.model.params.manager import ParamManager
-from regimekit.plugins import REGISTRY
-from regimekit.statespace.builders import build_expanded, build_explicit
-from regimekit.utils.errors import ConfigError, NumericalError
-from regimekit.utils.jax_setup import setup as jax_setup
-from regimekit.utils.logging import get_logger
-from regimekit.utils.rng import key_for
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.estimation.init import observed_rows
+from hsmmkit.estimation.objective import canonical_data, make_objective
+from hsmmkit.estimation.optimizers import minimize
+from hsmmkit.estimation.results import FitResult
+from hsmmkit.model.lattice import has_identifiability_guard, post_sort_states
+from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.plugins import REGISTRY
+from hsmmkit.statespace.builders import build_expanded, build_explicit
+from hsmmkit.utils.errors import ConfigError, NumericalError
+from hsmmkit.utils.jax_setup import setup as jax_setup
+from hsmmkit.utils.logging import get_logger
+from hsmmkit.utils.rng import key_for
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import EstimationSection
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.engine.base import InferenceEngine
-    from regimekit.model.params.manager import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
-    from regimekit.utils.typing import Array
+    from hsmmkit.config.schema import EstimationSection
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.engine.base import InferenceEngine
+    from hsmmkit.model.params.manager import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
+    from hsmmkit.utils.typing import Array
 
-_LOG = get_logger("regimekit.estimation.map")
+_LOG = get_logger("hsmmkit.estimation.map")
 
 _WARM_START = "warm_start"
 

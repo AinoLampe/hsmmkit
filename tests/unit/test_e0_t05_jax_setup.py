@@ -4,7 +4,7 @@
 calling `setup()` after a prior `jax.config.update("jax_enable_x64", False)` in the same process
 re-enables x64 successfully (verified empirically; see `test_e0_t05_setup_succeeds_after_prior_x64_disable`
 below and the STATUS.md finding for E0-T05), so the ticket's literal "disable x64, then import
-regimekit raises" scenario cannot be reproduced that way. The defensive guard itself — raising
+hsmmkit raises" scenario cannot be reproduced that way. The defensive guard itself — raising
 `NumericalError` when the post-`update` dtype check fails — is instead verified directly by forcing
 the failure via monkeypatch, which is the scenario the guard exists to catch (e.g. a future JAX
 version, or a wrapper library, that ignores or overrides the config update).
@@ -17,13 +17,13 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from regimekit.utils.errors import NumericalError
-from regimekit.utils.jax_setup import setup
+from hsmmkit.utils.errors import NumericalError
+from hsmmkit.utils.jax_setup import setup
 
 
 def test_e0_t05_setup_raises_when_x64_check_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """`setup()` raises `NumericalError` if x64 is not actually enabled after the config update."""
-    import regimekit.utils.jax_setup as jax_setup_module
+    import hsmmkit.utils.jax_setup as jax_setup_module
 
     class _FakeZeros:
         dtype = jnp.float32
@@ -35,7 +35,7 @@ def test_e0_t05_setup_raises_when_x64_check_fails(monkeypatch: pytest.MonkeyPatc
 
 def test_e0_t05_setup_raises_for_gpu_without_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     """`setup(device="gpu")` raises `NumericalError` when no GPU backend is available."""
-    import regimekit.utils.jax_setup as jax_setup_module
+    import hsmmkit.utils.jax_setup as jax_setup_module
 
     monkeypatch.setattr(jax_setup_module, "_has_gpu", lambda: False)
     with pytest.raises(NumericalError, match="no GPU backend"):
@@ -44,7 +44,7 @@ def test_e0_t05_setup_raises_for_gpu_without_backend(monkeypatch: pytest.MonkeyP
 
 def test_e0_t05_setup_auto_falls_back_to_cpu_without_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
     """`setup(device="auto")` resolves to CPU (and succeeds) when no GPU backend exists."""
-    import regimekit.utils.jax_setup as jax_setup_module
+    import hsmmkit.utils.jax_setup as jax_setup_module
 
     monkeypatch.setattr(jax_setup_module, "_has_gpu", lambda: False)
     setup(device="auto")
@@ -59,10 +59,10 @@ def test_e0_t05_setup_succeeds_after_prior_x64_disable() -> None:
 
 
 def test_e0_t05_import_in_fresh_subprocess_ends_with_x64_enabled() -> None:
-    """A fresh subprocess that disables x64 before importing `regimekit` ends up with x64 enabled."""
+    """A fresh subprocess that disables x64 before importing `hsmmkit` ends up with x64 enabled."""
     code = (
         "import jax; jax.config.update('jax_enable_x64', False)\n"
-        "import regimekit\n"
+        "import hsmmkit\n"
         "import jax.numpy as jnp\n"
         "assert jnp.zeros(1).dtype == jnp.float64\n"
         "print('OK')\n"

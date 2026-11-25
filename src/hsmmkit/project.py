@@ -24,29 +24,29 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pydantic
 
-from regimekit.config.schema import BacktestCfg, ProjectConfig
-from regimekit.config.yaml_io import dump_resolved, load_config
-from regimekit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
-from regimekit.data.prepare import Preparer, prep_stats_to_json
-from regimekit.data.sources import load_data as load_source_data
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.estimation import fit as fit_model
-from regimekit.estimation.report import diagnose
-from regimekit.estimation.results import FitResult
-from regimekit.estimation.selftest import SelftestResult, run_selftest
-from regimekit.evaluation.backtest import OriginHook, run_backtest
-from regimekit.evaluation.compare import CompareEntry, check_snapshots, comparison_table, render_markdown
-from regimekit.evaluation.report import build_report, versions
-from regimekit.evaluation.results import BacktestResult
-from regimekit.inference.covariate_forecasters import CovariateForecaster, make_forecaster
-from regimekit.inference.decode import decode as decode_posterior
-from regimekit.inference.forecast import MonteCarloForecaster
-from regimekit.inference.results import ForecastResult, PosteriorResult
-from regimekit.inference.simulate import segments_of, simulate_paths
-from regimekit.model.build import build_model_spec
-from regimekit.model.params.manager import ParamManager
-from regimekit.persistence.results import (
+from hsmmkit.config.schema import BacktestCfg, ProjectConfig
+from hsmmkit.config.yaml_io import dump_resolved, load_config
+from hsmmkit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
+from hsmmkit.data.prepare import Preparer, prep_stats_to_json
+from hsmmkit.data.sources import load_data as load_source_data
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.estimation import fit as fit_model
+from hsmmkit.estimation.report import diagnose
+from hsmmkit.estimation.results import FitResult
+from hsmmkit.estimation.selftest import SelftestResult, run_selftest
+from hsmmkit.evaluation.backtest import OriginHook, run_backtest
+from hsmmkit.evaluation.compare import CompareEntry, check_snapshots, comparison_table, render_markdown
+from hsmmkit.evaluation.report import build_report, versions
+from hsmmkit.evaluation.results import BacktestResult
+from hsmmkit.inference.covariate_forecasters import CovariateForecaster, make_forecaster
+from hsmmkit.inference.decode import decode as decode_posterior
+from hsmmkit.inference.forecast import MonteCarloForecaster
+from hsmmkit.inference.results import ForecastResult, PosteriorResult
+from hsmmkit.inference.simulate import segments_of, simulate_paths
+from hsmmkit.model.build import build_model_spec
+from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.persistence.results import (
     BACKTEST_META,
     read_backtest,
     write_backtest,
@@ -55,12 +55,12 @@ from regimekit.persistence.results import (
     write_prepared,
     write_simulation,
 )
-from regimekit.persistence.store import ModelStore
-from regimekit.statespace.builders import build_expanded, build_explicit
-from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
-from regimekit.utils.errors import ConfigError, PersistenceError, RegimekitError
-from regimekit.utils.logging import get_logger
-from regimekit.utils.rng import PURPOSE_SIMULATE, key_for
+from hsmmkit.persistence.store import ModelStore
+from hsmmkit.statespace.builders import build_expanded, build_explicit
+from hsmmkit.utils.clock import CALENDAR_DAYS_PER_YEAR
+from hsmmkit.utils.errors import ConfigError, HsmmkitError, PersistenceError
+from hsmmkit.utils.logging import get_logger
+from hsmmkit.utils.rng import PURPOSE_SIMULATE, key_for
 
 __all__ = [
     "FetchedInputs",
@@ -232,7 +232,7 @@ def _write_text(path: Path, text: str, what: str) -> None:
 
 
 class Project:
-    """A regimekit project: configuration plus the operations of the CLI as methods.
+    """A hsmmkit project: configuration plus the operations of the CLI as methods.
 
     Args:
         config: The validated configuration (apply overrides before constructing, or use `from_yaml`).
@@ -299,7 +299,7 @@ class Project:
     def _load_raw(self, obj: Any, offline: bool) -> FetchedInputs:  # noqa: ANN401
         """Read the observations and covariates of `data.source` (applications override this)."""
         if offline:
-            get_logger("regimekit.data").debug("offline_ignored", source=self.config.data.source.kind)
+            get_logger("hsmmkit.data").debug("offline_ignored", source=self.config.data.source.kind)
         obs, covs = load_source_data(self.config.data, obj=obj)
         return FetchedInputs(obs, covs)
 
@@ -345,7 +345,7 @@ class Project:
                     f"cannot write the prepared dataset to {out}: {exc}", path=str(out)
                 ) from exc
         self.last_data = dataset
-        get_logger("regimekit.data").info(
+        get_logger("hsmmkit.data").info(
             "load_data_done", out=str(self.out_dir) if write else None, rows=int(dataset.times.shape[0])
         )
         return dataset
@@ -372,7 +372,7 @@ class Project:
     def fit(self, data: PreparedDataset | None = None, *, write: bool = False) -> FitResult:
         """MAP-fit the configured model to `data` (default: `load_data()`).
 
-        `write=True` saves the bundle `<out_dir>/<name>.rkmodel` and writes `fit_report.json` and
+        `write=True` saves the bundle `<out_dir>/<name>.hsmm` and writes `fit_report.json` and
         `config.resolved.yaml`.
 
         Raises:
@@ -386,9 +386,9 @@ class Project:
         self.last_data = dataset
         if write:
             self.validate(write=True)
-            self.save(result, self.out_dir / f"{self.config.project.name}.rkmodel", dataset)
+            self.save(result, self.out_dir / f"{self.config.project.name}.hsmm", dataset)
             self._write_fit_report(result, dataset)
-        get_logger("regimekit.fit").info(
+        get_logger("hsmmkit.fit").info(
             "fit_done", loglik=result.loglik, converged=result.converged, n_iter=result.n_iter
         )
         return result
@@ -398,8 +398,8 @@ class Project:
         space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
         try:
             diagnostics = diagnose(fit, spec, space, engine_for(self.config, spec.engine), data)
-        except RegimekitError as exc:  # the fit itself succeeded: report without diagnostics
-            get_logger("regimekit.fit").warning("diagnostics_unavailable", error=str(exc))
+        except HsmmkitError as exc:  # the fit itself succeeded: report without diagnostics
+            get_logger("hsmmkit.fit").warning("diagnostics_unavailable", error=str(exc))
             diagnostics = {}
         report = {
             "name": self.config.project.name,
@@ -450,9 +450,7 @@ class Project:
         result = decode_posterior(fit, data, engine=engine_for(self.config, fit.spec.engine))
         if write:
             write_posterior(result, self.out_dir, augmented=augmented)
-        get_logger("regimekit.decode").info(
-            "decode_done", rows=int(data.times.shape[0]), loglik=result.loglik
-        )
+        get_logger("hsmmkit.decode").info("decode_done", rows=int(data.times.shape[0]), loglik=result.loglik)
         return result
 
     def forecast(
@@ -495,7 +493,7 @@ class Project:
         )
         if write:
             write_forecast(result, self.out_dir, samples=samples, snapshot_ids=data.snapshot_ids)
-        get_logger("regimekit.forecast").info(
+        get_logger("hsmmkit.forecast").info(
             "forecast_done", horizon=int(result.horizon_times.shape[0]), seed=result.seed
         )
         return result
@@ -583,7 +581,7 @@ class Project:
                 values=output.values,
                 segments=output.segments,
             )
-        get_logger("regimekit.simulate").info(
+        get_logger("hsmmkit.simulate").info(
             "simulate_done", steps=n_steps, n_paths=n_paths, seed=self.config.project.seed
         )
         return output
@@ -615,8 +613,8 @@ class Project:
                 diagnostics = diagnose(
                     last["fit"], spec, space, engine_for(config, spec.engine), last["train"]
                 )
-            except RegimekitError as exc:  # the backtest itself succeeded: report without diagnostics
-                get_logger("regimekit.backtest").warning("diagnostics_unavailable", error=str(exc))
+            except HsmmkitError as exc:  # the backtest itself succeeded: report without diagnostics
+                get_logger("hsmmkit.backtest").warning("diagnostics_unavailable", error=str(exc))
         meta: dict[str, Any] = {
             "config": name,
             "seed": config.project.seed,
@@ -650,7 +648,7 @@ class Project:
         self.last_backtest_meta = meta
         if write:
             self._write_backtest(result, meta, report, self.out_dir)
-        get_logger("regimekit.backtest").info(
+        get_logger("hsmmkit.backtest").info(
             "backtest_done", folds=len(result.folds), wall_s=round(meta["wall_s"], 1)
         )
         return result
@@ -738,5 +736,5 @@ class Project:
 
     @staticmethod
     def selftest(*, seed: int = 0, full: bool = False, device: str = "cpu") -> SelftestResult:
-        """The `regimekit selftest` run (see `estimation.selftest`)."""
+        """The `hsmmkit selftest` run (see `estimation.selftest`)."""
         return run_selftest(seed=seed, full=full, device=device)

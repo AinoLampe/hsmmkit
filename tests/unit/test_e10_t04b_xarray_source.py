@@ -9,14 +9,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regimekit.config.schema import DataSection
-from regimekit.data.provenance import hash_arrays, hash_bytes, hash_file
-from regimekit.data.sources import load_data
-from regimekit.data.sources.base import get_source
-from regimekit.plugins import REGISTRY
-from regimekit.testing.source_contract import FIXTURES, check_source, xarray_case
-from regimekit.utils.errors import ConfigError, DataError
-from regimekit.utils.optional import optional_import
+from hsmmkit.config.schema import DataSection
+from hsmmkit.data.provenance import hash_arrays, hash_bytes, hash_file
+from hsmmkit.data.sources import load_data
+from hsmmkit.data.sources.base import get_source
+from hsmmkit.plugins import REGISTRY
+from hsmmkit.testing.source_contract import FIXTURES, check_source, xarray_case
+from hsmmkit.utils.errors import ConfigError, DataError
+from hsmmkit.utils.optional import optional_import
 
 xr = pytest.importorskip("xarray")
 
@@ -24,7 +24,7 @@ xr = pytest.importorskip("xarray")
 def test_e10_t04b_xarray_source_passes_the_contract_suite() -> None:
     """AC1: the xarray source passes `source_contract` (with and without a time coordinate)."""
     get_source("csv")
-    assert next(e for e in REGISTRY.entries("source") if e.name == "xarray").provenance == "regimekit.core"
+    assert next(e for e in REGISTRY.entries("source") if e.name == "xarray").provenance == "hsmmkit.core"
     check_source("xarray", xarray_case())
 
 
@@ -94,10 +94,10 @@ def test_e10_t04b_provenance_hashes(tmp_path: Path) -> None:
 
 
 def test_e10_t04b_the_core_data_package_holds_no_cache_or_provider_code() -> None:
-    """AC3: `regimekit/data` has no cache module and no finance or provider imports."""
-    root = Path(__file__).resolve().parents[2] / "src" / "regimekit" / "data"
+    """AC3: `hsmmkit/data` has no cache module and no finance or provider imports."""
+    root = Path(__file__).resolve().parents[2] / "src" / "hsmmkit" / "data"
     assert not (root / "cache.py").exists()
     for path in root.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
-        for banned in ("regimekit.finance", "yfinance", "fredapi", "CachedProvider", "replay"):
+        for banned in ("hsmmkit.finance", "yfinance", "fredapi", "CachedProvider", "replay"):
             assert banned not in text, f"{path.name} mentions {banned}"

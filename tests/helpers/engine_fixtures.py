@@ -7,13 +7,13 @@ from dataclasses import dataclass
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.data.contracts import PreparedDataset, PrepStats
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition
-from regimekit.statespace.builders import build_expanded
-from regimekit.statespace.index import StateSpace
+from hsmmkit.data.contracts import PreparedDataset, PrepStats
+from hsmmkit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import JumpTransition
+from hsmmkit.statespace.builders import build_expanded
+from hsmmkit.statespace.index import StateSpace
 
 DT = 1.0 / 252.0
 
@@ -131,10 +131,10 @@ def make_explicit_scenario(
     mean_steps: float | None = None,
 ) -> Scenario:
     """Random GBM + explicit-duration jump model (`family` in negbin/geometric/gamma/weibull)."""
-    from regimekit.model.duration.gamma import GammaDuration
-    from regimekit.model.duration.geometric import GeometricDuration
-    from regimekit.model.duration.weibull import WeibullDuration
-    from regimekit.statespace.builders import build_explicit
+    from hsmmkit.model.duration.gamma import GammaDuration
+    from hsmmkit.model.duration.geometric import GeometricDuration
+    from hsmmkit.model.duration.weibull import WeibullDuration
+    from hsmmkit.statespace.builders import build_explicit
 
     rng = np.random.default_rng(seed)
     cov = tuple(range(n_cov_d))

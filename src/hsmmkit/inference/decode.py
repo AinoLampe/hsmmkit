@@ -11,18 +11,18 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from regimekit.engine.criteria import information_criteria
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.engine.explicit_duration import ExplicitDurationEngine
-from regimekit.engine.viterbi import segments
-from regimekit.inference.results import PosteriorResult
-from regimekit.model.params.manager import ParamManager
-from regimekit.statespace.builders import build_expanded, build_explicit
+from hsmmkit.engine.criteria import information_criteria
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.engine.viterbi import segments
+from hsmmkit.inference.results import PosteriorResult
+from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.statespace.builders import build_expanded, build_explicit
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.engine.base import InferenceEngine
-    from regimekit.estimation.results import FitResult
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.engine.base import InferenceEngine
+    from hsmmkit.estimation.results import FitResult
 
 
 def decode(fit: FitResult, data: PreparedDataset, engine: InferenceEngine | None = None) -> PosteriorResult:

@@ -7,7 +7,7 @@ import itertools
 import numpy as np
 import pytest
 
-from regimekit.estimation.objective import check_finite, make_objective
+from hsmmkit.estimation.objective import check_finite, make_objective
 from tests.helpers.objective_fixtures import make_case
 
 COV_FLAGS = list(itertools.product([False, True], repeat=3))  # (transition, duration, emission)

@@ -7,9 +7,9 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from regimekit.engine import parallel
-from regimekit.engine.base import Posterior
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.engine import parallel
+from hsmmkit.engine.base import Posterior
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
 from tests.helpers.engine_fixtures import make_scenario
 
 

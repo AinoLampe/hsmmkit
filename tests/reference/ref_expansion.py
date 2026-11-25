@@ -1,7 +1,7 @@
 """Brute-force expansion of an order-`k`, NB-phase HSMM into a first-order HMM.
 
-No `regimekit` import (CLAUDE.md §6). Enumerates expanded states `(memory, regime, phase)`
-independently of `regimekit.statespace.builders`, so it can test that module's `build_expanded`/
+No `hsmmkit` import (CLAUDE.md §6). Enumerates expanded states `(memory, regime, phase)`
+independently of `hsmmkit.statespace.builders`, so it can test that module's `build_expanded`/
 `transition_fn` (E4-T02a/b) without circularity.
 """
 

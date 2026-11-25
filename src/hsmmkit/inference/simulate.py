@@ -18,16 +18,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.data.contracts import PreparedDataset, PrepStats
-from regimekit.engine.viterbi import segments
-from regimekit.statespace.builders import initial_log_rho
-from regimekit.utils.errors import NumericalError
+from hsmmkit.data.contracts import PreparedDataset, PrepStats
+from hsmmkit.engine.viterbi import segments
+from hsmmkit.statespace.builders import initial_log_rho
+from hsmmkit.utils.errors import NumericalError
 
 if TYPE_CHECKING:
-    from regimekit.model.params.manager import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
-    from regimekit.utils.typing import Array
+    from hsmmkit.model.params.manager import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
+    from hsmmkit.utils.typing import Array
 
 
 def _block(x: Array | None, t: int) -> Array:

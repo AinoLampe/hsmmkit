@@ -9,8 +9,8 @@ from hypothesis import given
 from hypothesis import strategies as st
 from scipy.stats import norm
 
-from regimekit.engine.expanded_hmm import ExpandedHMMEngine
-from regimekit.statespace.builders import initial_log_rho
+from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
+from hsmmkit.statespace.builders import initial_log_rho
 from tests.helpers.engine_fixtures import Scenario, make_scenario
 from tests.reference import ref_hmm
 

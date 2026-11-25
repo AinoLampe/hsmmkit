@@ -9,8 +9,8 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from regimekit.model.params import NormalPrior, ParamManager, ParamSpec
-from regimekit.utils.errors import ConfigError
+from hsmmkit.model.params import NormalPrior, ParamManager, ParamSpec
+from hsmmkit.utils.errors import ConfigError
 
 
 def _spec_free(name: str, n: int, domain: str = "positive") -> ParamSpec:

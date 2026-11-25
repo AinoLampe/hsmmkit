@@ -17,15 +17,15 @@ from typing import TYPE_CHECKING
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.config.schema import ParamCfg
-from regimekit.model.params import Params
-from regimekit.model.params.spec import ParamSpec
-from regimekit.model.transition import _target_order, build_memory_layout
-from regimekit.utils.errors import ConfigError
+from hsmmkit.config.schema import ParamCfg
+from hsmmkit.model.params import Params
+from hsmmkit.model.params.spec import ParamSpec
+from hsmmkit.model.transition import _target_order, build_memory_layout
+from hsmmkit.utils.errors import ConfigError
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import ProjectConfig
-    from regimekit.model.spec import ModelSpec
+    from hsmmkit.config.schema import ProjectConfig
+    from hsmmkit.model.spec import ModelSpec
 
 # Emission blocks that place a state on the observation scale; if all are `fixed` the states are
 # identified by construction (a lattice). Coefficient blocks (`gamma`, `delta`) and `nu` do not count.

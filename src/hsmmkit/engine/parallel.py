@@ -21,14 +21,14 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 
-from regimekit.engine.expanded_hmm import _emission_inputs
-from regimekit.utils.typing import Array
+from hsmmkit.engine.expanded_hmm import _emission_inputs
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.model.params import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.model.params import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
 
 MAX_CELLS = 5e7
 _NEG_INF = -jnp.inf

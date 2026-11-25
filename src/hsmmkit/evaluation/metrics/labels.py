@@ -6,9 +6,9 @@ from itertools import permutations
 
 import numpy as np
 
-from regimekit.evaluation.metrics.registry import metric
-from regimekit.inference.results import PosteriorResult
-from regimekit.utils.errors import ConfigError
+from hsmmkit.evaluation.metrics.registry import metric
+from hsmmkit.inference.results import PosteriorResult
+from hsmmkit.utils.errors import ConfigError
 
 MAX_CLASSES = 6
 

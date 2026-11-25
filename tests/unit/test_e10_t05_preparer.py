@@ -9,14 +9,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regimekit.config.schema import DataSection
-from regimekit.data.contracts import PrepStats
-from regimekit.data.prepare import Preparer, prep_stats_from_json, prep_stats_to_json
-from regimekit.data.sources import load_data
-from regimekit.data.transforms import get_observation_transform
-from regimekit.plugins import REGISTRY
-from regimekit.testing.source_contract import FIXTURES
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.config.schema import DataSection
+from hsmmkit.data.contracts import PrepStats
+from hsmmkit.data.prepare import Preparer, prep_stats_from_json, prep_stats_to_json
+from hsmmkit.data.sources import load_data
+from hsmmkit.data.transforms import get_observation_transform
+from hsmmkit.plugins import REGISTRY
+from hsmmkit.testing.source_contract import FIXTURES
+from hsmmkit.utils.errors import ConfigError, DataError
 
 N = 40
 
@@ -60,7 +60,7 @@ def _prepare(
 def test_e10_t05_core_transforms_are_registered() -> None:
     """`identity` and `diff` are core transforms; unknown names list the registered ones."""
     prov = {e.name: e.provenance for e in REGISTRY.entries("transform")}
-    assert prov["identity"] == prov["diff"] == "regimekit.core"
+    assert prov["identity"] == prov["diff"] == "hsmmkit.core"
     assert get_observation_transform(None).name == "identity"
     with pytest.raises(ConfigError, match="registered") as info:
         get_observation_transform("nope")

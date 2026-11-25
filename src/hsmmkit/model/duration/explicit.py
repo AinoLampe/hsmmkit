@@ -19,19 +19,19 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model.duration.base import (
+from hsmmkit.model.duration.base import (
     Params,
     broadcast_per_state,
     coef_spec,
     cov_idx_from_names,
     spec_from_paramcfg,
 )
-from regimekit.model.params.spec import ParamSpec
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.params.spec import ParamSpec
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.config.schema import DurationCfg
+    from hsmmkit.config.schema import DurationCfg
 
 # Floors keep `log` (and its gradient) finite when a grid cell underflows; the induced mass error is
 # below 1e-300 per cell, far under the 1e-10 row-sum tolerance.

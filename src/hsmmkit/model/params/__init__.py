@@ -1,6 +1,6 @@
 """Bijectors, priors, ParamSpec and ParamManager."""
 
-from regimekit.model.params.bijectors import (
+from hsmmkit.model.params.bijectors import (
     Bijector,
     IdentityBijector,
     IncreasingBijector,
@@ -10,14 +10,14 @@ from regimekit.model.params.bijectors import (
     PositiveBijector,
     SimplexRefBijector,
 )
-from regimekit.model.params.manager import ParamManager, Params
-from regimekit.model.params.priors import (
+from hsmmkit.model.params.manager import ParamManager, Params
+from hsmmkit.model.params.priors import (
     DEFAULT_COEF_PRIOR,
     DirichletPrior,
     LogNormalPrior,
     NormalPrior,
 )
-from regimekit.model.params.spec import ParamSpec, Prior
+from hsmmkit.model.params.spec import ParamSpec, Prior
 
 __all__ = [
     "DEFAULT_COEF_PRIOR",

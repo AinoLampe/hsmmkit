@@ -8,16 +8,16 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-import regimekit.estimation.em as em_module
-from regimekit.config.schema import EstimationSection
-from regimekit.data.contracts import PreparedDataset
-from regimekit.estimation.em import EMResult, em_fit
-from regimekit.estimation.map import fit
-from regimekit.inference.simulate import simulate_dataset
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.spec import ModelSpec
-from regimekit.utils.errors import ConfigError, NumericalError
-from regimekit.utils.rng import key_for
+import hsmmkit.estimation.em as em_module
+from hsmmkit.config.schema import EstimationSection
+from hsmmkit.data.contracts import PreparedDataset
+from hsmmkit.estimation.em import EMResult, em_fit
+from hsmmkit.estimation.map import fit
+from hsmmkit.inference.simulate import simulate_dataset
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.utils.errors import ConfigError, NumericalError
+from hsmmkit.utils.rng import key_for
 from tests.helpers.engine_fixtures import DT
 from tests.helpers.objective_fixtures import make_case
 

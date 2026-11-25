@@ -10,15 +10,15 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.engine.base import InferenceEngine, Posterior
-from regimekit.estimation.results import FitResult
-from regimekit.evaluation.results import BacktestResult
-from regimekit.inference.results import ForecastResult, PosteriorResult
-from regimekit.model.duration.base import DurationFamily
-from regimekit.model.emission.base import EmissionFamily
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import MemoryLayout, TransitionModel
-from regimekit.statespace.index import StateIndex
+from hsmmkit.engine.base import InferenceEngine, Posterior
+from hsmmkit.estimation.results import FitResult
+from hsmmkit.evaluation.results import BacktestResult
+from hsmmkit.inference.results import ForecastResult, PosteriorResult
+from hsmmkit.model.duration.base import DurationFamily
+from hsmmkit.model.emission.base import EmissionFamily
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import MemoryLayout, TransitionModel
+from hsmmkit.statespace.index import StateIndex
 
 
 def _hand_built_index() -> StateIndex:

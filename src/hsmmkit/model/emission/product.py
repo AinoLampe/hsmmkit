@@ -20,10 +20,10 @@ from typing import Any, Literal, cast
 
 import jax.numpy as jnp
 
-from regimekit.model.emission.base import EmissionFamily, Support
-from regimekit.model.params import ParamSpec
-from regimekit.plugins import register
-from regimekit.utils.typing import Array
+from hsmmkit.model.emission.base import EmissionFamily, Support
+from hsmmkit.model.params import ParamSpec
+from hsmmkit.plugins import register
+from hsmmkit.utils.typing import Array
 
 
 @register("emission", "product")

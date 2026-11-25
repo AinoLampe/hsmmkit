@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 from scipy import stats
 
-from regimekit.evaluation.metrics.predictive import ljung_box, pit_histogram
+from hsmmkit.evaluation.metrics.predictive import ljung_box, pit_histogram
 
 
 def test_e5_t04_pit_histogram_ks_matches_scipy() -> None:

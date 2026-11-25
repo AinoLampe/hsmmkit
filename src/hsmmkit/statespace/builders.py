@@ -14,15 +14,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from regimekit.model.params import Params
-from regimekit.model.transition import MemoryLayout, build_memory_layout
-from regimekit.statespace.index import StateIndex, StateSpace
-from regimekit.statespace.transitions import make_transition_fn
-from regimekit.utils.errors import ConfigError
-from regimekit.utils.typing import Array
+from hsmmkit.model.params import Params
+from hsmmkit.model.transition import MemoryLayout, build_memory_layout
+from hsmmkit.statespace.index import StateIndex, StateSpace
+from hsmmkit.statespace.transitions import make_transition_fn
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.model.spec import ModelSpec
+    from hsmmkit.model.spec import ModelSpec
 
 
 def _shift(memory: tuple[int, ...], current: int, order: int) -> tuple[int, ...]:

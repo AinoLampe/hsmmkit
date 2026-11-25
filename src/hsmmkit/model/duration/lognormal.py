@@ -7,11 +7,11 @@ from typing import ClassVar
 
 import jax.numpy as jnp
 
-from regimekit.model.dists import _lognormal_cdf
-from regimekit.model.duration.base import Params
-from regimekit.model.duration.explicit import ExplicitDurationBase, ParamDef, grid_log_pmf
-from regimekit.plugins import register
-from regimekit.utils.typing import Array
+from hsmmkit.model.dists import _lognormal_cdf
+from hsmmkit.model.duration.base import Params
+from hsmmkit.model.duration.explicit import ExplicitDurationBase, ParamDef, grid_log_pmf
+from hsmmkit.plugins import register
+from hsmmkit.utils.typing import Array
 
 _INIT_SD_LOG = 0.5
 

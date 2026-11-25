@@ -7,7 +7,7 @@ from typing import Literal
 import jax
 import jax.numpy as jnp
 
-from regimekit.utils.errors import NumericalError
+from hsmmkit.utils.errors import NumericalError
 
 
 def _has_gpu() -> bool:
@@ -43,6 +43,6 @@ def setup(device: Literal["cpu", "gpu", "auto"] = "auto") -> None:
     if jnp.zeros(1).dtype != jnp.float64:
         raise NumericalError(
             "x64 disabled: jax_enable_x64 could not be enabled, likely because JAX was already "
-            "initialized elsewhere in this process with x64 turned off; regimekit requires "
+            "initialized elsewhere in this process with x64 turned off; hsmmkit requires "
             "float64 throughout."
         )

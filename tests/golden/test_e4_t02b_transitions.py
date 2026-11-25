@@ -6,12 +6,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from regimekit.model.duration.geometric import GeometricDuration
-from regimekit.model.duration.negbin import NegBinDuration
-from regimekit.model.emission.gaussian import GaussianFamily
-from regimekit.model.spec import ModelSpec
-from regimekit.model.transition import JumpTransition
-from regimekit.statespace.builders import build_expanded, initial_log_rho
+from hsmmkit.model.duration.geometric import GeometricDuration
+from hsmmkit.model.duration.negbin import NegBinDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily
+from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.transition import JumpTransition
+from hsmmkit.statespace.builders import build_expanded, initial_log_rho
 
 
 def _spec(

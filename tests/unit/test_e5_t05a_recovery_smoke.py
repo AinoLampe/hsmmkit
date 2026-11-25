@@ -12,7 +12,7 @@ import os
 
 import pytest
 
-from regimekit.estimation.recovery import (
+from hsmmkit.estimation.recovery import (
     SCENARIOS,
     ParamCheck,
     RecoveryReport,
@@ -65,19 +65,19 @@ def test_e5_t05a_recovery_empirical_se_fills_in_missing_hessian() -> None:
 
 
 def test_e5_t05a_recovery_t_len_env_var_overrides_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """AC3: `REGIMEKIT_RECOVERY_T` controls the default `t_len` (nightly-suite sizing knob)."""
-    monkeypatch.setenv("REGIMEKIT_RECOVERY_T", "777")
+    """AC3: `HSMMKIT_RECOVERY_T` controls the default `t_len` (nightly-suite sizing knob)."""
+    monkeypatch.setenv("HSMMKIT_RECOVERY_T", "777")
     assert _default_t_len() == 777
-    monkeypatch.delenv("REGIMEKIT_RECOVERY_T", raising=False)
+    monkeypatch.delenv("HSMMKIT_RECOVERY_T", raising=False)
     assert _default_t_len() == 20000
 
 
 def test_e5_t05a_recovery_t_len_env_var_used_when_not_passed(monkeypatch: pytest.MonkeyPatch) -> None:
     """`run_scenario(t_len=None)` reads the env var (kept tiny here to stay in the default suite)."""
-    monkeypatch.setenv("REGIMEKIT_RECOVERY_T", str(_SMOKE_T))
+    monkeypatch.setenv("HSMMKIT_RECOVERY_T", str(_SMOKE_T))
     report = run_scenario("gbm_negbin", seed=0, t_len=None)
     assert report.t_len == _SMOKE_T
-    assert os.environ["REGIMEKIT_RECOVERY_T"] == str(_SMOKE_T)
+    assert os.environ["HSMMKIT_RECOVERY_T"] == str(_SMOKE_T)
 
 
 def _report(seed: int, failing: set[str], skip_mu: bool = False) -> RecoveryReport:
@@ -146,7 +146,7 @@ def test_e5_t05a_recovery_order2_default_t_is_scaled(monkeypatch: pytest.MonkeyP
     """`order2` runs at 2.5x the default `T` (an explicit `t_len` is never scaled)."""
     assert SCENARIOS["order2"].t_scale == 2.5
     assert all(s.t_scale == 1.0 for n, s in SCENARIOS.items() if n != "order2")
-    monkeypatch.setenv("REGIMEKIT_RECOVERY_T", "60")
+    monkeypatch.setenv("HSMMKIT_RECOVERY_T", "60")
     assert run_scenario("order2", seed=0).t_len == 150
     assert run_scenario("order2", seed=0, t_len=_SMOKE_T).t_len == _SMOKE_T
 

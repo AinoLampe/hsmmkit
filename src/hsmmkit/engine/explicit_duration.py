@@ -32,18 +32,18 @@ from typing import TYPE_CHECKING, NamedTuple
 import jax
 import jax.numpy as jnp
 
-from regimekit.engine.base import Posterior
-from regimekit.engine.expanded_hmm import _check_finite, _check_posterior, _regime_log_emis, _safe_logsumexp
-from regimekit.statespace.index import StateIndex
-from regimekit.utils.clock import is_irregular
-from regimekit.utils.errors import ConfigError, NumericalError
-from regimekit.utils.typing import Array
+from hsmmkit.engine.base import Posterior
+from hsmmkit.engine.expanded_hmm import _check_finite, _check_posterior, _regime_log_emis, _safe_logsumexp
+from hsmmkit.statespace.index import StateIndex
+from hsmmkit.utils.clock import is_irregular
+from hsmmkit.utils.errors import ConfigError, NumericalError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
-    from regimekit.data.contracts import PreparedDataset
-    from regimekit.model.params import Params
-    from regimekit.model.spec import ModelSpec
-    from regimekit.statespace.index import StateSpace
+    from hsmmkit.data.contracts import PreparedDataset
+    from hsmmkit.model.params import Params
+    from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
 
 MAX_CELLS = 5e7
 _AUTO_CHUNK = 1024

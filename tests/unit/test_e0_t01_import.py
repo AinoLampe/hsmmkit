@@ -5,24 +5,22 @@ import importlib
 import pytest
 
 PACKAGES = [
-    "regimekit",
-    "regimekit.config",
-    "regimekit.data",
-    pytest.param("regimekit.finance", marks=pytest.mark.finance),
-    pytest.param("regimekit.finance.providers", marks=pytest.mark.finance),
-    "regimekit.model",
-    "regimekit.model.params",
-    "regimekit.model.emission",
-    "regimekit.model.duration",
-    "regimekit.statespace",
-    "regimekit.engine",
-    "regimekit.estimation",
-    "regimekit.inference",
-    "regimekit.evaluation",
-    "regimekit.evaluation.metrics",
-    "regimekit.persistence",
-    "regimekit.cli",
-    "regimekit.utils",
+    "hsmmkit",
+    "hsmmkit.config",
+    "hsmmkit.data",
+    "hsmmkit.model",
+    "hsmmkit.model.params",
+    "hsmmkit.model.emission",
+    "hsmmkit.model.duration",
+    "hsmmkit.statespace",
+    "hsmmkit.engine",
+    "hsmmkit.estimation",
+    "hsmmkit.inference",
+    "hsmmkit.evaluation",
+    "hsmmkit.evaluation.metrics",
+    "hsmmkit.persistence",
+    "hsmmkit.cli",
+    "hsmmkit.utils",
 ]
 
 
@@ -33,8 +31,8 @@ def test_e0_t01_package_imports(dotted_name: str) -> None:
 
 
 def test_e0_t01_version_exposed() -> None:
-    """`regimekit.__version__` is a non-empty string read from package metadata."""
-    import regimekit
+    """`hsmmkit.__version__` is a non-empty string read from package metadata."""
+    import hsmmkit
 
-    assert isinstance(regimekit.__version__, str)
-    assert regimekit.__version__
+    assert isinstance(hsmmkit.__version__, str)
+    assert hsmmkit.__version__

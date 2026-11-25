@@ -15,9 +15,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from regimekit.evaluation.metrics.registry import better_of
-from regimekit.evaluation.results import BacktestResult
-from regimekit.utils.errors import ConfigError, DataError
+from hsmmkit.evaluation.metrics.registry import better_of
+from hsmmkit.evaluation.results import BacktestResult
+from hsmmkit.utils.errors import ConfigError, DataError
 
 _NOT_METRICS_LOWER = frozenset({"fit_time"})  # columns of the table that are no registered metric
 # components that describe a run instead of ranking it
