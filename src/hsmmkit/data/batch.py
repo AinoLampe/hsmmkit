@@ -17,6 +17,7 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -88,7 +89,22 @@ def split_sequences(
     return out
 
 
-@jax.tree_util.register_dataclass
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=[
+        "observations",
+        "mask",
+        "valid",
+        "dt",
+        "cov_transition",
+        "cov_duration",
+        "cov_emission",
+        "labels",
+        "lengths",
+        "group_index",
+    ],
+    meta_fields=["nominal_dt", "clock"],
+)
 @dataclass(frozen=True)
 class PaddedBatch:
     """The padded array view of a `SequenceBatch` (a pytree; every leaf is a `jnp` array or `None`).
@@ -102,6 +118,7 @@ class PaddedBatch:
         labels: `(B, T_max, N)` or `None`; `True` on padding (everything allowed).
         lengths: `(B,)` int32 (0 for the empty padding sequences).
         group_index: `(B,)` int32 initial-distribution group (0 if there are no groups).
+        nominal_dt, clock: static metadata of the grid (`PreparedDataset.nominal_dt` / `clock`).
     """
 
     observations: Array
@@ -114,6 +131,8 @@ class PaddedBatch:
     labels: Array | None
     lengths: Array
     group_index: Array
+    nominal_dt: float = 1.0
+    clock: str = "steps"
 
 
 def _bucket(max_len: int, edges: tuple[int, ...]) -> int:
@@ -254,6 +273,8 @@ class SequenceBatch:
             labels=None if labels is None else jnp.asarray(labels),
             lengths=jnp.asarray(lengths),
             group_index=jnp.asarray(group_index),
+            nominal_dt=float(first.nominal_dt),
+            clock=first.clock,
         )
 
     def unpad(self, arr: Array, *, time_axis: int = 1) -> tuple[Array, ...]:

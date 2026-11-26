@@ -36,8 +36,13 @@ def _iter_python_files(*package_names: str) -> list[Path]:
 
 
 def _find_disallowed_imports(
-    files: list[Path], *, disallowed_prefix: str, allowed_exact: str | None = None
+    files: list[Path], *, disallowed_prefix: str, allowed_exact: str | tuple[str, ...] | None = None
 ) -> list[str]:
+    allowed = (
+        ()
+        if allowed_exact is None
+        else ((allowed_exact,) if isinstance(allowed_exact, str) else allowed_exact)
+    )
     parent, _, child = disallowed_prefix.rpartition(".")
     violations = []
     for path in files:
@@ -45,17 +50,17 @@ def _find_disallowed_imports(
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name == allowed_exact:
+                    if alias.name in allowed:
                         continue
                     if alias.name == disallowed_prefix or alias.name.startswith(disallowed_prefix + "."):
                         violations.append(f"{path}: import {alias.name}")
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
-                if module == allowed_exact:
+                if module in allowed:
                     continue
                 if module == disallowed_prefix:
                     for alias in node.names:
-                        if allowed_exact is not None and f"{module}.{alias.name}" == allowed_exact:
+                        if f"{module}.{alias.name}" in allowed:
                             continue
                         violations.append(f"{path}: from {module} import {alias.name}")
                 elif module.startswith(disallowed_prefix + "."):
@@ -69,10 +74,12 @@ def _find_disallowed_imports(
 
 
 def test_e1_t01_layer_rule_no_data_imports_beyond_contracts() -> None:
-    """`model/statespace/engine/estimation/inference` only import `hsmmkit.data.contracts`."""
+    """`model/statespace/engine/estimation/inference` import only `data.contracts` and `data.batch`."""
     files = _iter_python_files(*LAYER_RULE_PACKAGES)
     violations = _find_disallowed_imports(
-        files, disallowed_prefix="hsmmkit.data", allowed_exact="hsmmkit.data.contracts"
+        files,
+        disallowed_prefix="hsmmkit.data",
+        allowed_exact=("hsmmkit.data.contracts", "hsmmkit.data.batch"),  # Part II overview 5.3.1
     )
     assert not violations, "layer rule violated:\n" + "\n".join(violations)
 

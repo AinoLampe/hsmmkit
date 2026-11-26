@@ -38,5 +38,9 @@
   {
     "name": "test_e5_t02_lbfgs_fit_completes_within_budget",
     "mean": 5.946142
+  },
+  {
+    "name": "test_e12_t01b_batched_forward_backward_time_budget",
+    "mean": 0.19989
   }
 ]

@@ -81,3 +81,15 @@ $D_{\max} = 250$: at most 2 s. `benchmarks/baseline.json` holds the reference me
 | `\ell` | `InferenceEngine.loglik` (0-d array) |
 | filtered / smoothed posteriors | `InferenceEngine.forward_backward` -> `Posterior` |
 | Viterbi path | `InferenceEngine.viterbi` |
+
+## Batched engines (`hsmmkit.engine.batch`)
+
+`batched_loglik`, `batched_forward_backward` and `batched_viterbi` run over a `PaddedBatch` (E12-T01a) by `jax.vmap`
+of a per-sequence recursion: one compiled program per `(B_pad, T_bucket)` shape. Padded steps (`valid == False`)
+have emission log-density 0 and an identity transition in the expanded engine (so `alpha` is constant on the
+padding, `beta` is 0 and `logsumexp alpha_{T_max}` is the sequence's log-likelihood). In the explicit engine the
+cumulative emission sums are constant on the padding and the right-censored final segment ends at the true length
+`T_b` (`_Inputs.length`). Empty padding sequences contribute exactly 0. `BatchedPosterior.unpad()` returns one
+`Posterior` per real sequence; `decode(fit, SequenceBatch)` returns one `PosteriorResult` per sequence.
+The single-sequence engine methods are unchanged (no `B = 1` detour); the batched results equal them
+(log-likelihood `<= 1e-10` relative, posteriors `<= 1e-12`). Not combined with duration-dependent jumps.
