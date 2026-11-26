@@ -16,6 +16,7 @@ row `group_index[b]`.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
@@ -27,6 +28,7 @@ import numpy as np
 
 from hsmmkit.data.contracts import PreparedDataset, PrepStats
 from hsmmkit.engine.base import Posterior
+from hsmmkit.engine.constraints import apply_transition_mask
 from hsmmkit.engine.expanded_hmm import (
     ExpandedHMMEngine,
     _emission_inputs,
@@ -38,7 +40,7 @@ from hsmmkit.engine.explicit_duration import (
     _loglik_core,
     _viterbi_core,
 )
-from hsmmkit.utils.errors import ConfigError, NumericalError
+from hsmmkit.utils.errors import ConfigError, ConstraintError, NumericalError
 from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
@@ -89,15 +91,31 @@ def _dataset_view(pb: PaddedBatch) -> PreparedDataset:
 
 
 def _expanded_inputs(
-    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, valid: Array
-) -> tuple[Array, Array, tuple[Array, Array, Array, Array, Array], Array]:
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, valid: Array, code: Array
+) -> tuple[Array, Array, tuple[Array, Array, Array, Array, Array, Array], Array]:
     """`(alpha_0, log_eye, xs, ell)`: padded steps have emission 0 and (in the scans) identity transitions."""
     log_rho, _, ell, xs = _emission_inputs(theta, spec, space, data)
     ell = jnp.where(valid[:, None], ell, 0.0)
-    _, z_pi, z_d, dt = xs[0], xs[1], xs[2], xs[3]
+    z_pi, z_d, dt = xs[1], xs[2], xs[3]
     s = ell.shape[1]
     log_eye = jnp.where(jnp.eye(s, dtype=bool), 0.0, -jnp.inf)
-    return log_rho + ell[0], log_eye, (ell[1:], z_pi, z_d, dt, valid[1:]), ell
+    return log_rho + ell[0], log_eye, (ell[1:], z_pi, z_d, dt, valid[1:], code[1:]), ell
+
+
+def _step_log_a(
+    theta: Params,
+    space: StateSpace,
+    x: Any,  # noqa: ANN401
+    log_eye: Array,
+    active: bool,
+) -> Array:
+    """`log A_t` of a scan element `(ell, z_pi, z_d, dt, valid, code)`: boundary masks, padding = identity."""
+    _, z_pi_t, z_d_t, dt_t, v, code_t = x
+    log_a = space.transition_fn(theta, z_pi_t, z_d_t, dt_t)[1]
+    if active:
+        regime_of = space.index.regime_of
+        log_a = apply_transition_mask(log_a, regime_of[:, None] != regime_of[None, :], code_t)
+    return jnp.where(v, log_a, log_eye)
 
 
 def _expanded_forward(
@@ -106,11 +124,11 @@ def _expanded_forward(
     alpha_0: Array,
     log_eye: Array,
     xs: Any,  # noqa: ANN401
+    active: bool,
 ) -> Array:
     def step(alpha_prev: Array, x: Any) -> tuple[Array, Array]:  # noqa: ANN401
-        ell_t, z_pi_t, z_d_t, dt_t, v = x
-        _, log_a = space.transition_fn(theta, z_pi_t, z_d_t, dt_t)
-        log_a = jnp.where(v, log_a, log_eye)
+        ell_t = x[0]
+        log_a = _step_log_a(theta, space, x, log_eye, active)
         alpha_t = ell_t + _safe_logsumexp(alpha_prev[:, None] + log_a, axis=0)
         return alpha_t, alpha_t
 
@@ -119,21 +137,27 @@ def _expanded_forward(
 
 
 def _expanded_one(
-    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, valid: Array, kind: str
+    theta: Params,
+    spec: ModelSpec,
+    space: StateSpace,
+    data: PreparedDataset,
+    valid: Array,
+    code: Array,
+    kind: str,
+    active: bool,
 ) -> tuple[Array, ...]:
-    alpha_0, log_eye, xs, _ = _expanded_inputs(theta, spec, space, data, valid)
-    log_alpha = _expanded_forward(theta, space, alpha_0, log_eye, xs)
+    alpha_0, log_eye, xs, _ = _expanded_inputs(theta, spec, space, data, valid, code)
+    log_alpha = _expanded_forward(theta, space, alpha_0, log_eye, xs, active)
     loglik = _safe_logsumexp(log_alpha[-1], axis=0)
     if kind == "loglik":
         return (loglik,)
     if kind == "viterbi":
-        return (_expanded_viterbi(theta, space, alpha_0, log_eye, xs),)
+        return (_expanded_viterbi(theta, space, alpha_0, log_eye, xs, active),)
     s = log_alpha.shape[1]
 
     def back(beta_next: Array, x: Any) -> tuple[Array, Array]:  # noqa: ANN401
-        ell_next, z_pi_next, z_d_next, dt_next, v_next = x
-        _, log_a = space.transition_fn(theta, z_pi_next, z_d_next, dt_next)
-        log_a = jnp.where(v_next, log_a, log_eye)
+        ell_next = x[0]
+        log_a = _step_log_a(theta, space, x, log_eye, active)
         beta_t = _safe_logsumexp(log_a + (ell_next + beta_next)[None, :], axis=1)
         return beta_t, beta_t
 
@@ -147,11 +171,17 @@ def _expanded_one(
     return log_alpha, log_beta, smoothed, loglik
 
 
-def _expanded_viterbi(theta: Params, space: StateSpace, alpha_0: Array, log_eye: Array, xs: Any) -> Array:  # noqa: ANN401
+def _expanded_viterbi(
+    theta: Params,
+    space: StateSpace,
+    alpha_0: Array,
+    log_eye: Array,
+    xs: Any,  # noqa: ANN401
+    active: bool,
+) -> Array:
     def step(delta_prev: Array, x: Any) -> tuple[Array, Array]:  # noqa: ANN401
-        ell_t, z_pi_t, z_d_t, dt_t, v = x
-        _, log_a = space.transition_fn(theta, z_pi_t, z_d_t, dt_t)
-        log_a = jnp.where(v, log_a, log_eye)
+        ell_t = x[0]
+        log_a = _step_log_a(theta, space, x, log_eye, active)
         scores = delta_prev[:, None] + log_a
         return ell_t + jnp.max(scores, axis=0), jnp.argmax(scores, axis=0).astype(jnp.int32)
 
@@ -170,15 +200,23 @@ def _expanded_viterbi(theta: Params, space: StateSpace, alpha_0: Array, log_eye:
 
 
 def _explicit_one(
-    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, length: Array, kind: str
+    theta: Params,
+    spec: ModelSpec,
+    space: StateSpace,
+    data: PreparedDataset,
+    length: Array,
+    code: Array | None,
+    kind: str,
 ) -> tuple[Array, ...]:
     eff = jnp.maximum(length, 1)  # an empty sequence is evaluated as a 1-step one and zeroed afterwards
     if kind == "loglik":
-        return (_loglik_core(theta, spec, space, data, eff),)
+        return (_loglik_core(theta, spec, space, data, eff, code),)
     if kind == "viterbi":
-        path, _ = _viterbi_core(theta, spec, space, data, eff)
+        path, _ = _viterbi_core(theta, spec, space, data, eff, code)
         return (path,)
-    log_alpha, log_beta, smoothed, loglik, _ = _forward_backward_core(theta, spec, space, data, None, eff)
+    log_alpha, log_beta, smoothed, loglik, _ = _forward_backward_core(
+        theta, spec, space, data, None, eff, code
+    )
     return log_alpha, log_beta, smoothed, loglik
 
 
@@ -197,16 +235,19 @@ def _batched_core(
         """The parameters of one sequence: its group's row of `initial.logits` when there are groups."""
         return {**theta, "initial.logits": theta["initial.logits"][g]} if grouped else theta
 
-    def explicit_fn(d: PreparedDataset, n: Array, g: Array) -> tuple[Array, ...]:
-        return _explicit_one(theta_of(g), spec, space, d, n, kind)
+    active = pb.boundary_code is not None
+    codes = jnp.zeros(pb.valid.shape, dtype=jnp.int8) if pb.boundary_code is None else pb.boundary_code
 
-    def expanded_fn(d: PreparedDataset, v: Array, g: Array) -> tuple[Array, ...]:
-        return _expanded_one(theta_of(g), spec, space, d, v, kind)
+    def explicit_fn(d: PreparedDataset, n: Array, g: Array, c: Array) -> tuple[Array, ...]:
+        return _explicit_one(theta_of(g), spec, space, d, n, c if active else None, kind)
+
+    def expanded_fn(d: PreparedDataset, v: Array, g: Array, c: Array) -> tuple[Array, ...]:
+        return _expanded_one(theta_of(g), spec, space, d, v, c, kind, active)
 
     if spec.engine == "explicit":
-        out = jax.vmap(explicit_fn)(data, pb.lengths, pb.group_index)
+        out = jax.vmap(explicit_fn)(data, pb.lengths, pb.group_index, codes)
     else:
-        out = jax.vmap(expanded_fn)(data, pb.valid, pb.group_index)
+        out = jax.vmap(expanded_fn)(data, pb.valid, pb.group_index, codes)
     empty = pb.lengths == 0
     if kind == "loglik":
         return (jnp.where(empty, 0.0, out[0]),)
@@ -222,10 +263,39 @@ def _batched_core(
     )
 
 
-def _check_all_finite(loglik: Array) -> None:
-    """Public-boundary guard: every per-sequence log-likelihood is finite."""
-    if not bool(jnp.all(jnp.isfinite(loglik))):
-        raise NumericalError("non-finite log-likelihood from the batched recursion", path="loglik")
+def _check_all_finite(
+    loglik: Array,
+    pb: PaddedBatch | None = None,
+    ids: Sequence[str] | None = None,
+    run: tuple[Params, ModelSpec, StateSpace] | None = None,
+) -> None:
+    """Public-boundary guard: every per-sequence log-likelihood is finite.
+
+    With supervision masks (labels that forbid some regime, or boundaries) a sequence whose likelihood is
+    exactly zero raises `ConstraintError(step, sequence)` (E12-T06); `run` gives `(theta, spec, space)` to
+    locate the first step at which every filtered state has probability zero.
+    """
+    finite = jnp.isfinite(loglik)
+    if bool(jnp.all(finite)):
+        return
+    if pb is not None and run is not None and _is_constrained(pb):
+        b = int(jnp.argmin(finite))
+        theta, spec, space = run
+        log_alpha = _batched_core(theta, spec, space, pb, "fb")[0][b]
+        dead = np.flatnonzero(
+            ~np.asarray(jnp.any(jnp.isfinite(log_alpha), axis=-1)) & np.asarray(pb.valid[b])
+        )
+        raise ConstraintError(
+            "the label / boundary constraints admit no state path (zero likelihood)",
+            path="data.labels",
+            step=int(dead[0]) if dead.size else None,
+            sequence=str(ids[b]) if ids is not None and b < len(ids) else str(b),
+        )
+    raise NumericalError("non-finite log-likelihood from the batched recursion", path="loglik")
+
+
+def _is_constrained(pb: PaddedBatch) -> bool:
+    return pb.boundary_code is not None or (pb.labels is not None and not bool(jnp.all(pb.labels)))
 
 
 def _check(spec: ModelSpec, engine: object) -> None:
@@ -243,17 +313,25 @@ def _check(spec: ModelSpec, engine: object) -> None:
 
 
 def batched_loglik(
-    engine: object, params: Params, spec: ModelSpec, space: StateSpace, pb: PaddedBatch
+    engine: object,
+    params: Params,
+    spec: ModelSpec,
+    space: StateSpace,
+    pb: PaddedBatch,
+    ids: Sequence[str] | None = None,
 ) -> Array:
     """`(B_pad,)` per-sequence log-likelihoods (0 for the empty padding sequences); the total is their sum.
 
+    `ids` names the sequences in error messages.
+
     Raises:
+        ConstraintError: the supervision constraints admit no path for a sequence (`step`, `sequence`).
         NumericalError: a non-finite log-likelihood of a real sequence (checked outside jit).
     """
     _check(spec, engine)
     (out,) = _batched_core(params, spec, space, pb, "loglik")
     if not isinstance(out, jax.core.Tracer):
-        _check_all_finite(out)
+        _check_all_finite(out, pb, ids, (params, spec, space))
     loglik: Array = out
     return loglik
 
@@ -300,13 +378,18 @@ class BatchedPosterior:
 
 
 def batched_forward_backward(
-    engine: object, params: Params, spec: ModelSpec, space: StateSpace, pb: PaddedBatch
+    engine: object,
+    params: Params,
+    spec: ModelSpec,
+    space: StateSpace,
+    pb: PaddedBatch,
+    ids: Sequence[str] | None = None,
 ) -> BatchedPosterior:
     """Smoothed posteriors of every sequence; `unpad()` gives the single-sequence `Posterior`s."""
     _check(spec, engine)
     log_alpha, log_beta, smoothed, loglik = _batched_core(params, spec, space, pb, "fb")
     if not isinstance(loglik, jax.core.Tracer):
-        _check_all_finite(loglik)
+        _check_all_finite(loglik, pb, ids, (params, spec, space))
         if bool(jnp.any(jnp.isnan(log_alpha))):
             raise NumericalError("NaN in log_alpha from the batched forward-backward", path="log_alpha")
     n_real = int(np.count_nonzero(np.asarray(pb.lengths)))

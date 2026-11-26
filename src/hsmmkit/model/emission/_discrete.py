@@ -76,8 +76,8 @@ def natural_init(
     """`init` of a params entry (one value per state, or one for all) as an `(N, J)` array (or `None`)."""
     if values is None:
         return None
-    if isinstance(values, str):
-        raise ConfigError(f"init: {values!r} is not available before E12-T06", path=path)
+    if isinstance(values, str):  # `init: labels`: the `labels` init method fills it (E12-T06)
+        return None
     arr = np.atleast_1d(np.asarray(values, dtype=np.float64))
     if arr.shape == (1,):
         arr = np.full(n_states, float(arr[0]))

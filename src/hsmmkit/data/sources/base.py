@@ -46,6 +46,8 @@ class TabularOpts(BaseModel):
         sequence_column: column of sequence ids (`ObservationSet.sequence_ids`, E12-T01a).
         group_column: column holding each sequence's initial-distribution group (`data.sequences.group_by`);
             kept as `ObservationSet.meta["group_values"]`.
+        label_column: column of regime labels (`data.labels.column`, E12-T06); kept raw as
+            `ObservationSet.meta["label_values"]` (one entry per row) for `Preparer`.
         covariate_columns: columns offered as covariate series.
         dtype: dtype of the observation values.
     """
@@ -57,6 +59,7 @@ class TabularOpts(BaseModel):
     time_column: str | None = None
     sequence_column: str | None = None
     group_column: str | None = None
+    label_column: str | None = None
     covariate_columns: list[str] = Field(default_factory=list)
     dtype: Literal["float64", "int64"] = "float64"
 
@@ -172,6 +175,8 @@ def frame_to_loaded(
         _require_columns(frame, [opts.group_column], "data.sequences.group_by")
         if bool(frame[opts.group_column].isna().any()):
             raise DataError("the group column has missing values", path="data.sequences.group_by")
+    if opts.label_column is not None:
+        _require_columns(frame, [opts.label_column], "data.labels.column")
     _require_columns(frame, opts.covariate_columns, "data.source.covariate_columns")
 
     try:
@@ -204,6 +209,9 @@ def frame_to_loaded(
         if opts.group_column is not None:
             names.append("<group>")
             arrays.append(frame[opts.group_column].astype(str).to_numpy())
+        if opts.label_column is not None:
+            names.append("<labels>")
+            arrays.append(frame[opts.label_column].astype(str).to_numpy())
         snapshot_id = sha256_arrays(names, arrays)
 
     obs = ObservationSet(
@@ -213,9 +221,14 @@ def frame_to_loaded(
         source=source,
         snapshot_id=snapshot_id,
         sequence_ids=sequence_ids,
-        meta={}
-        if opts.group_column is None
-        else {"group_values": frame[opts.group_column].astype(str).tolist()},
+        meta={
+            **(
+                {}
+                if opts.group_column is None
+                else {"group_values": frame[opts.group_column].astype(str).tolist()}
+            ),
+            **({} if opts.label_column is None else {"label_values": frame[opts.label_column].tolist()}),
+        },
     )
     obs.validate()
     cov_times = times if times is not None else np.arange(values.shape[0], dtype=np.int64)

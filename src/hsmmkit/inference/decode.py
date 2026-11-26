@@ -27,7 +27,7 @@ def _decode_batch(fit: FitResult, batch: SequenceBatch, space: StateSpace) -> li
     spec = fit.spec
     eng = ExplicitDurationEngine() if spec.engine == "explicit" else ExpandedHMMEngine()
     pb = batch.padded()
-    posterior = batched_forward_backward(eng, fit.params, spec, space, pb)
+    posterior = batched_forward_backward(eng, fit.params, spec, space, pb, batch.ids)
     paths = np.asarray(batched_viterbi(eng, fit.params, spec, space, pb))
     n_free = ParamManager(spec.param_specs).n_free
     out: list[PosteriorResult] = []

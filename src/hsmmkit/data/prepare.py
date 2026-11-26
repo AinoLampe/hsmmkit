@@ -46,6 +46,7 @@ from hsmmkit.config.schema import CovariateCfg, DataSection, EntryPoint
 from hsmmkit.data.batch import SequenceBatch, split_sequences
 from hsmmkit.data.calendar import Grid, align_covariate, build_grid
 from hsmmkit.data.contracts import (
+    BoundaryConstraints,
     Clock,
     CovariateSeries,
     ObservationSet,
@@ -55,6 +56,7 @@ from hsmmkit.data.contracts import (
     lag_names,
     own_lag_columns,
 )
+from hsmmkit.data.labels import allowed_from_values, boundaries_of
 from hsmmkit.data.transforms import apply_transforms, get_observation_transform
 from hsmmkit.utils.clock import get_clock, parse_clock_options
 from hsmmkit.utils.errors import ConfigError, DataError
@@ -195,6 +197,7 @@ class Preparer:
         n_categories: int | None = None,
         own_lags: int = 0,
         series_support: Sequence[Support] | None = None,
+        n_regimes: int | None = None,
     ) -> None:
         """Store the `data:` config section and the observation support; nothing is fitted yet.
 
@@ -205,6 +208,8 @@ class Preparer:
             series_support: per-series supports of a mixed-family (`product` blocks) model; each column is
                 validated against its own support and the observations stay float (`support` is then the first
                 non-real entry). `None`: every series has `support`.
+            n_regimes: the number of regimes `N`, needed to encode `data.labels` as the `(T, N)`
+                allowed-regime matrix of `PreparedDataset.labels` (E12-T06).
             own_lags: `p > 0` appends the own lags `y_{t-1..t-p}` (after the observation transform and
                 standardization) to the emission covariates as `__lag{l}_{series}`, and masks the first `p`
                 steps and every step with an unobserved lag (autoregressive emissions, `requires_own_lags`).
@@ -225,6 +230,7 @@ class Preparer:
         if own_lags < 0:
             raise ConfigError("own_lags must be >= 0", path="model.emission.ar.p")
         self.own_lags = own_lags
+        self.n_regimes = n_regimes
         self.cfg = cfg
         self._stats: PrepStats | None = None
         self.diagnostics: PrepDiagnostics | None = None
@@ -411,6 +417,7 @@ class Preparer:
             )
             mask = mask & ok[:, None]
 
+        labels, boundaries = self._supervision(obs, frame)
         dataset = PreparedDataset(
             times=frame.times,
             observations=jnp.asarray(observations),
@@ -427,12 +434,45 @@ class Preparer:
             support=self.support,
             series_support=self.series_support,
             n_categories=frame.n_categories,
-            labels=None,
-            boundaries=None,
+            labels=labels,
+            boundaries=boundaries,
             group=None,
         )
         dataset.validate()
         return dataset
+
+    def _supervision(self, obs: ObservationSet, frame: _Frame) -> tuple[Any, BoundaryConstraints | None]:
+        """`(labels (T, N) bool or None, boundaries)` of the prepared rows (`data.labels`, E12-T06)."""
+        cfg = self.cfg.labels
+        if cfg is None:
+            return None, None
+        if self.n_regimes is None:
+            raise ConfigError(
+                "data.labels needs the number of regimes: Preparer(..., n_regimes=N)", path="data.labels"
+            )
+        raw = obs.meta.get("label_values")
+        if raw is None:
+            raise DataError(
+                "data.labels is configured but the source delivered no labels", path="data.labels"
+            )
+        allowed = allowed_from_values(raw, self.n_regimes, allowed_sets=cfg.allowed_sets)
+        keys = (
+            np.arange(len(raw), dtype=np.int64)
+            if obs.times is None
+            else np.asarray(obs.times).astype("datetime64[ns]")
+        )
+        times = np.asarray(frame.times)
+        times = times.astype(np.int64) if obs.times is None else times.astype("datetime64[ns]")
+        pos = np.minimum(np.searchsorted(keys, times), len(keys) - 1)
+        matched = keys[pos] == times  # grid rows without a source row are unlabelled
+        labels = jnp.asarray(np.where(matched[:, None], allowed[pos], True))
+        bounds = cfg.boundaries
+        boundaries = (
+            None
+            if bounds is None
+            else boundaries_of(bounds.must_switch_at, bounds.must_not_switch_at, int(times.shape[0]))
+        )
+        return labels, boundaries
 
     # --- pipeline ------------------------------------------------------------------------------
 

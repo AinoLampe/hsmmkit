@@ -10,6 +10,7 @@ from typing import Any
 
 from hsmmkit.config.schema import DataSection
 from hsmmkit.data.contracts import CovariateSeries, ObservationSet
+from hsmmkit.data.labels import attach_label_file
 from hsmmkit.data.sources import csv as csv  # registers `csv`
 from hsmmkit.data.sources import numpy as numpy  # registers `numpy`
 from hsmmkit.data.sources import pandas as pandas  # registers `pandas`
@@ -46,9 +47,14 @@ def load_data(data: DataSection, *, obj: Any | None = None) -> tuple[Observation
     options = data.source.options()
     if data.sequences is not None and data.sequences.group_by is not None:
         options["group_column"] = data.sequences.group_by  # tabular sources only (others reject the key)
+    if data.labels is not None and data.labels.source == "column":
+        options["label_column"] = data.labels.column  # tabular sources only (others reject the key)
     opts = validate_options(kind, options, "data.source")
     assert opts is not None
     obs, available = source.load(opts, obj=obj)
+    if data.labels is not None and data.labels.source == "file":
+        assert data.labels.path is not None
+        obs = attach_label_file(obs, data.labels.path)
     if obs.times is None and get_clock(data.clock).unit != "step":
         raise ConfigError(
             f"data without a time column needs a step clock (data.clock: steps), not '{data.clock}'",

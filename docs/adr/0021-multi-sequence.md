@@ -27,7 +27,7 @@ for every new length.
 - One compiled program per `(B_pad, T_bucket)` pair; a walk-forward over sequences or a growing data set reuses it.
 - Padding costs time (the longest sequence of a bucket sets the work) and memory `B_pad * T_max`; the bucket
   edges are configurable (`data.sequences.bucket_edges`).
-- Fitting with `B > 1` stays gated until E12-T02; this ADR covers the data side and the engine contract.
+- MAP estimation on a batch (E12-T02) sums the per-sequence log-likelihoods; this ADR covers the data side and the engine contract.
 
 ## Status
 

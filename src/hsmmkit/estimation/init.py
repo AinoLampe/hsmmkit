@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import itertools
+import warnings
 from typing import TYPE_CHECKING
 
 import jax
@@ -427,7 +428,151 @@ def _lattice_jitter_init(data: PreparedDataset, spec: ModelSpec, key: Array) -> 
     return lattice_jitter(spec, key)
 
 
+def _label_blocks(z: np.ndarray, breaks: np.ndarray | None) -> list[tuple[int, int]]:
+    """`(start, end)` (end exclusive) of every maximal block of consecutive hard-labelled steps.
+
+    `z (T,)` holds the regime id of a hard-labelled step and `-1` elsewhere; blocks never span two sequences
+    (`breaks` are the sequence start indices of a pooled batch).
+    """
+    labelled = z >= 0
+    cut = np.zeros(z.shape[0] + 1, dtype=bool)
+    cut[0] = cut[-1] = True
+    if breaks is not None:
+        cut[np.asarray(breaks, dtype=np.int64)] = True
+    blocks: list[tuple[int, int]] = []
+    start: int | None = None
+    for t in range(z.shape[0] + 1):
+        inside = t < z.shape[0] and labelled[t] and not (cut[t] and start is not None)
+        if inside and start is None:
+            start = t
+        elif not inside and start is not None:
+            blocks.append((start, t))
+            start = None
+            if t < z.shape[0] and labelled[t]:
+                start = t
+    return blocks
+
+
+def _runs(z: np.ndarray, blocks: list[tuple[int, int]]) -> list[list[tuple[int, int, int]]]:
+    """Per block, its `(start, end, regime)` runs (`end` exclusive)."""
+    out = []
+    for a, b in blocks:
+        change = np.flatnonzero(np.diff(z[a:b])) + 1
+        edges = np.concatenate(([0], change, [b - a])) + a
+        out.append([(int(s), int(e), int(z[s])) for s, e in itertools.pairwise(edges)])
+    return out
+
+
 @register("init", "labels")
-def _labels_init(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
-    """Initialize from the partial labels (`data.labels`); gated until E12-T06 (`gates.GATES`)."""
-    raise ConfigError("the 'labels' init is not available before E12-T06", path="estimation.init")
+def labels_init(
+    data: PreparedDataset, spec: ModelSpec, key: Array, segments: np.ndarray | None = None
+) -> Params:
+    """Initialize from the hard labels of `data.labels` (E12-T06), without optimization.
+
+    A step is hard-labelled when exactly one regime is allowed. Per regime `j`:
+
+    * **location / scale** (`emission.{mean,mu,m,intercept}`, `emission.{scale,sigma,s}`) are the mean and
+      the standard deviation of its labelled observations (per series), divided by `nominal_dt` and
+      `sqrt(nominal_dt)` for a family with `scale_by_dt`; a full-covariance Gaussian (`emission.chol`) gets
+      the Cholesky factor of the labelled covariance;
+    * **jumps** (`transition.pi_rows`) are the row-normalized counts of label changes between consecutive
+      labelled steps, Laplace-smoothed (+1 on every allowed cell);
+    * **durations** (`init_from_mean_sojourn`) use the mean length of the *interior* label runs (a run
+      touching the start or the end of a labelled block is censored and excluded; a regime with no interior
+      run uses its longest observed run).
+
+    A regime with no labelled step takes its parameters from the `random` init (with a warning). Parameters
+    this method has no rule for keep their config baseline.
+
+    Raises:
+        ConfigError: `data` carries no `labels`.
+    """
+    if data.labels is None:
+        raise ConfigError("the 'labels' init needs data.labels", path="estimation.init")
+    n = spec.n_states
+    allowed = np.asarray(data.labels)
+    y = np.asarray(data.observations, dtype=np.float64)
+    hard = allowed.sum(axis=1) == 1
+    z = np.where(hard, allowed.argmax(axis=1), -1)
+    theta = _baseline_theta(spec)
+    present = np.array([bool(np.any(z == j)) for j in range(n)])
+    scale_by_dt = bool(getattr(spec.emission, "scale_by_dt", False))
+    dt = float(data.nominal_dt)
+    loc_div, scale_div = (dt, float(np.sqrt(dt))) if scale_by_dt else (1.0, 1.0)
+
+    m = y.shape[1]
+    mean = np.zeros((n, m))
+    sd = np.ones((n, m))
+    cov = np.tile(np.eye(m), (n, 1, 1))
+    for j in np.flatnonzero(present):
+        sel = (z == j) & np.all(np.asarray(data.mask), axis=1)
+        if not sel.any():
+            continue
+        yj = y[sel]
+        mean[j] = yj.mean(axis=0)
+        sd[j] = yj.std(axis=0) if yj.shape[0] > 1 else 1.0
+        if yj.shape[0] > m:
+            cov[j] = np.atleast_2d(np.cov(yj, rowvar=False)) + 1e-9 * np.eye(m)
+        else:
+            cov[j] = np.diag(sd[j] ** 2 + 1e-9)
+    loc_name = next((p.name for p in spec.param_specs if p.name in _LOCATION_NAMES), None)
+    scale_name = next((p.name for p in spec.param_specs if p.name in _SCALE_NAMES), None)
+    is_mixture = hasattr(spec.emission, "n_components")
+    if loc_name is not None and not is_mixture:
+        theta[loc_name] = jnp.asarray(
+            _series_values(mean / loc_div, mean.mean(axis=1) / loc_div, _spec_shape(spec, loc_name))
+        )
+    if scale_name is not None and not is_mixture:
+        theta[scale_name] = jnp.asarray(
+            _series_values(
+                sd / scale_div, np.sqrt((sd**2).mean(axis=1)) / scale_div, _spec_shape(spec, scale_name)
+            )
+        )
+    if any(p.name == "emission.chol" for p in spec.param_specs) and not is_mixture:
+        from hsmmkit.model.dists import pack_lower
+
+        factors = np.linalg.cholesky(cov / scale_div**2)
+        theta["emission.chol"] = jnp.stack([pack_lower(jnp.asarray(f)) for f in factors])
+
+    blocks = _label_blocks(z, segments)
+    runs = _runs(z, blocks)
+    if "transition.pi_rows" in {p.name for p in spec.param_specs}:
+        counts = np.ones((n, n))
+        np.fill_diagonal(counts, 0.0)
+        for block in runs:
+            for (_, _, a), (_, _, b) in itertools.pairwise(block):
+                counts[a, b] += 1.0
+        trans = counts / counts.sum(axis=1, keepdims=True)
+        layout = build_memory_layout(n, spec.order)
+        rows = np.empty((layout.tuples.shape[0], n - 1))
+        for r, c in enumerate(layout.current_of):
+            rows[r] = trans[c, [j for j in range(n) if j != c]]
+        theta["transition.pi_rows"] = jnp.asarray(rows)
+    if _duration_primary_names(spec):
+        interior: list[list[int]] = [[] for _ in range(n)]
+        longest = np.ones(n, dtype=np.float64)
+        for block in runs:
+            for i, (s0, e0, reg) in enumerate(block):
+                longest[reg] = max(longest[reg], float(e0 - s0))
+                if 0 < i < len(block) - 1:
+                    interior[reg].append(e0 - s0)
+        mean_steps = np.array([np.mean(r) if r else longest[j] for j, r in enumerate(interior)])
+        theta.update(spec.duration.init_from_mean_sojourn(jnp.asarray(mean_steps), dt))
+
+    if not present.all():
+        missing = np.flatnonzero(~present).tolist()
+        warnings.warn(
+            f"init 'labels': regime(s) {missing} have no labelled step; using the random init for them",
+            UserWarning,
+            stacklevel=2,
+        )
+        rand = random(data, spec, key)
+        for name, value in theta.items():
+            arr = np.asarray(value)
+            if arr.ndim >= 1 and arr.shape[0] == n and name.startswith(("emission.", "duration.")):
+                alt = np.asarray(rand[name])
+                if alt.size != arr.size:
+                    continue
+                keep = present.reshape((n,) + (1,) * (arr.ndim - 1))
+                theta[name] = jnp.asarray(np.where(keep, arr, alt.reshape(arr.shape)))
+    return theta

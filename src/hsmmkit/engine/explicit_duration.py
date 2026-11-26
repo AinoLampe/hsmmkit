@@ -34,6 +34,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from hsmmkit.engine.base import Posterior
+from hsmmkit.engine.constraints import boundary_code, check_feasible, explicit_constrain
 from hsmmkit.engine.expanded_hmm import _check_finite, _check_posterior, _regime_log_emis, _safe_logsumexp
 from hsmmkit.model.duration.base import residual_log_pmf
 from hsmmkit.model.transition import build_memory_layout
@@ -62,6 +63,8 @@ class _Inputs(NamedTuple):
     log_pmf: Array  # (N, D) or (T, N, D), indexed by segment start
     absorbing: Array | None = None  # (N,) bool: regimes whose final segment never ends (E12-T03)
     length: Array | None = None  # 0-d int: the true length `T_b` of a padded sequence (E12-T01b)
+    term_ok: Array | None = None  # (T, N) bool: a censored final segment from s is feasible (E12-T06)
+    log_surv: Array | None = None  # (T, N, D) survival of the unconstrained pmf, masked (E12-T06)
 
 
 def _logaddexp(a: Array, b: Array) -> Array:
@@ -159,7 +162,10 @@ def _prepare(
     arrays unless entry-time duration covariates make the pmf itself `(T, N, D_max)`.
     """
     cells = _cells(spec, data)
-    if cells > MAX_CELLS and (full_tables or spec.left_censored or _has_entry_covariates(spec, data)):
+    supervised = data.labels is not None or data.boundaries is not None  # (T, N, D) mask tables (E12-T06)
+    if cells > MAX_CELLS and (
+        full_tables or spec.left_censored or supervised or _has_entry_covariates(spec, data)
+    ):
         raise NumericalError(
             f"T*N*D_max = {cells:.3g} > {MAX_CELLS:.0e}: use chunked scan (estimation.chunk_size)",
             path="model.d_max",
@@ -179,7 +185,12 @@ def _prepare(
 
 
 def _build_inputs(
-    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, length: Array | None = None
+    theta: Params,
+    spec: ModelSpec,
+    space: StateSpace,
+    data: PreparedDataset,
+    length: Array | None = None,
+    code: Array | None = None,
 ) -> _Inputs:
     dt = jnp.full_like(data.dt, data.nominal_dt)
     ell = _regime_log_emis(theta, spec, data, dt)  # (T, N)
@@ -197,6 +208,12 @@ def _build_inputs(
     absorbing = None
     if topology is not None and topology.absorbing:
         absorbing = jnp.asarray(np.isin(np.arange(spec.n_states), topology.absorbing))
+    term_ok = log_surv = None
+    if code is None:
+        static = boundary_code(data.boundaries, ell.shape[0])
+        code = None if static is None else jnp.asarray(static)
+    if data.labels is not None or code is not None:  # supervision masks (E12-T06), folded into the pmf table
+        log_pmf, term_ok, log_surv = explicit_constrain(log_pmf, data.labels, code, ell.shape[0])
     return _Inputs(
         _log_rho(spec, theta, log_pmf0),
         cum,
@@ -204,6 +221,8 @@ def _build_inputs(
         log_pmf,
         absorbing,
         length,
+        term_ok,
+        log_surv,
     )
 
 
@@ -246,7 +265,7 @@ def _terminal(inp: _Inputs) -> Array:
     """`(T, N)`: `log S_s[j, T-s] + C[T, j] - C[s, j]`, a final segment from `s` (`-inf` if `T-s > D`)."""
     cum, lp = inp.cum, inp.log_pmf
     t_len, n, d_max = cum.shape[0] - 1, lp.shape[-2], lp.shape[-1]
-    surv = _log_survival(lp)
+    surv = _log_survival(lp) if inp.log_surv is None else inp.log_surv
     t_end = t_len if inp.length is None else inp.length  # `T_b` of a padded sequence, else `T`
     length = t_end - jnp.arange(t_len)  # observed final-segment length d = T - s
     idx = jnp.clip(length - 1, 0, d_max - 1)
@@ -262,6 +281,8 @@ def _terminal(inp: _Inputs) -> Array:
         value = jnp.where(inp.absorbing[None, :], never_ends, value)
         fits = fits | inp.absorbing[None, :]
     fits = fits & (length >= 1)[:, None]  # no segment starts in the padding of a batched sequence
+    if inp.term_ok is not None:
+        fits = fits & inp.term_ok
     return jnp.where(fits, value, _NEG_INF)
 
 
@@ -312,7 +333,7 @@ def _chunk(
     in_range = ((s >= 0) & (s <= t_len - 1))[:, None, None]
     sc = jnp.clip(s, 0, t_len - 1)
     lp_s = lp[sc] if lp.ndim == 3 else lp[None]
-    surv_s = _log_survival(lp_s)
+    surv_s = _log_survival(lp_s) if inp.log_surv is None else inp.log_surv[sc]
 
     h_gather = h_ext[sc[:, None] + jnp.arange(1, d_max + 1)[None, :]]  # (span, D, N)
     closed = inner[sc][:, :, None] - cum[sc][:, :, None] + lp_s + jnp.swapaxes(h_gather, 1, 2)
@@ -373,9 +394,14 @@ def _regime_tables(
 
 @partial(jax.jit, static_argnames=("spec",))
 def _loglik_core(
-    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, length: Array | None = None
+    theta: Params,
+    spec: ModelSpec,
+    space: StateSpace,
+    data: PreparedDataset,
+    length: Array | None = None,
+    code: Array | None = None,
 ) -> Array:
-    inp = _build_inputs(theta, spec, space, data, length)
+    inp = _build_inputs(theta, spec, space, data, length, code)
     inner, _ = _forward(inp)
     return _loglik(inner, _terminal(inp))
 
@@ -401,9 +427,10 @@ def _forward_backward_core(
     data: PreparedDataset,
     chunk: int | None = None,
     length: Array | None = None,
+    code: Array | None = None,
 ) -> tuple[Array, Array, Array, Array, Array]:
     """`(log_alpha, log_beta, smoothed, loglik, loglik_backward)`; `(T, S)` tables, `(T, N)` if `chunk`."""
-    inp = _build_inputs(theta, spec, space, data, length)
+    inp = _build_inputs(theta, spec, space, data, length, code)
     inner, g = _forward(inp)
     term = _terminal(inp)
     loglik = _loglik(inner, term)
@@ -499,9 +526,14 @@ def _viterbi_impl(inp: _Inputs) -> tuple[Array, Array]:
 
 @partial(jax.jit, static_argnames=("spec",))
 def _viterbi_core(
-    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, length: Array | None = None
+    theta: Params,
+    spec: ModelSpec,
+    space: StateSpace,
+    data: PreparedDataset,
+    length: Array | None = None,
+    code: Array | None = None,
 ) -> tuple[Array, Array]:
-    return _viterbi_impl(_build_inputs(theta, spec, space, data, length))
+    return _viterbi_impl(_build_inputs(theta, spec, space, data, length, code))
 
 
 def _regime_index(n_states: int) -> StateIndex:
@@ -542,6 +574,7 @@ class ExplicitDurationEngine:
             return explicit_dd.forward(theta, spec, data)
         _prepare(theta, spec, space, data, full_tables=True)
         log_alpha, loglik = _forward_core(theta, spec, space, data)
+        check_feasible(loglik, data, log_alpha.reshape(log_alpha.shape[0], -1))
         _check_finite(loglik)
         return log_alpha, loglik
 
@@ -553,6 +586,7 @@ class ExplicitDurationEngine:
             return explicit_dd.loglik(theta, spec, data)
         _prepare(theta, spec, space, data, full_tables=False)
         loglik: Array = _loglik_core(theta, spec, space, data)
+        check_feasible(loglik, data, None)
         _check_finite(loglik)
         return loglik
 
@@ -578,6 +612,7 @@ class ExplicitDurationEngine:
             )
         _prepare(theta, spec, space, data, full_tables=chunk is None)
         log_alpha, log_beta, smoothed, loglik, _ = _forward_backward_core(theta, spec, space, data, chunk)
+        check_feasible(loglik, data, log_alpha)
         _check_posterior(log_alpha, log_beta, smoothed, loglik)
         return Posterior(
             log_alpha=log_alpha,
@@ -604,6 +639,7 @@ class ExplicitDurationEngine:
         path: Array
         best: Array
         path, best = _viterbi_core(theta, spec, space, data)
+        check_feasible(best, data, None)
         if not isinstance(best, jax.core.Tracer) and not bool(jnp.isfinite(best)):
             raise NumericalError("non-finite best-path log-probability in Viterbi", path="viterbi")
         return path
