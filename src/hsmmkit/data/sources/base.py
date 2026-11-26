@@ -16,7 +16,7 @@ import pandas as pd
 import pydantic
 from pydantic import BaseModel, ConfigDict, Field
 
-from hsmmkit.data.contracts import CovariateSeries, ObservationSet
+from hsmmkit.data.contracts import CovariateSeries, ObservationSet, times_increase
 from hsmmkit.data.provenance import hash_arrays, hash_file
 from hsmmkit.plugins import REGISTRY
 from hsmmkit.utils.errors import ConfigError, DataError
@@ -43,7 +43,9 @@ class TabularOpts(BaseModel):
         path: file to read (`csv`, `parquet`).
         observation_columns: the observed series, in model order; `M = len(observation_columns)`.
         time_column: timestamp column (parsed as UTC); `None` = time-less data (valid under a `steps` clock).
-        sequence_column: column of sequence ids (consumed from E12-T01a on).
+        sequence_column: column of sequence ids (`ObservationSet.sequence_ids`, E12-T01a).
+        group_column: column holding each sequence's initial-distribution group (`data.sequences.group_by`);
+            kept as `ObservationSet.meta["group_values"]`.
         covariate_columns: columns offered as covariate series.
         dtype: dtype of the observation values.
     """
@@ -54,6 +56,7 @@ class TabularOpts(BaseModel):
     observation_columns: list[str] = Field(default_factory=list)
     time_column: str | None = None
     sequence_column: str | None = None
+    group_column: str | None = None
     covariate_columns: list[str] = Field(default_factory=list)
     dtype: Literal["float64", "int64"] = "float64"
 
@@ -119,7 +122,11 @@ def _require_columns(frame: pd.DataFrame, columns: Sequence[str], path: str) -> 
             )
 
 
-def parse_times(raw: Any, path: str = "data.source.time_column") -> np.ndarray:  # noqa: ANN401
+def parse_times(
+    raw: Any,  # noqa: ANN401
+    path: str = "data.source.time_column",
+    sequence_ids: np.ndarray | None = None,
+) -> np.ndarray:
     """Timestamps as strictly increasing naive-UTC `datetime64[ns]`.
 
     Raises:
@@ -132,8 +139,8 @@ def parse_times(raw: Any, path: str = "data.source.time_column") -> np.ndarray: 
     if stamps.isna().any():
         raise DataError("the time column holds missing values", path=path)
     times = stamps.dt.tz_localize(None).to_numpy().astype("datetime64[ns]")
-    if times.shape[0] > 1 and not bool(np.all(np.diff(times) > np.timedelta64(0, "ns"))):
-        raise DataError("times must be strictly increasing", path=path)
+    if not times_increase(times, sequence_ids):
+        raise DataError("times must be strictly increasing (within each sequence)", path=path)
     return times
 
 
@@ -161,6 +168,10 @@ def frame_to_loaded(
         _require_columns(frame, [opts.time_column], "data.source.time_column")
     if opts.sequence_column is not None:
         _require_columns(frame, [opts.sequence_column], "data.source.sequence_column")
+    if opts.group_column is not None:
+        _require_columns(frame, [opts.group_column], "data.sequences.group_by")
+        if bool(frame[opts.group_column].isna().any()):
+            raise DataError("the group column has missing values", path="data.sequences.group_by")
     _require_columns(frame, opts.covariate_columns, "data.source.covariate_columns")
 
     try:
@@ -173,8 +184,12 @@ def frame_to_loaded(
         values, frame[opts.observation_columns].to_numpy(dtype="float64")
     ):
         raise DataError("observation values are not integral (dtype: int64)", path="data.source.dtype")
-    times = parse_times(frame[opts.time_column]) if opts.time_column is not None else None
     sequence_ids = frame[opts.sequence_column].to_numpy() if opts.sequence_column is not None else None
+    times = (
+        parse_times(frame[opts.time_column], sequence_ids=sequence_ids)
+        if opts.time_column is not None
+        else None
+    )
     cov_values = {c: frame[c].to_numpy(dtype=np.float64) for c in opts.covariate_columns}
 
     if snapshot_id is None:
@@ -186,6 +201,9 @@ def frame_to_loaded(
         if sequence_ids is not None:
             names.append("<sequence>")
             arrays.append(np.asarray(sequence_ids))
+        if opts.group_column is not None:
+            names.append("<group>")
+            arrays.append(frame[opts.group_column].astype(str).to_numpy())
         snapshot_id = sha256_arrays(names, arrays)
 
     obs = ObservationSet(
@@ -195,6 +213,9 @@ def frame_to_loaded(
         source=source,
         snapshot_id=snapshot_id,
         sequence_ids=sequence_ids,
+        meta={}
+        if opts.group_column is None
+        else {"group_values": frame[opts.group_column].astype(str).tolist()},
     )
     obs.validate()
     cov_times = times if times is not None else np.arange(values.shape[0], dtype=np.int64)

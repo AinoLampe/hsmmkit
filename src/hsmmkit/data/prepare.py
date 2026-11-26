@@ -31,6 +31,7 @@ Pipeline (same for `fit` and `transform`):
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import warnings
 from collections.abc import Sequence
@@ -42,6 +43,7 @@ import numpy as np
 import pandas as pd
 
 from hsmmkit.config.schema import CovariateCfg, DataSection, EntryPoint
+from hsmmkit.data.batch import SequenceBatch, split_sequences
 from hsmmkit.data.calendar import Grid, align_covariate, build_grid
 from hsmmkit.data.contracts import (
     Clock,
@@ -257,13 +259,10 @@ class Preparer:
         Raises:
             DataError: no training rows, a train-window std `< 1e-12`, or any pipeline error.
         """
-        frame = self._frame(obs, covs)
-        train = _at_or_before(frame.times, train_end)
-        if train_start is not None:
-            train &= _at_or_after(frame.times, train_start)
+        frame, train = self._train_frame(obs, covs, train_end, train_start)
         if not train.any():
             raise DataError(
-                f"train_end {train_end!r} is before the first prepared observation {_iso(frame.times[0])}",
+                f"train_end {train_end!r} is before the first prepared observation {_iso(frame.times.min())}",
                 path="train_end",
             )
         covariates = self.cfg.covariates
@@ -307,7 +306,7 @@ class Preparer:
         self._stats = PrepStats(
             cov_mean=mean,
             cov_std=std,
-            train_window=(_iso(frame.times[train][0]), _iso(frame.times[train][-1])),
+            train_window=(_iso(frame.times[train].min()), _iso(frame.times[train].max())),
             cov_names=tuple(c.name for c in covariates),
             transforms={c.name: list(c.transform) for c in covariates},
             lags={c.name: c.lag for c in covariates},
@@ -316,12 +315,70 @@ class Preparer:
         )
         return self
 
+    def _train_frame(
+        self,
+        obs: ObservationSet,
+        covs: Sequence[CovariateSeries],
+        train_end: str | np.datetime64 | pd.Timestamp,
+        train_start: str | np.datetime64 | pd.Timestamp | None,
+    ) -> tuple[_Frame, np.ndarray]:
+        """The (pooled) prepared rows and the mask of the training rows.
+
+        With `obs.sequence_ids` every sequence is prepared on its own and the rows of all sequences are
+        concatenated, so the standardization statistics are those of the pooled training rows.
+        """
+        parts = split_sequences(obs, covs)
+        frames = [self._frame(o, c) for _, o, c in parts]
+        trains = []
+        for f in frames:
+            tr = _at_or_before(f.times, train_end)
+            if train_start is not None:
+                tr &= _at_or_after(f.times, train_start)
+            trains.append(tr)
+        if len(frames) == 1:
+            return frames[0], trains[0]
+        first = frames[0]
+        pooled = _Frame(
+            times=np.concatenate([f.times for f in frames]),
+            observations=np.concatenate([f.observations for f in frames]),
+            mask=np.concatenate([f.mask for f in frames]),
+            dt=np.concatenate([f.dt for f in frames]),
+            covariates=np.concatenate([f.covariates for f in frames]),
+            nominal_dt=first.nominal_dt,
+            clock=first.clock,
+            n_categories=first.n_categories,
+        )
+        return pooled, np.concatenate(trains)
+
+    def transform_batch(self, obs: ObservationSet, covs: Sequence[CovariateSeries]) -> SequenceBatch:
+        """Prepare every sequence of `obs` (rows grouped by `sequence_ids`) with the fitted pooled statistics.
+
+        Own lags, lagged covariates and first-step masks are generated **within** each sequence, so nothing
+        crosses a sequence boundary. `data.sequences.group_by` (a column constant within a sequence) becomes
+        `PreparedDataset.group`; `data.sequences.bucket_edges` are the batch's bucket edges.
+
+        Returns:
+            A `SequenceBatch` in first-appearance order of the sequence ids (`B = 1` without ids).
+
+        Raises:
+            ConfigError: a group column that varies within a sequence (`data.sequences.group_by`).
+        """
+        parts = split_sequences(obs, covs)
+        datasets = [dataclasses.replace(self.transform(o, c), group=o.meta.get("group")) for _, o, c in parts]
+        edges = () if self.cfg.sequences is None else tuple(self.cfg.sequences.bucket_edges)
+        return SequenceBatch(tuple(datasets), edges, tuple(sid for sid, _, _ in parts))
+
     def transform(self, obs: ObservationSet, covs: Sequence[CovariateSeries]) -> PreparedDataset:
         """Prepare any window with the fitted statistics.
 
         Returns:
             A validated `PreparedDataset`; covariate blocks are `None` for unused entry points.
         """
+        if obs.sequence_ids is not None and np.unique(np.asarray(obs.sequence_ids)).shape[0] > 1:
+            raise ConfigError(
+                "the observations hold several sequences: use transform_batch",
+                path="data.source.sequence_column",
+            )
         stats = self.prep_stats
         names = tuple(c.name for c in self.cfg.covariates)
         if stats.cov_names != names:
