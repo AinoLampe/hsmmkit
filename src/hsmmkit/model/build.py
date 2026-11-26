@@ -15,6 +15,7 @@ follow-up for whoever first builds a lattice-configured model end to end.
 from __future__ import annotations
 
 import dataclasses
+import re
 import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -73,7 +74,11 @@ def _fix_absorbing(specs: Sequence[ParamSpec], absorbing: tuple[int, ...], n_sta
     """
     out: list[ParamSpec] = []
     for sp in specs:
-        if sp.shape[:1] == (n_states,) and sp.constraint != "increasing" and sp.init is not None:
+        owner = re.match(r"duration\.s(\d+)\.", sp.name)  # a per-state member's own parameter
+        if owner is not None and int(owner.group(1)) in absorbing and sp.init is not None:
+            value = np.array(sp.init, copy=True) if sp.value is None else sp.value
+            sp = dataclasses.replace(sp, mode="fixed", value=value)
+        elif sp.shape[:1] == (n_states,) and sp.constraint != "increasing" and sp.init is not None:
             modes = [sp.mode] * n_states if isinstance(sp.mode, str) else list(sp.mode)
             for i in absorbing:
                 modes[i] = "fixed"
@@ -295,6 +300,10 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
     if not topology.is_full and topology.absorbing:
         duration_specs = tuple(_fix_absorbing(duration_specs, topology.absorbing, n))
     if m.duration.duration_dependent_jumps:
+        if not topology.is_full and topology.absorbing:
+            raise ConfigError(
+                "duration-dependent jumps do not combine with absorbing regimes", path="model.topology"
+            )
         if m.left_censored:
             raise ConfigError(
                 "duration-dependent jumps do not combine with left_censored yet", path="model.left_censored"

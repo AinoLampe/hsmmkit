@@ -21,7 +21,7 @@ import numpy as np
 from hsmmkit.data.contracts import PreparedDataset, PrepStats, lag_names, own_lag_columns
 from hsmmkit.engine.viterbi import segments
 from hsmmkit.statespace.builders import initial_log_rho
-from hsmmkit.utils.errors import NumericalError
+from hsmmkit.utils.errors import ConfigError, NumericalError
 
 if TYPE_CHECKING:
     from hsmmkit.model.params.manager import Params
@@ -63,6 +63,11 @@ def _simulate_one_path(
     init_state: Array,
 ) -> tuple[Array, Array, Array]:
     """One path: `(states (T,), regimes (T,), values (T, M))`."""
+    if spec.duration_dependent_jumps:
+        raise ConfigError(
+            "simulating duration-dependent jumps is not supported yet",
+            path="model.duration.duration_dependent_jumps",
+        )
     t_len = dt.shape[0]
     step_key, emit_key = jax.random.split(key)
 

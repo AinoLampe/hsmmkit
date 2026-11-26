@@ -133,6 +133,8 @@ def has_identifiability_guard(spec: ModelSpec) -> bool:
         return True
     if getattr(spec.transition, "topology", None) is not None:
         return True  # a non-full topology fixes the order of the regimes (relabelling would break it)
+    if hasattr(spec.duration, "families"):
+        return True  # per-state duration families are tied to their regime: no relabelling
     identifying = [s for s in spec.param_specs if _unprefixed(s.name) in _IDENTIFYING_EMISSION]
     if not identifying:
         return False

@@ -27,7 +27,7 @@ import numpy as np
 from hsmmkit.engine.base import Posterior
 from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
 from hsmmkit.statespace.builders import build_explicit
-from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.errors import ConfigError, NumericalError
 from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from hsmmkit.statespace.index import StateSpace
 
 _NEG_INF = -jnp.inf
+MAX_STATES_SQUARED = 5e7
 
 
 @lru_cache(maxsize=16)
@@ -59,7 +60,9 @@ def dd_space(spec: ModelSpec) -> StateSpace:
         del z_d_t
         lp = jnp.asarray(spec.duration.log_pmf(theta, d_max, dt_t, None))  # type: ignore[arg-type]  # (N, D)
         log_surv = jax.lax.cumlogsumexp(lp, axis=1, reverse=True)
-        hazard = jnp.exp(lp - log_surv).at[:, d_max - 1].set(1.0)  # (N, D)
+        finite = log_surv > -jnp.inf
+        hazard = jnp.where(finite, jnp.exp(lp - jnp.where(finite, log_surv, 0.0)), 1.0)
+        hazard = hazard.at[:, d_max - 1].set(1.0)  # (N, D)
         durations = jnp.arange(1, d_max + 1, dtype=jnp.float64)
         pi_d = spec.transition.jump_probs_dur(theta, z_pi_t, layout, durations)  # type: ignore[attr-defined]
         a = jnp.zeros((n, d_max, n, d_max))
@@ -76,6 +79,13 @@ def dd_space(spec: ModelSpec) -> StateSpace:
 
 def _view(spec: ModelSpec, data: PreparedDataset) -> tuple[StateSpace, PreparedDataset]:
     """The dd state space and `data` on the nominal grid (the explicit engine ignores irregular `dt`)."""
+    s = spec.n_states * spec.d_max
+    if s * s > MAX_STATES_SQUARED or data.observations.shape[0] * s > MAX_STATES_SQUARED:
+        raise NumericalError(
+            f"duration-dependent jumps need a dense ({s} x {s}) transition and a (T, {s}) posterior: "
+            f"too large (limit {MAX_STATES_SQUARED:.0e} cells); lower d_max",
+            path="model.d_max",
+        )
     return dd_space(spec), dataclasses.replace(data, dt=jnp.full_like(data.dt, data.nominal_dt))
 
 

@@ -174,3 +174,56 @@ def test_e12_t05_per_state_durations_build_and_stack(tmp_path: Path) -> None:
     assert np.isfinite(float(ll))
     means = np.asarray(spec.duration.mean_sojourn(theta, data.nominal_dt))
     assert means.shape == (3,)
+
+
+def test_e12_t05_review_guards(tmp_path: Path) -> None:
+    """Review fixes: dd + absorbing rejected, no relabelling of per-state durations, size guard, forecast."""
+    from hsmmkit.engine import explicit_dd
+    from hsmmkit.inference.forecast import _reject_autoregressive
+    from hsmmkit.model.lattice import has_identifiability_guard
+    from hsmmkit.utils.errors import NumericalError
+
+    raw = _raw(tmp_path, 3, 10, dd=True)
+    raw["model"]["topology"] = "left_to_right"
+    cfg_abs = parse_project_config(raw)
+    y0 = np.random.default_rng(0).normal(size=30)
+    t0 = pd.bdate_range("2020-01-01", periods=30).to_numpy().astype("datetime64[ns]")
+    obs0 = ObservationSet(("x",), t0, y0.reshape(-1, 1), "memory", "s")
+    data0 = Preparer(cfg_abs.data).fit(obs0, [], train_end=t0[-1]).transform(obs0, [])
+    with pytest.raises(ConfigError) as err:
+        build_model_spec(cfg_abs, data0)
+    assert err.value.path == "model.topology"
+
+    _, data, spec = _build(tmp_path, 3, 30, 10, 0, dd=True)
+    with pytest.raises(ConfigError, match="forecasting with duration-dependent jumps"):
+        _reject_autoregressive(spec)
+    old = explicit_dd.MAX_STATES_SQUARED
+    explicit_dd.MAX_STATES_SQUARED = 10.0
+    try:
+        with pytest.raises(NumericalError):
+            ExplicitDurationEngine().loglik({}, spec, build_explicit(spec), data)
+    finally:
+        explicit_dd.MAX_STATES_SQUARED = old
+
+    raw = core_raw(tmp_path)
+    raw["model"].update({"n_states": 3, "engine": "explicit", "d_max": 20, "topology": "left_to_right"})
+    raw["model"]["emission"]["params"] = {
+        "mean": {"mode": "free", "init": [0.0, 0.2, 0.4]},
+        "scale": {"mode": "free", "init": [0.5, 0.7, 0.9]},
+    }
+    raw["model"]["duration"] = {
+        "per_state": [
+            {"family": "geometric", "params": {"rate": {"mode": "free", "init_mean_sojourn_steps": 5.0}}},
+            {"family": "geometric", "params": {"rate": {"mode": "free", "init_mean_sojourn_steps": 7.0}}},
+            {"family": "geometric", "params": {"rate": {"mode": "free", "init_mean_sojourn_steps": 9.0}}},
+        ]
+    }
+    cfg = parse_project_config(raw)
+    y = np.random.default_rng(0).normal(size=40)
+    times = pd.bdate_range("2020-01-01", periods=40).to_numpy().astype("datetime64[ns]")
+    obs = ObservationSet(("x",), times, y.reshape(-1, 1), "memory", "s")
+    data = Preparer(cfg.data).fit(obs, [], train_end=times[-1]).transform(obs, [])
+    spec_ps = build_model_spec(cfg, data)
+    modes = {s.name: s.mode for s in spec_ps.param_specs if s.name.startswith("duration.")}
+    assert modes == {"duration.s0.rate": "free", "duration.s1.rate": "free", "duration.s2.rate": "fixed"}
+    assert has_identifiability_guard(spec_ps)

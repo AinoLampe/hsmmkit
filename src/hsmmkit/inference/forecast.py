@@ -80,7 +80,13 @@ def _blocks(
 
 
 def _reject_autoregressive(spec: ModelSpec) -> None:
-    """Forecasting an autoregressive emission (`msar`) needs the last observed values as lags: not yet."""
+    """Forecasting an autoregressive emission (`msar`) or duration-dependent jumps is not supported yet."""
+    if spec.duration_dependent_jumps:
+        raise ConfigError(
+            "forecasting with duration-dependent jumps is not supported yet (the jump depends on the "
+            "elapsed duration of the origin segment)",
+            path="model.duration.duration_dependent_jumps",
+        )
     if hasattr(spec.emission, "sample_path"):
         raise ConfigError(
             "forecasting with an autoregressive emission (msar) is not supported yet: its draws need the "
