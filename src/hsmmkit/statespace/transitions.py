@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from hsmmkit.model.params import Params
 from hsmmkit.model.transition import transition_matrix_generator
@@ -55,6 +56,14 @@ def _make_generator_transition_fn(spec: ModelSpec) -> TransitionFn:
     return transition_fn
 
 
+def _absorbing_states(spec: ModelSpec, space: StateSpace) -> Array | None:
+    """`(S,)` bool mask of the expanded states of absorbing regimes (E12-T03), or `None` without any."""
+    topology = getattr(spec.transition, "topology", None)
+    if topology is None or not topology.absorbing:
+        return None
+    return jnp.asarray(np.isin(np.asarray(space.index.regime_of), topology.absorbing))
+
+
 def _make_jump_transition_fn(spec: ModelSpec, space: StateSpace) -> TransitionFn:
     s = space.n_expanded
     row_of_state = space.index.row_of_state
@@ -64,6 +73,7 @@ def _make_jump_transition_fn(spec: ModelSpec, space: StateSpace) -> TransitionFn
     rate_index_of = space.rate_index_of
     n_rates = space.n_rates
     diag_idx = jnp.arange(s)
+    absorb = _absorbing_states(spec, space)
 
     def transition_fn(
         theta: Params, z_pi_t: Array | None, z_d_t: Array | None, dt_t: Array
@@ -77,6 +87,8 @@ def _make_jump_transition_fn(spec: ModelSpec, space: StateSpace) -> TransitionFn
                 path="duration.rate",
             )
         a_state = a_rate[rate_index_of]  # (S,)
+        if absorb is not None:
+            a_state = jnp.where(absorb, 0.0, a_state)  # absorbing regimes never advance or leave
 
         pi_rows = spec.transition.jump_probs_t(theta, z_pi_t, space.layout)  # (R, N)
         pi_state = pi_rows[row_of_state]  # (S, N)
@@ -108,6 +120,7 @@ def _make_steps_transition_fn(spec: ModelSpec, space: StateSpace) -> TransitionF
     regime_of = space.index.regime_of
     exit_targets = space.exit_targets  # (S, N): the successor tuple for each next regime
     rows = jnp.arange(s)[:, None]
+    absorb = _absorbing_states(spec, space)
 
     def transition_fn(
         theta: Params, z_pi_t: Array | None, z_d_t: Array | None, dt_t: Array
@@ -119,6 +132,8 @@ def _make_steps_transition_fn(spec: ModelSpec, space: StateSpace) -> TransitionF
                 path="duration.rate",
             )
         a_state = a_rate[regime_of]  # (S,)
+        if absorb is not None:
+            a_state = jnp.where(absorb, 0.0, a_state)
         pi_state = spec.transition.jump_probs_t(theta, z_pi_t, space.layout)[regime_of]  # (S, N), 0 on stay
         stay = jax.nn.one_hot(regime_of, space.index.n_states, dtype=pi_state.dtype)  # (S, N)
         probs = stay * (1.0 - a_state)[:, None] + a_state[:, None] * pi_state

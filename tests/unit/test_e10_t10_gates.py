@@ -40,8 +40,6 @@ def _case(name: str) -> dict[str, Any]:
         raw["data"]["source"]["sequence_column"] = "sid"
     elif name == "model.initial_groups":
         raw["model"]["initial_groups"] = "per_group"
-    elif name == "model.topology":
-        raw["model"]["topology"] = "cyclic"
     elif name == "model.left_censored":
         raw = _explicit(raw)
         raw["model"]["left_censored"] = True

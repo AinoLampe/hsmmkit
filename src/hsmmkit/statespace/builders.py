@@ -55,7 +55,7 @@ def _build_expanded_cached(spec: ModelSpec) -> StateSpace:
         return _build_steps(spec)
     n_states = spec.n_states
     order = spec.order
-    layout = build_memory_layout(n_states, order)
+    layout = build_memory_layout(n_states, order, getattr(spec.transition, "topology", None))
     r_rows = layout.tuples.shape[0]
     memories = layout.tuples[:, :-1]  # (R, order-1)
 
@@ -151,7 +151,7 @@ def _build_steps(spec: ModelSpec) -> StateSpace:
     ids = np.arange(n_expanded, dtype=np.int64)
     tuples = np.stack([(ids // n_states ** (p - k)) % n_states for k in range(p + 1)], axis=1)  # (S, p+1)
     regime_of = tuples[:, p]
-    layout = build_memory_layout(n_states, 1)
+    layout = build_memory_layout(n_states, 1, getattr(spec.transition, "topology", None))
     index = StateIndex(
         regime_of=jnp.asarray(regime_of),
         phase_of=jnp.ones(n_expanded, dtype=jnp.int64),
@@ -191,7 +191,7 @@ def _build_entry_state_of(
         memory_r = tuple(int(m) for m in memories[row_idx])
         shifted = _shift(memory_r, current, order)
         for target in range(n_states):
-            if target == current:
+            if target == current or not layout.target_mask[row_idx, target]:
                 continue
             entry_row = row_lookup[(*shifted, target)]
             entry_state_of[row_idx, target] = row_start[entry_row]
@@ -286,7 +286,7 @@ def build_explicit(spec: ModelSpec) -> StateSpace:
             path="model.transition.duration_conditioning",
         )
     n_states, d_max = spec.n_states, spec.d_max
-    layout = build_memory_layout(n_states, 1)
+    layout = build_memory_layout(n_states, 1, getattr(spec.transition, "topology", None))
     n_expanded = n_states * d_max
     regime_of = np.repeat(np.arange(n_states, dtype=np.int64), d_max)
     phase_of = np.tile(np.arange(1, d_max + 1, dtype=np.int64), n_states)

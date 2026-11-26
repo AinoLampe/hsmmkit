@@ -377,7 +377,7 @@ class LatticeCfg(_Base):
 
 
 class BandedCfg(_Base):
-    """`model.topology: {banded: k}` — jumps only to the `k` next regimes (cyclic distance)."""
+    """`model.topology: {banded: k}` — jumps only to regimes within `k` positions (`0 < |j - i| <= k`)."""
 
     banded: int = Field(ge=1)
 

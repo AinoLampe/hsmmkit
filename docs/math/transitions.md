@@ -51,3 +51,21 @@ error `O((\lambda_{\max}\Delta_t)^2)`.
 | `z^\pi_t` | `PreparedDataset.cov_transition` |
 | memory rows | `MemoryLayout` in `model/transition.py` |
 | generator mode | `model.transition.mode: generator` |
+
+## Topology `Ω` and absorbing regimes
+
+`model.topology` restricts the jump matrix to an allowed set `A_i = {j : Ω_ij}` (diagonal always excluded):
+`full` (default, every off-diagonal jump, the Part I parametrization bitwise), `left_to_right` (`j > i`, the last
+regime is absorbing), `cyclic` (`j = (i + 1) mod N`), `{banded: k}` (`0 < |j − i| ≤ k`) or `{matrix: [[0/1]]}`
+(zero diagonal, `N × N`). For a non-full topology the multinomial logit is masked: the reference of a row is its
+smallest allowed target (logit 0), only `A_i \ {ref}` carries logits, and `π_ij = 0` exactly outside `A_i`. The free
+logits are one flat vector `transition.a (F,)` (and `transition.b (F, K_π)` with covariates), with
+`F = Σ_rows max(0, |A| − 1)` (Appendix F; rows with one allowed target have no parameter). For `order: 2` a memory
+tuple `(i, j)` exists only if `Ω_ij` holds. A Dirichlet prior acts over the allowed targets only. The initial
+distribution is not restricted by the topology.
+
+A regime with no allowed target is **absorbing**. Expanded engine: its advance probability is forced to 0
+(`a_i(t) ≡ 0`: it never advances a phase and never exits); explicit engine: its sojourn pmf is `δ_{d, D_max}` and the
+final segment is right-censored (choose `d_max` at least the data length). The duration parameters of absorbing
+regimes are `fixed` (they are not part of `u`). A non-full topology identifies the order of the regimes, so
+`fit` does not relabel the states afterwards; generator mode (`transition.mode: generator`) needs the full topology.

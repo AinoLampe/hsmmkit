@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from hsmmkit.config.schema import BandedCfg, MatrixCfg, ProjectConfig
+from hsmmkit.config.schema import ProjectConfig
 from hsmmkit.utils.errors import ConfigError
 
 __all__ = ["GATES", "PLANNED_METRICS", "check", "used_gates"]
@@ -28,11 +28,6 @@ PLANNED_METRICS: dict[str, str] = {
 Gate = tuple[Callable[[ProjectConfig], bool], str]
 
 
-def _topology_not_full(c: ProjectConfig) -> bool:
-    t = c.model.topology
-    return isinstance(t, (BandedCfg, MatrixCfg)) or t != "full"
-
-
 GATES: dict[str, Gate] = {
     "data.sequences": (lambda c: c.data.sequences is not None, "E12-T02"),
     "data.source.sequence_column": (
@@ -40,7 +35,6 @@ GATES: dict[str, Gate] = {
         "E12-T02",
     ),
     "model.initial_groups": (lambda c: c.model.initial_groups == "per_group", "E12-T02"),
-    "model.topology": (_topology_not_full, "E12-T03"),
     "model.left_censored": (lambda c: c.model.left_censored and c.model.engine == "explicit", "E12-T04"),
     "model.duration.per_state": (lambda c: c.model.duration.per_state is not None, "E12-T05"),
     "model.duration.duration_dependent_jumps": (

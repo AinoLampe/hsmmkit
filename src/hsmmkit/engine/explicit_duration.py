@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from hsmmkit.engine.base import Posterior
 from hsmmkit.engine.expanded_hmm import _check_finite, _check_posterior, _regime_log_emis, _safe_logsumexp
@@ -73,7 +74,7 @@ def _log_survival(log_pmf: Array) -> Array:
 def _log_jump(spec: ModelSpec, space: StateSpace, theta: Params, data: PreparedDataset) -> Array:
     """`log pi`: `(N, N)` when constant, `(T, N, N)` with transition covariates (row = segment start)."""
     z_pi = data.cov_transition
-    if z_pi is None or z_pi.shape[-1] == 0 or "transition.pi_rows" in theta:
+    if z_pi is None or z_pi.shape[-1] == 0 or "transition.b" not in theta:
         pi = spec.transition.jump_probs_t(theta, None, space.layout)
     else:
         pi = spec.transition.jump_probs(theta, z_pi, space.layout)
@@ -86,8 +87,17 @@ def _log_pmf(spec: ModelSpec, theta: Params, data: PreparedDataset) -> Array:
     family, d_max, nominal_dt = spec.duration, spec.d_max, data.nominal_dt
     z_d = data.cov_duration
     if z_d is None or z_d.shape[-1] == 0 or not getattr(family, "cov_idx", ()):
-        return jnp.asarray(family.log_pmf(theta, d_max, nominal_dt, None))
-    return jax.vmap(lambda z: family.log_pmf(theta, d_max, nominal_dt, z))(z_d)
+        lp = jnp.asarray(family.log_pmf(theta, d_max, nominal_dt, None))
+    else:
+        lp = jax.vmap(lambda z: family.log_pmf(theta, d_max, nominal_dt, z))(z_d)
+    topology = getattr(spec.transition, "topology", None)
+    if topology is not None and topology.absorbing:
+        # an absorbing regime never leaves: `p(d) = delta_{d, D_max}` and the final segment is right-censored
+        stays = np.full(d_max, -np.inf)
+        stays[-1] = 0.0
+        mask = np.isin(np.arange(spec.n_states), topology.absorbing)[:, None]
+        lp = jnp.where(jnp.asarray(mask), jnp.asarray(stays), lp)
+    return lp
 
 
 def _log_rho(spec: ModelSpec, theta: Params) -> Array:
