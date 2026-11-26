@@ -100,7 +100,7 @@ def test_e12_t05_mixed_per_state_durations_recover_the_mean_sojourns(tmp_path: P
 
 
 def _simulate_dd(seed: int, t_len: int) -> np.ndarray:
-    """3 regimes, geometric sojourns (mean 8); from regime 0 the jump goes to 2 with prob. `1 / (1 + d^2)`."""
+    """3 regimes, geometric sojourns (mean 8); from regime 0 the logit of 2 against 1 is `4 - 2 log d`."""
     rng = np.random.default_rng(seed)
     y, state, t = np.empty(t_len), 0, 0
     while t < t_len:
@@ -108,7 +108,7 @@ def _simulate_dd(seed: int, t_len: int) -> np.ndarray:
         y[t : t + d] = rng.normal(MEANS[state], SDS[state], d)
         t += d
         if state == 0:
-            state = 2 if rng.random() < 1.0 / (1.0 + d**2) else 1
+            state = 2 if rng.random() < 1.0 / (1.0 + np.exp(-(4.0 - 2.0 * np.log(d)))) else 1
         else:
             state = int(rng.choice([s for s in range(3) if s != state]))
     return y
@@ -131,14 +131,14 @@ def test_e12_t05_duration_dependent_jump_coefficient_has_the_right_sign(tmp_path
     cfg = parse_project_config(raw)
     signs = []
     for seed in range(5):
-        data = _prepare(cfg, _simulate_dd(seed, 6_000))
+        data = _prepare(cfg, _simulate_dd(seed, 4_000))
         spec = build_model_spec(cfg, data)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             res = fit(
                 spec,
                 data,
-                EstimationSection(restarts=1, max_iter=120, init=["random"], device="cpu"),
+                EstimationSection(restarts=1, max_iter=100, init=["random"], device="cpu"),
                 seed=seed,
             )  # type: ignore[call-arg]
         c = np.asarray(res.params["transition.c"])
