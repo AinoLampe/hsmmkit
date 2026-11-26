@@ -35,7 +35,6 @@ GATES: dict[str, Gate] = {
         "E12-T02",
     ),
     "model.initial_groups": (lambda c: c.model.initial_groups == "per_group", "E12-T02"),
-    "model.left_censored": (lambda c: c.model.left_censored and c.model.engine == "explicit", "E12-T04"),
     "model.duration.per_state": (lambda c: c.model.duration.per_state is not None, "E12-T05"),
     "model.duration.duration_dependent_jumps": (
         lambda c: c.model.duration.duration_dependent_jumps,
