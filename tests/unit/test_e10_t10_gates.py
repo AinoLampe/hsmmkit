@@ -43,11 +43,6 @@ def _case(name: str) -> dict[str, Any]:
     elif name == "model.duration.duration_dependent_jumps":
         raw = _explicit(raw)
         raw["model"]["duration"]["duration_dependent_jumps"] = True
-    elif name == "data.labels":
-        raw["data"]["labels"] = {"source": "column", "column": "y"}
-    elif name == "estimation.init":
-        raw["data"]["labels"] = {"source": "column", "column": "y"}
-        raw["estimation"]["init"] = ["labels"]
     elif name == "model.emission.covariance":
         raw["model"]["emission"]["covariance"] = "full"
     elif name.startswith("estimation.method="):
@@ -95,21 +90,21 @@ def test_e10_t10_validation_is_not_gated(tmp_path: Path) -> None:
 
 
 def test_e10_t10_appendix_h_build_raises_the_first_gate_in_deterministic_order() -> None:
-    """Appendix H builds into `data.labels` -> E12-T06 first (the order of `GATES`)."""
+    """Appendix H builds into `estimation.method=gem` -> E13-T03a first (the order of `GATES`)."""
     cfg = parse_project_config(appendix_h())
     paths = [p for p, _ in gates.used_gates(cfg)]
-    assert paths[0] == "data.labels"
+    assert paths[0] == "estimation.method=gem"
     assert paths == [p for p in gates.GATES if p in paths]  # GATES order
     with pytest.raises(ConfigError) as info:
         build_model_spec_from(cfg, INPUTS)
-    assert info.value.path == "data.labels"
-    assert "E12-T06" in str(info.value)
+    assert info.value.path == "estimation.method"
+    assert "E13-T03a" in str(info.value)
 
 
 def test_e10_t10_removing_a_row_lets_the_key_through(monkeypatch: pytest.MonkeyPatch) -> None:
     """The mechanism a feature ticket uses: delete its row, and the key no longer raises."""
-    cfg = parse_project_config(_case("data.labels"))
-    monkeypatch.setattr(gates, "GATES", {k: v for k, v in gates.GATES.items() if k != "data.labels"})
+    cfg = parse_project_config(_case("estimation.method=em"))
+    monkeypatch.setattr(gates, "GATES", {k: v for k, v in gates.GATES.items() if k != "estimation.method=em"})
     gates.check(cfg)
 
 
