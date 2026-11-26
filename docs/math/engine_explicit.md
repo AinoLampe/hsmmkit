@@ -98,3 +98,18 @@ Full `(T, N, D_max)` tables (`forward`, unchunked `forward_backward`) raise `Num
 | `D_{max}` | `model.d_max` |
 | engine | `ExplicitDurationEngine` (`chunk_size` from `estimation.chunk_size`) |
 | nominal step `\Delta` | `PreparedDataset.nominal_dt` |
+
+## Left-censoring (`model.left_censored: true`)
+
+A sequence that starts inside an ongoing segment should not pay for a segment that began at `t = 1`. With the
+explicit engine the **first** segment uses the residual-life pmf instead of `p_j(d)`:
+
+$$p^{\mathrm{res}}_j(d) = \frac{S_j(d-1)}{E[d_j]},\quad S_j(d) = P(d_j > d),\quad E[d_j] = \sum_d d\,p_j(d),$$
+
+computed on the truncated, renormalized pmf (`sum_d S_j(d-1) = E[d_j]`, so it sums to 1), and the initial regime
+law is the stationary occupancy `rho_j ∝ nu_j E[d_j]` with `nu` the stationary distribution of the jump matrix
+at `z = 0` (unless `initial_state: free`, which keeps its own `rho`). A sequence with a single segment is both left
+and right censored: its term is `rho_j S^{res}_j(T)`. With entry-time duration covariates `p^{res}` uses the
+covariates at `t = 1`. The right-censored last segment is unchanged. In the **expanded** engine left-censoring is
+exactly `initial_state: stationary` (the equilibrium over `(memory, regime, phase)`); a different `initial_state`
+is replaced by it with a warning. Segment memory of order `>= 2` is not available in the explicit engine.

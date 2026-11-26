@@ -15,6 +15,7 @@ follow-up for whoever first builds a lattice-configured model end to end.
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -246,6 +247,25 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
     )
     if not topology.is_full and topology.absorbing:
         duration_specs = _fix_absorbing(duration_specs, topology.absorbing, n)
+    initial = m.initial_state
+    if m.left_censored and m.engine == "explicit" and initial != "free" and not topology.is_full:
+        allowed = topology.allowed
+        reach = allowed | np.eye(n, dtype=bool)
+        for _ in range(n):
+            reach = reach | (reach.astype(int) @ reach.astype(int) > 0)
+        if not bool(reach.all()):
+            raise ConfigError(
+                "left_censored needs the stationary regime occupancy, which is degenerate for a topology "
+                "that is not strongly connected (absorbing or one-way regimes): use initial_state: free",
+                path="model.left_censored",
+            )
+    if m.left_censored and m.engine == "expanded" and initial != "stationary":
+        warnings.warn(
+            "left_censored implies initial_state: stationary for the expanded engine",
+            UserWarning,
+            stacklevel=2,
+        )
+        initial = "stationary"
     assert m.d_max is not None  # `_resolve_d_max` (config/schema.py) always fills this in
 
     return ModelSpec(
@@ -258,7 +278,8 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
         duration_conditioning=m.transition.duration_conditioning,
         engine=m.engine,
         d_max=m.d_max,
-        initial=m.initial_state,
+        initial=initial,
         param_specs=tuple(emission_specs) + tuple(duration_specs) + tuple(transition_specs),
+        left_censored=m.left_censored,
         memory_mode=memory_mode,
     )

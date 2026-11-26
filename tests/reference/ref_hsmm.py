@@ -45,8 +45,23 @@ def _seg_loglik(cum: np.ndarray, s0: int, e0: int, j: int) -> float:
     return float(cum[e0 + 1, j] - cum[s0, j])
 
 
+def residual_log_pmf(log_dur_pmf: np.ndarray) -> np.ndarray:
+    """`(N, D_max)` residual-life pmf `S(d-1) / E[d]` of each row (`S(d) = P(duration > d)`), in logs."""
+    pmf = np.exp(log_dur_pmf)
+    d = np.arange(1, pmf.shape[1] + 1)
+    surv_prev = 1.0 - np.cumsum(pmf, axis=1) + pmf  # S(d-1) = P(duration >= d)
+    mean = (pmf * d).sum(axis=1, keepdims=True)
+    with np.errstate(divide="ignore"):
+        return np.log(np.maximum(surv_prev, 0.0) / mean)
+
+
 def forward(
-    log_rho: np.ndarray, log_trans: np.ndarray, log_dur_pmf: np.ndarray, log_emis: np.ndarray, d_max: int
+    log_rho: np.ndarray,
+    log_trans: np.ndarray,
+    log_dur_pmf: np.ndarray,
+    log_emis: np.ndarray,
+    d_max: int,
+    left_censored: bool = False,
 ) -> tuple[np.ndarray, float]:
     """`(end_prob (T+1, N), loglik)`.
 
@@ -56,6 +71,7 @@ def forward(
     t_len, n_states = log_emis.shape
     cum = _cum_log_emis(log_emis)
     end_prob = np.full((t_len + 1, n_states), -np.inf)
+    first_pmf = residual_log_pmf(log_dur_pmf) if left_censored else log_dur_pmf  # segment starting at tau = 0
 
     def inner(tau: int, j: int) -> float:
         if tau == 0:
@@ -65,14 +81,19 @@ def forward(
     for t in range(1, t_len + 1):
         for j in range(n_states):
             terms = [
-                inner(t - d, j) + log_dur_pmf[j, d - 1] + _seg_loglik(cum, t - d, t - 1, j)
+                inner(t - d, j)
+                + (first_pmf if t - d == 0 else log_dur_pmf)[j, d - 1]
+                + _seg_loglik(cum, t - d, t - 1, j)
                 for d in range(1, min(d_max, t) + 1)
             ]
             end_prob[t, j] = logsumexp(terms) if terms else -np.inf
 
     surv = _log_survival(log_dur_pmf, d_max)
+    surv_first = _log_survival(first_pmf, d_max)
     censored_terms = [
-        inner(t_len - d, j) + surv[j, d] + _seg_loglik(cum, t_len - d, t_len - 1, j)
+        inner(t_len - d, j)
+        + (surv_first if t_len - d == 0 else surv)[j, d]
+        + _seg_loglik(cum, t_len - d, t_len - 1, j)
         for j in range(n_states)
         for d in range(1, min(d_max, t_len) + 1)
     ]
@@ -179,12 +200,19 @@ def forward_backward(
 
 
 def brute_force_loglik(
-    log_rho: np.ndarray, log_trans: np.ndarray, log_dur_pmf: np.ndarray, log_emis: np.ndarray, d_max: int
+    log_rho: np.ndarray,
+    log_trans: np.ndarray,
+    log_dur_pmf: np.ndarray,
+    log_emis: np.ndarray,
+    d_max: int,
+    left_censored: bool = False,
 ) -> float:
     """Total log-likelihood by literal enumeration of every segmentation of `[0, T)`."""
     t_len, n_states = log_emis.shape
     cum = _cum_log_emis(log_emis)
     surv = _log_survival(log_dur_pmf, d_max)
+    first_pmf = residual_log_pmf(log_dur_pmf) if left_censored else log_dur_pmf
+    surv_first = _log_survival(first_pmf, d_max)
     results: list[float] = []
 
     def recurse(pos: int, prev_state: int | None, logprob: float) -> None:
@@ -200,7 +228,8 @@ def brute_force_loglik(
             remaining = t_len - pos
             for d in range(1, min(d_max, remaining) + 1):
                 seg_lp = _seg_loglik(cum, pos, pos + d - 1, j)
-                dur_lp = surv[j, d] if pos + d == t_len else log_dur_pmf[j, d - 1]
+                pmf, sv = (first_pmf, surv_first) if pos == 0 else (log_dur_pmf, surv)
+                dur_lp = sv[j, d] if pos + d == t_len else pmf[j, d - 1]
                 recurse(pos + d, j, logprob + trans_lp + dur_lp + seg_lp)
 
     recurse(0, None, 0.0)

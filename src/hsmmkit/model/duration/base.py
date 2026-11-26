@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, Protocol
 
+import jax
 import jax.numpy as jnp
+import jax.scipy.special
 import numpy as np
 
 from hsmmkit.model.params import DEFAULT_COEF_PRIOR, DirichletPrior, LogNormalPrior, NormalPrior, Prior
@@ -60,6 +62,18 @@ class DurationFamily(Protocol):
 
 
 # --- shared numerics: advance probability, independent of phase count r ------------------------
+
+
+def residual_log_pmf(log_pmf: Array) -> Array:
+    """Residual-life (equilibrium) pmf of a sojourn pmf over `d = 1..D_max` (E12-T04).
+
+    `p_res(d) = S(d - 1) / E[d]` with `S(d) = P(duration > d)` and `E[d] = sum_d d p(d)`; `log_pmf` is
+    `(..., D_max)` (rows already truncated and renormalized), the result has the same shape and each row sums
+    to 1 (`sum_d S(d - 1) = E[d]`). It is the pmf of the time left in a segment already running at `t = 1`.
+    """
+    log_surv = jax.lax.cumlogsumexp(log_pmf, axis=log_pmf.ndim - 1, reverse=True)  # log P(duration >= d)
+    log_mean = jax.scipy.special.logsumexp(log_surv, axis=-1, keepdims=True)  # log E[d]
+    return log_surv - log_mean
 
 
 def advance_prob_core(rate: Array, dt: Array, c: Array | None, z_d: Array | None) -> Array:

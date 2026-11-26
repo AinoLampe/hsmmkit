@@ -35,6 +35,8 @@ import numpy as np
 
 from hsmmkit.engine.base import Posterior
 from hsmmkit.engine.expanded_hmm import _check_finite, _check_posterior, _regime_log_emis, _safe_logsumexp
+from hsmmkit.model.duration.base import residual_log_pmf
+from hsmmkit.model.transition import build_memory_layout
 from hsmmkit.statespace.index import StateIndex
 from hsmmkit.utils.clock import is_irregular
 from hsmmkit.utils.errors import ConfigError, NumericalError
@@ -101,7 +103,33 @@ def _log_pmf(spec: ModelSpec, theta: Params, data: PreparedDataset) -> Array:
     return lp
 
 
-def _log_rho(spec: ModelSpec, theta: Params) -> Array:
+def _stationary_jump(pi: Array, n_iter: int = 2000) -> Array:
+    """Stationary distribution of the jump matrix (lazy power iteration: also converges if periodic)."""
+    n = pi.shape[0]
+
+    def body(v: Array, _: None) -> tuple[Array, None]:
+        v = 0.5 * (v + v @ pi)
+        return v / jnp.sum(v), None
+
+    v, _ = jax.lax.scan(body, jnp.full((n,), 1.0 / n), None, length=n_iter)
+    return v
+
+
+def _log_rho(spec: ModelSpec, theta: Params, log_pmf0: Array | None = None) -> Array:
+    """Initial regime log-distribution of the first segment.
+
+    Left-censored (`log_pmf0` = the first-start pmf `(N, D)`): `rho_j ~ nu_j E[d_j]`, the stationary occupancy
+    (`nu` the stationary distribution of the jump matrix at `z = 0`), unless `initial_state: free`.
+    """
+    if log_pmf0 is not None and spec.initial != "free":
+        pi = spec.transition.jump_probs_t(
+            theta, None, build_memory_layout(spec.n_states, 1, getattr(spec.transition, "topology", None))
+        )
+        nu = _stationary_jump(pi)
+        d = jnp.arange(1, log_pmf0.shape[-1] + 1)
+        mean_d = jnp.sum(jnp.exp(log_pmf0) * d, axis=-1)
+        w = nu * mean_d
+        return jnp.log(w / jnp.sum(w))
     if spec.initial == "uniform":
         return jnp.full((spec.n_states,), -jnp.log(spec.n_states))
     if spec.initial == "free":
@@ -130,7 +158,7 @@ def _prepare(
     arrays unless entry-time duration covariates make the pmf itself `(T, N, D_max)`.
     """
     cells = _cells(spec, data)
-    if cells > MAX_CELLS and (full_tables or _has_entry_covariates(spec, data)):
+    if cells > MAX_CELLS and (full_tables or spec.left_censored or _has_entry_covariates(spec, data)):
         raise NumericalError(
             f"T*N*D_max = {cells:.3g} > {MAX_CELLS:.0e}: use chunked scan (estimation.chunk_size)",
             path="model.d_max",
@@ -154,14 +182,23 @@ def _build_inputs(theta: Params, spec: ModelSpec, space: StateSpace, data: Prepa
     ell = _regime_log_emis(theta, spec, data, dt)  # (T, N)
     cum = jnp.concatenate([jnp.zeros((1, ell.shape[1])), jnp.cumsum(ell, axis=0)], axis=0)
     topology = getattr(spec.transition, "topology", None)
+    log_pmf = _log_pmf(spec, theta, data)
+    log_pmf0 = None
+    if spec.left_censored:
+        # first segment: residual-life pmf (needs a per-start table), stationary occupancy as the initial law
+        table = (
+            jnp.broadcast_to(log_pmf, (ell.shape[0], *log_pmf.shape[-2:])) if log_pmf.ndim == 2 else log_pmf
+        )
+        log_pmf0 = table[0]
+        log_pmf = table.at[0].set(residual_log_pmf(log_pmf0))
     absorbing = None
     if topology is not None and topology.absorbing:
         absorbing = jnp.asarray(np.isin(np.arange(spec.n_states), topology.absorbing))
     return _Inputs(
-        _log_rho(spec, theta),
+        _log_rho(spec, theta, log_pmf0),
         cum,
         _log_jump(spec, space, theta, data),
-        _log_pmf(spec, theta, data),
+        log_pmf,
         absorbing,
     )
 
