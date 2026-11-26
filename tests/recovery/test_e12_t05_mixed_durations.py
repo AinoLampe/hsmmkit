@@ -91,7 +91,7 @@ def test_e12_t05_mixed_per_state_durations_recover_the_mean_sojourns(tmp_path: P
             res = fit(
                 spec,
                 data,
-                EstimationSection(restarts=2, max_iter=150, init=["random"], device="cpu"),
+                EstimationSection(restarts=2, max_iter=150, init=["lattice_jitter"], device="cpu"),
                 seed=seed,
             )  # type: ignore[call-arg]
         est = np.asarray(spec.duration.mean_sojourn_steps_truncated(res.params, d_max, data.nominal_dt))
@@ -138,7 +138,7 @@ def test_e12_t05_duration_dependent_jump_coefficient_has_the_right_sign(tmp_path
             res = fit(
                 spec,
                 data,
-                EstimationSection(restarts=1, max_iter=100, init=["random"], device="cpu"),
+                EstimationSection(restarts=1, max_iter=100, init=["lattice_jitter"], device="cpu"),
                 seed=seed,
             )  # type: ignore[call-arg]
         c = np.asarray(res.params["transition.c"])
