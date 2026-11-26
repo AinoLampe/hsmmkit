@@ -24,6 +24,7 @@ Part II, or raised during implementation) are added by the tickets that need the
 | [0015](0015-clock-registry.md) | Clock registry; `trading` in the finance application |
 | [0016](0016-config-extension.md) | Registries and config subclassing instead of the `profile` key |
 | [0019](0019-supervision-masks.md) | Supervision (labels, boundaries) as engine masks |
+| [0020](0020-hungarian.md) | Vendored Hungarian algorithm instead of scipy at run time |
 | [0021](0021-multi-sequence.md) | Multi-sequence data: `vmap` over single-sequence engines, length buckets |
 | [0022](0022-in-scan-emissions.md) | Recurrent emissions (carry) and the annualization exception |
 | [0023](0023-endogenous-covariates.md) | Endogenous covariates as emission channels (accepted) |

@@ -13,17 +13,7 @@ from collections.abc import Callable
 from hsmmkit.config.schema import ProjectConfig
 from hsmmkit.utils.errors import ConfigError
 
-__all__ = ["GATES", "PLANNED_METRICS", "check", "used_gates"]
-
-PLANNED_METRICS: dict[str, str] = {
-    "boundary_f1": "E14-T03",
-    "hausdorff": "E14-T03",
-    "covering": "E14-T03",
-    "hamming_matched": "E14-T03",
-    "ari": "E14-T03",
-    "nmi": "E14-T03",
-}
-"""Metric names that the schema accepts before the metric exists (E14-T03); `check` rejects them at build."""
+__all__ = ["GATES", "check", "used_gates"]
 
 Gate = tuple[Callable[[ProjectConfig], bool], str]
 
@@ -35,7 +25,6 @@ GATES: dict[str, Gate] = {
     "estimation.method=mcmc": (lambda c: c.estimation.method == "mcmc", "E13-T06a"),
     "evaluation.cv": (lambda c: c.evaluation.cv is not None, "E14-T01"),
     "evaluation.grid": (lambda c: c.evaluation.grid is not None, "E14-T02"),
-    "evaluation.metrics": (lambda c: any(m in PLANNED_METRICS for m in c.evaluation.metrics), "E14-T03"),
     "online": (lambda c: c.online is not None, "E15-T01"),
     "online.lag": (lambda c: c.online is not None and c.online.lag > 0, "E15-T02"),
     "online.alerts": (lambda c: c.online is not None and bool(c.online.alerts), "E15-T03"),

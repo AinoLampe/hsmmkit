@@ -20,7 +20,12 @@ with the forecast samples of the cumulative return at step `h`.
 | `aic`, `bic`, `icl` | posterior | information criteria of the decoded fit |
 | `regime_occupancy` | posterior | share of steps per regime on the Viterbi path |
 | `regime_persistence` | posterior | mean Viterbi segment length per regime (regimes that never occur are omitted) |
-| `balanced_accuracy` | posterior, labels | mean per-label recall of the Viterbi regimes against `labels`, maximised over relabellings (at most 6 distinct regimes/labels) |
+| `balanced_accuracy` | posterior, labels | mean per-label recall of the Viterbi regimes against `labels`, maximised over relabellings (Hungarian matching, any number of regimes) |
+| `boundary_precision`, `boundary_recall`, `boundary_f1` | posterior, labels | one-to-one matching of predicted to true regime boundaries within `evaluation.boundary_tolerance` steps (optimal sweep); both sets empty: 1 |
+| `hausdorff` | posterior, labels | symmetric worst-case distance between the boundary sets (steps); `nan` if exactly one set is empty; lower is better |
+| `covering` | posterior, labels | `(1/T) sum_A |A| max_B IoU(A, B)` over the true segments `A` and predicted segments `B` |
+| `hamming_matched`, `confusion_matched` | posterior, labels | accuracy after Hungarian matching of regime ids; the matched confusion matrix as fractions of the steps |
+| `ari`, `nmi` | posterior, labels | adjusted Rand index and normalized mutual information (arithmetic mean), no matching needed |
 | `sharpe`, `max_drawdown`, `turnover`, `hit_rate` | strategy | see [Strategies](#strategies) |
 
 The forecast metrics read `forecast.samples`, so the forecast must keep its samples. With `M > 1` series,

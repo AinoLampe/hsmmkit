@@ -2,50 +2,29 @@
 
 from __future__ import annotations
 
-from itertools import permutations
-
 import numpy as np
 
+from hsmmkit.evaluation.metrics.matching import confusion, hungarian
 from hsmmkit.evaluation.metrics.registry import metric
 from hsmmkit.inference.results import PosteriorResult
 from hsmmkit.utils.errors import ConfigError
-
-MAX_CLASSES = 6
 
 
 def balanced_accuracy_matched(predicted: np.ndarray, labels: np.ndarray) -> float:
     """Balanced accuracy (mean per-label recall) under the best relabelling of `predicted`.
 
-    Regime ids are arbitrary, so the predicted ids are matched to the label ids by brute force over all
-    permutations (scipy is dev-only, so no Hungarian algorithm). The value is invariant to any
-    permutation of either id set.
+    Regime ids are arbitrary, so the predicted ids are matched to the label ids by the Hungarian algorithm
+    (`evaluation.metrics.matching`, ADR-0020): maximize `sum_k C[pred(k), k] / support_k`. Valid for any
+    number of ids; the value is invariant to any permutation of either id set.
 
     Raises:
-        ConfigError: more than 6 distinct ids (the brute force would be too slow), or a length mismatch.
+        ConfigError: a length mismatch.
     """
-    predicted, labels = np.asarray(predicted), np.asarray(labels)
-    if predicted.shape != labels.shape or predicted.ndim != 1:
-        raise ConfigError(
-            f"predicted {predicted.shape} and labels {labels.shape} must be equal-length (T,) arrays",
-            path="evaluation.labels",
-        )
-    ids = np.unique(np.concatenate([predicted, labels]))
-    if ids.shape[0] > MAX_CLASSES:
-        raise ConfigError(
-            f"balanced_accuracy supports at most {MAX_CLASSES} distinct regimes/labels, got {ids.shape[0]}",
-            path="evaluation.labels",
-        )
-    k = ids.shape[0]
-    pred_idx, lab_idx = np.searchsorted(ids, predicted), np.searchsorted(ids, labels)
-    confusion = np.zeros((k, k))
-    np.add.at(confusion, (lab_idx, pred_idx), 1.0)
-    support = confusion.sum(axis=1)
-    present = support > 0
-    best = 0.0
-    for perm in permutations(range(k)):
-        recall = confusion[np.arange(k), np.asarray(perm)][present] / support[present]
-        best = max(best, float(recall.mean()))
-    return best
+    c, _, _ = confusion(predicted, labels)  # (pred ids, label ids)
+    support = c.sum(axis=0)
+    recall = c / np.where(support > 0, support, 1.0)[None, :]
+    rows, cols = hungarian(-recall)
+    return float(recall[rows, cols].sum() / np.count_nonzero(support > 0))
 
 
 @metric("balanced_accuracy", {"posterior", "labels"})

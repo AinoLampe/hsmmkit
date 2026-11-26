@@ -50,10 +50,9 @@ def _registered_names(kind: Kind, *, needs: str | None = None) -> list[str]:
     importlib.import_module("hsmmkit.inference.covariate_forecasters")
     importlib.import_module("hsmmkit.estimation.init")
     if kind == "metric":
-        from hsmmkit.config.gates import PLANNED_METRICS
         from hsmmkit.evaluation.metrics.registry import available
 
-        return [*available(), *(m for m in PLANNED_METRICS if m not in available())]
+        return list(available())
     return [e.name for e in REGISTRY.entries(kind) if needs is None or hasattr(e.obj, needs)]
 
 

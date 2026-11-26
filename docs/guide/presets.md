@@ -28,8 +28,7 @@ model is **built** (`hsmmkit.config.gates.check`), with `ConfigError(path, "not 
 
 Each ticket that implements a feature removes its own row from `GATES` and adds a test that the key builds.
 Names of families, metrics, inits and sources need no gate: an unregistered name fails validation with the list
-of registered names; metrics that are planned but not implemented (`gates.PLANNED_METRICS`) validate and are
-rejected at build.
+of registered names.
 
 ## JSON Schema
 
