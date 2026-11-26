@@ -192,7 +192,7 @@ The whole resolved configuration of the domain-neutral core.
 
 ## `model.topology`
 
-`model.topology: {banded: k}` — jumps only to the `k` next regimes (cyclic distance).
+`model.topology: {banded: k}` — jumps only to regimes within `k` positions (`0 < |j - i| <= k`).
 
 | Field | Type | Default |
 |---|---|---|
