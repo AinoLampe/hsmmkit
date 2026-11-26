@@ -21,7 +21,7 @@ from hsmmkit.model.spec import ModelSpec
 from hsmmkit.statespace.builders import build_explicit
 from hsmmkit.utils.errors import ConfigError
 from tests.helpers.core_config import core_raw
-from tests.reference import ref_hsmm
+from tests.reference import ref_hsmm_dd
 
 
 def _raw(tmp_path: Path, n: int, d_max: int, *, dd: bool, engine: str = "explicit") -> dict[str, Any]:
@@ -81,7 +81,7 @@ def test_e12_t05_dd_engine_matches_enumeration(seed: int, tmp_path: Path) -> Non
     eng = ExplicitDurationEngine()
     post = eng.forward_backward(theta, spec, space, data)
     log_trans_d, log_pmf, log_emis = _ref_inputs(spec, theta, data, d_max)
-    ll, smoothed, path = ref_hsmm.brute_force_dd(
+    ll, smoothed, path = ref_hsmm_dd.brute_force_dd(
         np.full(n, -np.log(n)), log_trans_d, log_pmf, log_emis, d_max
     )
     assert abs(float(post.loglik) - ll) <= 1e-8 * max(1.0, abs(ll))

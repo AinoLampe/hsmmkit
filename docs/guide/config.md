@@ -415,6 +415,7 @@ A single (possibly per-state) parameter's estimation mode and initialization.
 |---|---|---|
 | `family` | `str` | required |
 | `params` | `dict[str, ParamCfg]` | `{}` |
+| `r` | `int \| None` | `None` |
 
 ## `model.transition.prior`
 
