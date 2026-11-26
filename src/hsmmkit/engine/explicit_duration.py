@@ -162,7 +162,10 @@ def _prepare(
     arrays unless entry-time duration covariates make the pmf itself `(T, N, D_max)`.
     """
     cells = _cells(spec, data)
-    if cells > MAX_CELLS and (full_tables or spec.left_censored or _has_entry_covariates(spec, data)):
+    supervised = data.labels is not None or data.boundaries is not None  # (T, N, D) mask tables (E12-T06)
+    if cells > MAX_CELLS and (
+        full_tables or spec.left_censored or supervised or _has_entry_covariates(spec, data)
+    ):
         raise NumericalError(
             f"T*N*D_max = {cells:.3g} > {MAX_CELLS:.0e}: use chunked scan (estimation.chunk_size)",
             path="model.d_max",

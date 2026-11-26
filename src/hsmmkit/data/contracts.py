@@ -302,9 +302,9 @@ class PreparedDataset:
         boundaries = None
         if self.boundaries is not None:
             boundaries = BoundaryConstraints(
-                must_switch_at=tuple(i - start for i in self.boundaries.must_switch_at if start <= i < end),
+                must_switch_at=tuple(i - start for i in self.boundaries.must_switch_at if start < i < end),
                 must_not_switch_at=tuple(
-                    i - start for i in self.boundaries.must_not_switch_at if start <= i < end
+                    i - start for i in self.boundaries.must_not_switch_at if start < i < end
                 ),
             )
 

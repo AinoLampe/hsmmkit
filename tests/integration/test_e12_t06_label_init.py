@@ -142,3 +142,17 @@ def test_e12_t06_a_batch_map_fit_with_labels_and_boundaries_runs_and_honours_the
         allowed = np.asarray(seq.labels)
         assert np.all(allowed[np.arange(300), regimes])
         assert regimes[5] == regimes[4]
+
+
+def test_e12_t06_a_fit_with_labels_does_not_relabel_the_regimes_by_scale(tmp_path: Path) -> None:
+    """Without an identifiability guard the regimes keep the numbering of the labels (warning, no sort)."""
+    raw = _cfg(tmp_path, ["labels"]).model_dump(mode="json")
+    raw["model"]["emission"]["params"]["scale"] = {"mode": "free", "init": [1.0, 1.0, 1.0]}
+    cfg = parse_project_config(raw)
+    frame = _simulate(6_000, seed=5, block=300)
+    data = _dataset(cfg, frame)
+    spec = build_model_spec(cfg, data)
+    est = EstimationSection(restarts=1, max_iter=30, init=["labels"], device="cpu")
+    with pytest.warns(UserWarning, match="not relabelled by scale"):
+        res = fit(spec, data, est, seed=2)
+    assert np.isfinite(res.loglik)

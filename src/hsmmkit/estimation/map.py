@@ -179,7 +179,16 @@ def fit(
 
     theta = manager.unflatten(best.u)
     u = best.u
-    if not has_identifiability_guard(spec):
+    first = data if isinstance(data, PreparedDataset) else data.sequences[0]
+    if not has_identifiability_guard(spec) and first.labels is not None:
+        # regime ids of `data.labels` / boundaries refer to the current numbering: do not relabel (E12-T06)
+        warnings.warn(
+            "no identifiability guard, but data.labels fix the regime numbering: the fitted regimes are not "
+            "relabelled by scale",
+            UserWarning,
+            stacklevel=2,
+        )
+    elif not has_identifiability_guard(spec):
         scale_name = next(
             (
                 name

@@ -243,3 +243,24 @@ def test_e12_t06_batch_with_labels_and_boundaries_equals_the_single_sequence_run
     for i, s in enumerate(seqs):
         single = np.asarray(engine.viterbi(sc.theta, sc.spec, sc.space, s))
         assert np.array_equal(paths[i, :t_len], single)
+
+
+def test_e12_t06_window_drops_boundaries_at_or_before_the_window_start() -> None:
+    """A boundary at the first step of a window is not a switch inside it (index 0 would be invalid)."""
+    sc = make_scenario(N, [2, 2, 2], 1, 20, seed=6)
+    data = dataclasses.replace(
+        sc.data, clock="steps", dt=jnp.ones(20), nominal_dt=1.0, boundaries=BoundaryConstraints((5, 8), (10,))
+    )
+    win = data.window(5, 15)
+    assert win.boundaries == BoundaryConstraints((3,), (5,))
+    win.validate()
+
+
+def test_e12_t06_expanded_viterbi_of_infeasible_constraints_is_a_constraint_error() -> None:
+    """`viterbi_path` reports an infeasible constraint set as `ConstraintError` (exit code 3)."""
+    from hsmmkit.engine.viterbi import viterbi_path
+
+    sc = make_scenario(N, [3, 3, 3], 1, 12, seed=3)
+    bad = dataclasses.replace(sc.data, boundaries=BoundaryConstraints((5, 6), ()))
+    with pytest.raises(ConstraintError):
+        viterbi_path(sc.theta, sc.spec, sc.space, bad)

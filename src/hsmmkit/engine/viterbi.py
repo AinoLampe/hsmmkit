@@ -14,6 +14,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from hsmmkit.engine.constraints import check_feasible
 from hsmmkit.engine.expanded_hmm import _emission_inputs, _log_a
 from hsmmkit.utils.errors import NumericalError
 from hsmmkit.utils.typing import Array
@@ -65,6 +66,7 @@ def viterbi_path(theta: Params, spec: ModelSpec, space: StateSpace, data: Prepar
     path: Array
     best: Array
     path, best = _viterbi_core(theta, spec, space, data)
+    check_feasible(best, data, None)
     if not isinstance(best, jax.core.Tracer) and not bool(jnp.isfinite(best)):
         raise NumericalError("non-finite best-path log-probability in Viterbi", path="viterbi")
     return path
