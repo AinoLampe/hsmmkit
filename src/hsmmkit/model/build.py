@@ -64,10 +64,14 @@ DURATION_FAMILIES: Mapping[str, Any] = _FamilyView("duration")
 
 
 def _fix_absorbing(specs: Sequence[ParamSpec], absorbing: tuple[int, ...], n_states: int) -> list[ParamSpec]:
-    """Absorbing regimes never end a sojourn: their duration entries are `fixed` (dropped from `u`)."""
+    """Absorbing regimes never end a sojourn: their duration entries are `fixed` (dropped from `u`).
+
+    Applies to every duration spec whose leading axis is the state axis (`duration_conditioning: current`;
+    `pair` conditioning has no config-built duration specs, its rates are sized `N(N-1)` by the caller).
+    """
     out: list[ParamSpec] = []
     for sp in specs:
-        if sp.shape[:1] == (n_states,) and sp.init is not None and sp.constraint != "increasing":
+        if sp.shape[:1] == (n_states,) and sp.constraint != "increasing" and sp.init is not None:
             modes = [sp.mode] * n_states if isinstance(sp.mode, str) else list(sp.mode)
             for i in absorbing:
                 modes[i] = "fixed"

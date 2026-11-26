@@ -255,3 +255,36 @@ def test_e12_t03_cyclic_and_matrix_topologies_build_both_engines(tmp_path: Path)
         mgr = ParamManager(spec.param_specs)
         ll = ExpandedHMMEngine().loglik(mgr.unflatten(mgr.init_u()), spec, space, data)
         assert np.isfinite(float(ll))
+
+
+@pytest.mark.parametrize("family", ["geometric", "negbin"])
+def test_e12_t03_explicit_absorbing_loglik_is_finite_beyond_d_max_and_matches_expanded(
+    family: str, tmp_path: Path
+) -> None:
+    """Review fix: `T > D_max` works: the absorbing final segment has no cap (geometric, NB)."""
+    t, d_max = 200, 60
+    raws = []
+    for engine in ("expanded", "explicit"):
+        raw = _raw(tmp_path, "left_to_right", 2, engine=engine)
+        raw["model"]["d_max"] = d_max
+        raw["model"]["duration"] = {
+            "family": family,
+            "params": {"rate": {"mode": "free", "init_mean_sojourn_steps": [3.0, 3.0]}},
+        }
+        if family == "negbin":
+            raw["model"]["duration"]["r"] = [2, 2]
+        raws.append(parse_project_config(raw))
+    data = _data(raws[0], t=t)
+    spec_e, spec_x = (build_model_spec(c, data) for c in raws)
+    mgr = ParamManager(spec_e.param_specs)
+    theta = dict(mgr.unflatten(mgr.init_u()))
+    theta["emission.mean"] = jnp.asarray([-0.3, 0.4])
+    theta["emission.scale"] = jnp.asarray([0.4, 0.6])
+    a = float(ExpandedHMMEngine().loglik(theta, spec_e, build_expanded(spec_e), data))
+    space_x = build_explicit(spec_x)
+    b = float(ExplicitDurationEngine().loglik(theta, spec_x, space_x, data))
+    assert abs(a - b) <= 1e-6 * abs(a)
+    path = np.asarray(space_x.index.regime_of[ExplicitDurationEngine().viterbi(theta, spec_x, space_x, data)])
+    assert np.all(np.diff(path) >= 0)
+    with pytest.raises(ConfigError, match="d_max >= T"):
+        ExplicitDurationEngine().forward_backward(theta, spec_x, space_x, data)
