@@ -21,6 +21,7 @@ from hsmmkit.model.duration.base import residual_log_pmf
 from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.model.spec import ModelSpec
 from hsmmkit.statespace.builders import build_expanded, build_explicit
+from hsmmkit.utils.errors import ConfigError
 from tests.golden.test_e4_t06b_equivalence import D_MAX, paired_scenarios
 from tests.helpers.core_config import core_raw
 from tests.reference import ref_hsmm
@@ -203,3 +204,40 @@ def test_e12_t04_expanded_engine_switches_to_stationary_with_a_warning(tmp_path:
     with pytest.warns(UserWarning, match="left_censored implies initial_state: stationary"):
         spec = build_model_spec(cfg, data)
     assert spec.initial == "stationary"
+
+
+def test_e12_t04_degenerate_topology_needs_a_free_initial_law(tmp_path: Path) -> None:
+    """Review fix: a left-to-right (not strongly connected) topology cannot use the stationary occupancy."""
+    raw = core_raw(tmp_path)
+    raw["model"].update({"n_states": 3, "engine": "explicit", "d_max": 10, "left_censored": True})
+    raw["model"]["topology"] = "left_to_right"
+    raw["model"]["emission"]["params"] = {
+        "mean": {"mode": "free", "init": [0.0, 0.1, 0.2]},
+        "scale": {"mode": "free", "init": [0.5, 0.7, 0.9]},
+    }
+    raw["model"]["duration"]["params"]["rate"]["init_mean_sojourn_steps"] = [4.0] * 3
+    cfg = parse_project_config(raw)
+    y = np.random.default_rng(0).normal(size=30)
+    times = pd.bdate_range("2020-01-01", periods=30).to_numpy().astype("datetime64[ns]")
+    obs = ObservationSet(("x",), times, y.reshape(-1, 1), "memory", "s")
+    data = Preparer(cfg.data).fit(obs, [], train_end=times[-1]).transform(obs, [])
+    with pytest.raises(ConfigError) as err:
+        build_model_spec(cfg, data)
+    assert err.value.path == "model.left_censored"
+
+
+def test_e12_t04_left_censoring_table_respects_the_cell_guard(tmp_path: Path) -> None:
+    """Review fix: the per-start table of a left-censored run is covered by the `MAX_CELLS` guard."""
+    from hsmmkit.engine import explicit_duration
+    from hsmmkit.utils.errors import NumericalError
+
+    _, data, spec = _build(tmp_path, 3, 50, 10, 2, left=True, family="nonparametric")
+    mgr = ParamManager(spec.param_specs)
+    theta = mgr.unflatten(mgr.init_u())
+    old = explicit_duration.MAX_CELLS
+    explicit_duration.MAX_CELLS = 100.0
+    try:
+        with pytest.raises(NumericalError):
+            ExplicitDurationEngine().loglik(theta, spec, build_explicit(spec), data)
+    finally:
+        explicit_duration.MAX_CELLS = old
