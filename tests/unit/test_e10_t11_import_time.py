@@ -13,7 +13,14 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 BASELINE = ROOT / "benchmarks" / "import_time_baseline.json"
-FORBIDDEN = {"matplotlib", "sklearn", "numpyro", "arviz", "xarray", "scipy"}  # scipy until ADR-0020
+FORBIDDEN = {
+    "matplotlib",
+    "sklearn",
+    "numpyro",
+    "arviz",
+    "xarray",
+    "scipy",
+}  # scipy: ADR-0020 vendors the Hungarian algorithm
 ROW = re.compile(r"^import time:\s+(\d+) \|\s+(\d+) \| (\s*)(\S+)$")
 
 

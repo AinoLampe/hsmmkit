@@ -51,8 +51,6 @@ def _case(name: str) -> dict[str, Any]:
         raw["evaluation"]["cv"] = {"splitter": "sequence_kfold", "folds": 3}
     elif name == "evaluation.grid":
         raw["evaluation"]["grid"] = {"n_states": [2, 3]}
-    elif name == "evaluation.metrics":
-        raw["evaluation"]["metrics"] = ["log_score", "ari"]
     elif name == "online":
         raw["online"] = {}
     elif name == "online.lag":

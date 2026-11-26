@@ -68,6 +68,8 @@ _BUILTIN_MODULES = (
     "hsmmkit.evaluation.metrics.predictive",
     "hsmmkit.evaluation.metrics.model",
     "hsmmkit.evaluation.metrics.labels",
+    "hsmmkit.evaluation.metrics.segmentation",
+    "hsmmkit.evaluation.metrics.clustering",
 )
 
 
