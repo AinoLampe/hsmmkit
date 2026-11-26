@@ -377,6 +377,12 @@ def _with_initial(spec: ModelSpec, initial_groups: str, n_groups: int) -> ModelS
             "initial_groups: per_group needs initial_state: free (the group laws are free parameters)",
             path="model.initial_groups",
         )
+    if per_group and n_groups < 2:
+        raise ConfigError(
+            "initial_groups: per_group needs at least 2 groups in the data "
+            "(set data.sequences.group_by to a column that is constant within a sequence)",
+            path="model.initial_groups",
+        )
     if spec.initial != "free":
         return spec
     # the number of start states depends on the state space the structure alone defines

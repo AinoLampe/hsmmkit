@@ -99,3 +99,12 @@ def test_e12_t02_simulate_batch_group_guards(tmp_path: Path) -> None:
     batch = simulate_batch(th_group, grouped, [5, 6], key, groups=["a", "b"])  # type: ignore[arg-type]
     assert batch.group_names == ("a", "b")
     assert [s.observations.shape[0] for s in batch.sequences] == [5, 6]
+
+
+def test_e12_t02_per_group_with_a_single_group_is_a_config_error(tmp_path: Path) -> None:
+    """`per_group` needs >= 2 groups (a one-row `initial.logits` would break the single-sequence engines)."""
+    raw = core_raw(tmp_path)
+    raw["model"]["initial_state"] = "free"
+    raw["model"]["initial_groups"] = "per_group"
+    with pytest.raises(ConfigError, match="at least 2 groups"):
+        build_model_spec_from(parse_project_config(raw), BuildInputs(1, {}, "steps", 1.0, 1))

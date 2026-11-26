@@ -18,7 +18,7 @@ import numpy as np
 from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.model.transition import build_memory_layout
 from hsmmkit.plugins import register
-from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.errors import ConfigError, DataError
 
 if TYPE_CHECKING:
     from hsmmkit.data.batch import SequenceBatch
@@ -193,6 +193,8 @@ def pool_sequences(batch: SequenceBatch) -> tuple[PreparedDataset, np.ndarray]:
     """
     parts = [observed_rows(s) for s in batch.sequences]
     parts = [p for p in parts if p.observations.shape[0] > 0]
+    if not parts:
+        raise DataError("no sequence has an observed row to initialize from", path="data")
     first = parts[0]
 
     def cat_opt(name: str) -> Array | None:

@@ -459,10 +459,16 @@ class Project:
         theta = dict(fit.params)
         pb = batch.padded()
         if spec.n_groups > 1:
-            known = [g for g in (fit.diagnostics.get("initial_groups") or [])]
+            known = list(fit.diagnostics.get("initial_groups") or [])
             rows = np.asarray(theta["initial.logits"])
+            if len(known) != rows.shape[0]:
+                raise ConfigError(
+                    "the fit has per-group initial distributions but no group names "
+                    "(diagnostics['initial_groups']): it did not come from a batch fit",
+                    path="diagnostics.initial_groups",
+                )
             theta["initial.logits"] = jnp.asarray(np.vstack([rows, rows.mean(axis=0, keepdims=True)]))
-            index = np.full(pb.group_index.shape, len(known), dtype=np.int32)  # unseen -> the fallback row
+            index = np.full(pb.group_index.shape, rows.shape[0], dtype=np.int32)  # unseen -> the fallback row
             unseen = sorted({s.group for s in batch.sequences if s.group not in known}, key=str)
             if unseen:
                 warnings.warn(
