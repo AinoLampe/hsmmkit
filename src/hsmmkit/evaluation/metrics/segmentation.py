@@ -142,7 +142,7 @@ def _arrays(ctx: dict[str, object], name: str) -> tuple[np.ndarray, np.ndarray]:
 
 def _tolerance(ctx: dict[str, object]) -> int:
     tol = ctx.get("boundary_tolerance", DEFAULT_TOLERANCE)
-    if not isinstance(tol, int | np.integer) or tol < 0:
+    if isinstance(tol, bool) or not isinstance(tol, int | np.integer) or tol < 0:
         raise ConfigError("boundary_tolerance must be an integer >= 0", path="evaluation.boundary_tolerance")
     return int(tol)
 

@@ -21,7 +21,7 @@ with the forecast samples of the cumulative return at step `h`.
 | `regime_occupancy` | posterior | share of steps per regime on the Viterbi path |
 | `regime_persistence` | posterior | mean Viterbi segment length per regime (regimes that never occur are omitted) |
 | `balanced_accuracy` | posterior, labels | mean per-label recall of the Viterbi regimes against `labels`, maximised over relabellings (Hungarian matching, any number of regimes) |
-| `boundary_precision`, `boundary_recall`, `boundary_f1` | posterior, labels | one-to-one matching of predicted to true regime boundaries within `evaluation.boundary_tolerance` steps (optimal sweep); both sets empty: 1 |
+| `boundary_precision`, `boundary_recall`, `boundary_f1` | posterior, labels | one-to-one matching of predicted to true regime boundaries within `boundary_tolerance` steps (context key, default 5; optimal sweep); both sets empty: 1. The walk-forward runner does not supply `labels` yet, so these metrics are skipped there until CV / grid selection (E14-T01/T02) wires them |
 | `hausdorff` | posterior, labels | symmetric worst-case distance between the boundary sets (steps); `nan` if exactly one set is empty; lower is better |
 | `covering` | posterior, labels | `(1/T) sum_A |A| max_B IoU(A, B)` over the true segments `A` and predicted segments `B` |
 | `hamming_matched`, `confusion_matched` | posterior, labels | accuracy after Hungarian matching of regime ids; the matched confusion matrix as fractions of the steps |
