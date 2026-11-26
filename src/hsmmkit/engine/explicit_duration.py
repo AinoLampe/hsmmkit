@@ -61,6 +61,7 @@ class _Inputs(NamedTuple):
     log_pi: Array  # (N, N) or (T, N, N), indexed by segment start
     log_pmf: Array  # (N, D) or (T, N, D), indexed by segment start
     absorbing: Array | None = None  # (N,) bool: regimes whose final segment never ends (E12-T03)
+    length: Array | None = None  # 0-d int: the true length `T_b` of a padded sequence (E12-T01b)
 
 
 def _logaddexp(a: Array, b: Array) -> Array:
@@ -177,7 +178,9 @@ def _prepare(
     return _build_inputs(theta, spec, space, data)
 
 
-def _build_inputs(theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> _Inputs:
+def _build_inputs(
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, length: Array | None = None
+) -> _Inputs:
     dt = jnp.full_like(data.dt, data.nominal_dt)
     ell = _regime_log_emis(theta, spec, data, dt)  # (T, N)
     cum = jnp.concatenate([jnp.zeros((1, ell.shape[1])), jnp.cumsum(ell, axis=0)], axis=0)
@@ -200,6 +203,7 @@ def _build_inputs(theta: Params, spec: ModelSpec, space: StateSpace, data: Prepa
         _log_jump(spec, space, theta, data),
         log_pmf,
         absorbing,
+        length,
     )
 
 
@@ -243,17 +247,18 @@ def _terminal(inp: _Inputs) -> Array:
     cum, lp = inp.cum, inp.log_pmf
     t_len, n, d_max = cum.shape[0] - 1, lp.shape[-2], lp.shape[-1]
     surv = _log_survival(lp)
-    length = t_len - jnp.arange(t_len)  # observed final-segment length d = T - s
+    t_end = t_len if inp.length is None else inp.length  # `T_b` of a padded sequence, else `T`
+    length = t_end - jnp.arange(t_len)  # observed final-segment length d = T - s
     idx = jnp.clip(length - 1, 0, d_max - 1)
     if surv.ndim == 2:
         picked = surv[:, idx].T  # (T, N)
     else:
         picked = surv[jnp.arange(t_len)[:, None], jnp.arange(n)[None, :], idx[:, None]]
-    value = picked + cum[t_len][None, :] - cum[:t_len]
-    fits = (length <= d_max)[:, None]
+    value = picked + cum[t_end][None, :] - cum[:t_len]
+    fits = ((length <= d_max) & (length >= 1))[:, None]
     if inp.absorbing is not None:
         # an absorbing regime never leaves: its final segment has survival 1 at every length (no D_max cap)
-        never_ends = cum[t_len][None, :] - cum[:t_len]
+        never_ends = cum[t_end][None, :] - cum[:t_len]
         value = jnp.where(inp.absorbing[None, :], never_ends, value)
         fits = fits | inp.absorbing[None, :]
     return jnp.where(fits, value, _NEG_INF)
@@ -366,8 +371,10 @@ def _regime_tables(
 
 
 @partial(jax.jit, static_argnames=("spec",))
-def _loglik_core(theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
-    inp = _build_inputs(theta, spec, space, data)
+def _loglik_core(
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, length: Array | None = None
+) -> Array:
+    inp = _build_inputs(theta, spec, space, data, length)
     inner, _ = _forward(inp)
     return _loglik(inner, _terminal(inp))
 
@@ -387,10 +394,15 @@ def _forward_core(
 
 @partial(jax.jit, static_argnames=("spec", "chunk"))
 def _forward_backward_core(
-    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, chunk: int | None = None
+    theta: Params,
+    spec: ModelSpec,
+    space: StateSpace,
+    data: PreparedDataset,
+    chunk: int | None = None,
+    length: Array | None = None,
 ) -> tuple[Array, Array, Array, Array, Array]:
     """`(log_alpha, log_beta, smoothed, loglik, loglik_backward)`; `(T, S)` tables, `(T, N)` if `chunk`."""
-    inp = _build_inputs(theta, spec, space, data)
+    inp = _build_inputs(theta, spec, space, data, length)
     inner, g = _forward(inp)
     term = _terminal(inp)
     loglik = _loglik(inner, term)
@@ -486,9 +498,9 @@ def _viterbi_impl(inp: _Inputs) -> tuple[Array, Array]:
 
 @partial(jax.jit, static_argnames=("spec",))
 def _viterbi_core(
-    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, length: Array | None = None
 ) -> tuple[Array, Array]:
-    return _viterbi_impl(_build_inputs(theta, spec, space, data))
+    return _viterbi_impl(_build_inputs(theta, spec, space, data, length))
 
 
 def _regime_index(n_states: int) -> StateIndex:
