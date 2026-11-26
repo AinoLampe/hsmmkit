@@ -58,7 +58,10 @@ def _init_theta(
     method: str, data: PreparedDataset, spec: ModelSpec, key: Array, segments: np.ndarray | None = None
 ) -> Params:
     fn = REGISTRY.get("init", method)
-    if segments is not None and method == "rolling_kmeans":  # pooled batch: windows stay inside a sequence
+    if segments is not None and method in (
+        "rolling_kmeans",
+        "labels",
+    ):  # pooled batch: windows stay inside a sequence
         result: Params = fn(data, spec, key, segments=segments)
     else:
         result = fn(data, spec, key)
@@ -69,7 +72,7 @@ def _per_sequence_table(
     engine: InferenceEngine, theta: Params, spec: ModelSpec, space: StateSpace, batch: SequenceBatch
 ) -> list[dict[str, Any]]:
     """`[{id, group, T, loglik}]`: the log-likelihood of every sequence under `theta`."""
-    ll = np.asarray(batched_loglik(engine, theta, spec, space, batch.padded()))
+    ll = np.asarray(batched_loglik(engine, theta, spec, space, batch.padded(), batch.ids))
     return [
         {"id": sid, "group": seq.group, "T": int(seq.observations.shape[0]), "loglik": float(ll[b])}
         for b, (sid, seq) in enumerate(zip(batch.ids, batch.sequences, strict=True))

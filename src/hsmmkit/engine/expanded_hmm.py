@@ -20,6 +20,7 @@ import jax
 import jax.numpy as jnp
 
 from hsmmkit.engine.base import Posterior
+from hsmmkit.engine.constraints import apply_transition_mask, boundary_code, check_feasible, label_log_mask
 from hsmmkit.statespace.builders import initial_log_rho
 from hsmmkit.utils.errors import NumericalError
 from hsmmkit.utils.typing import Array
@@ -51,7 +52,18 @@ def _block(x: Array | None, t: int) -> Array:
     return jnp.zeros((t, 0)) if x is None else x
 
 
-_Xs = tuple[Array, Array, Array, Array]
+_Xs = tuple[Array, Array, Array, Array, Array]  # (ell, z_pi, z_d, dt, boundary code), sliced from step 1
+
+
+def _log_a(
+    space: StateSpace, theta: Params, z_pi_t: Array, z_d_t: Array, dt_t: Array, code_t: Array, active: bool
+) -> Array:
+    """`log A_t`; with boundary constraints (`active`, static) exits are kept / dropped (E12-T06)."""
+    log_a = space.transition_fn(theta, z_pi_t, z_d_t, dt_t)[1]
+    if not active:
+        return log_a
+    regime_of = space.index.regime_of
+    return apply_transition_mask(log_a, regime_of[:, None] != regime_of[None, :], code_t)
 
 
 def _regime_log_emis(theta: Params, spec: ModelSpec, data: PreparedDataset, dt: Array | None = None) -> Array:
@@ -88,12 +100,16 @@ def _expanded_log_emis(theta: Params, spec: ModelSpec, space: StateSpace, data: 
     emission is evaluated per tuple `(s_{t-p}, ..., s_t)`; masked steps contribute 0.
     """
     if spec.memory_mode != "steps":
-        return jnp.take(_regime_log_emis(theta, spec, data), space.index.regime_of, axis=1)
-    y, mask = data.observations, data.mask
-    z_e = _block(data.cov_emission, y.shape[0])
-    tuples = jnp.concatenate([space.index.memory_of, space.index.regime_of[:, None]], axis=1)
-    ell = spec.emission.log_prob_tuples(jnp.where(mask, y, 0.0), data.dt, theta, z_e, tuples)  # type: ignore[attr-defined]
-    return jnp.where(jnp.all(mask, axis=-1)[:, None], ell, 0.0)
+        ell = jnp.take(_regime_log_emis(theta, spec, data), space.index.regime_of, axis=1)
+    else:
+        y, mask = data.observations, data.mask
+        z_e = _block(data.cov_emission, y.shape[0])
+        tuples = jnp.concatenate([space.index.memory_of, space.index.regime_of[:, None]], axis=1)
+        ell = spec.emission.log_prob_tuples(jnp.where(mask, y, 0.0), data.dt, theta, z_e, tuples)  # type: ignore[attr-defined]
+        ell = jnp.where(jnp.all(mask, axis=-1)[:, None], ell, 0.0)
+    if data.labels is not None:  # supervision: a label forbids the other regimes at that step (E12-T06)
+        ell = jnp.where(label_log_mask(data.labels, space.index.regime_of), ell, -jnp.inf)
+    return ell
 
 
 def _emission_inputs(
@@ -108,7 +124,9 @@ def _emission_inputs(
     z_pi, z_d = _block(data.cov_transition, t_len), _block(data.cov_duration, t_len)
     ell = _expanded_log_emis(theta, spec, space, data)  # (T, S)
     log_rho = initial_log_rho(spec, space, theta, data.nominal_dt)
-    return log_rho, ell[0], ell, (ell[1:], z_pi[1:], z_d[1:], data.dt[1:])
+    code = boundary_code(data.boundaries, t_len)
+    code_arr = jnp.zeros((t_len,), dtype=jnp.int8) if code is None else jnp.asarray(code)
+    return log_rho, ell[0], ell, (ell[1:], z_pi[1:], z_d[1:], data.dt[1:], code_arr[1:])
 
 
 def _forward_impl(
@@ -118,9 +136,11 @@ def _forward_impl(
     log_rho, ell_0, _, xs = _emission_inputs(theta, spec, space, data)
     alpha_0 = log_rho + ell_0
 
+    active = data.boundaries is not None
+
     def step(alpha_prev: Array, xs_t: _Xs) -> tuple[Array, Array]:
-        ell_t, z_pi_t, z_d_t, dt_t = xs_t
-        _, log_a = space.transition_fn(theta, z_pi_t, z_d_t, dt_t)
+        ell_t, z_pi_t, z_d_t, dt_t, code_t = xs_t
+        log_a = _log_a(space, theta, z_pi_t, z_d_t, dt_t, code_t, active)
         alpha_t = ell_t + _safe_logsumexp(alpha_prev[:, None] + log_a, axis=0)
         return alpha_t, alpha_t
 
@@ -145,9 +165,11 @@ def _forward_backward_core(
     log_alpha, loglik, xs = _forward_impl(theta, spec, space, data)
     s = log_alpha.shape[1]
 
+    active = data.boundaries is not None
+
     def step(beta_next: Array, xs_next: _Xs) -> tuple[Array, Array]:
-        ell_next, z_pi_next, z_d_next, dt_next = xs_next
-        _, log_a = space.transition_fn(theta, z_pi_next, z_d_next, dt_next)
+        ell_next, z_pi_next, z_d_next, dt_next, code_next = xs_next
+        log_a = _log_a(space, theta, z_pi_next, z_d_next, dt_next, code_next, active)
         beta_t = _safe_logsumexp(log_a + (ell_next + beta_next)[None, :], axis=1)
         return beta_t, beta_t
 
@@ -203,6 +225,7 @@ class ExpandedHMMEngine:
                 concrete arrays).
         """
         log_alpha, loglik = _forward_core(theta, spec, space, data)
+        check_feasible(loglik, data, log_alpha)
         _check_finite(loglik)
         return log_alpha, loglik
 
@@ -220,6 +243,7 @@ class ExpandedHMMEngine:
                 with concrete arrays).
         """
         log_alpha, log_beta, smoothed, loglik = self._smooth(theta, spec, space, data)
+        check_feasible(loglik, data, log_alpha)
         _check_posterior(log_alpha, log_beta, smoothed, loglik)
         return Posterior(
             log_alpha=log_alpha, log_beta=log_beta, smoothed=smoothed, loglik=loglik, index=space.index

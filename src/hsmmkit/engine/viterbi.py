@@ -14,7 +14,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from hsmmkit.engine.expanded_hmm import _emission_inputs
+from hsmmkit.engine.expanded_hmm import _emission_inputs, _log_a
 from hsmmkit.utils.errors import NumericalError
 from hsmmkit.utils.typing import Array
 
@@ -33,9 +33,11 @@ def _viterbi_core(
     log_rho, ell_0, _, xs = _emission_inputs(theta, spec, space, data)
     delta_0 = log_rho + ell_0
 
-    def forward_step(delta_prev: Array, xs_t: tuple[Array, Array, Array, Array]) -> tuple[Array, Array]:
-        ell_t, z_pi_t, z_d_t, dt_t = xs_t
-        _, log_a = space.transition_fn(theta, z_pi_t, z_d_t, dt_t)
+    active = data.boundaries is not None
+
+    def forward_step(delta_prev: Array, xs_t: tuple[Array, ...]) -> tuple[Array, Array]:
+        ell_t, z_pi_t, z_d_t, dt_t, code_t = xs_t
+        log_a = _log_a(space, theta, z_pi_t, z_d_t, dt_t, code_t, active)
         scores = delta_prev[:, None] + log_a  # (S_prev, S)
         psi_t = jnp.argmax(scores, axis=0).astype(jnp.int32)
         delta_t = ell_t + jnp.max(scores, axis=0)

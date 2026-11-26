@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 
-from hsmmkit.engine.expanded_hmm import _emission_inputs
+from hsmmkit.engine.expanded_hmm import _emission_inputs, _log_a
 from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
@@ -66,14 +66,15 @@ def parallel_forward_backward(
 ) -> tuple[Array, Array, Array, Array]:
     """`(log_alpha, log_beta, smoothed, loglik)` as `ExpandedHMMEngine.forward_backward`, in parallel."""
     log_rho, ell_0, _, xs = _emission_inputs(theta, spec, space, data)
-    ell_rest, z_pi, z_d, dt = xs
+    ell_rest, z_pi, z_d, dt, code = xs
+    active = data.boundaries is not None
     s = log_rho.shape[0]
     alpha_0 = log_rho + ell_0
 
-    def log_a(z_pi_t: Array, z_d_t: Array, dt_t: Array) -> Array:
-        return space.transition_fn(theta, z_pi_t, z_d_t, dt_t)[1]
+    def log_a(z_pi_t: Array, z_d_t: Array, dt_t: Array, code_t: Array) -> Array:
+        return _log_a(space, theta, z_pi_t, z_d_t, dt_t, code_t, active)
 
-    log_m = jax.vmap(log_a)(z_pi, z_d, dt) + ell_rest[:, None, :]  # (T-1, S, S): step t moves t-1 -> t
+    log_m = jax.vmap(log_a)(z_pi, z_d, dt, code) + ell_rest[:, None, :]  # (T-1, S, S): step t moves t-1 -> t
     elems = _scaled(log_m)
 
     prefix_e, prefix_c = jax.lax.associative_scan(_combine, elems, axis=0)

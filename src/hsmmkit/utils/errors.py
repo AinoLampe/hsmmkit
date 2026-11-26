@@ -32,3 +32,25 @@ class NumericalError(HsmmkitError):
 
 class PersistenceError(HsmmkitError):
     """A model bundle failed to save, load, or validate."""
+
+
+class ConstraintError(HsmmkitError):
+    """The label / boundary constraints (E12-T06) admit no state path: the likelihood is exactly zero.
+
+    Attributes:
+        step: the first step at which every filtered state has probability zero (`None` if not located).
+        sequence: the id of the offending sequence of a batch (`None` for a single sequence).
+    """
+
+    def __init__(
+        self, message: str, *, path: str | None = None, step: int | None = None, sequence: str | None = None
+    ) -> None:
+        """Store `step` / `sequence` and extend `message` with them."""
+        self.step = step
+        self.sequence = sequence
+        where = []
+        if sequence is not None:
+            where.append(f"sequence {sequence!r}")
+        if step is not None:
+            where.append(f"step {step}")
+        super().__init__(f"{message} ({', '.join(where)})" if where else message, path=path)

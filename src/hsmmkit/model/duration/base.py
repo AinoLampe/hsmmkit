@@ -117,8 +117,8 @@ def broadcast_per_state(values: list[float] | float | str | None, n_states: int)
     """`values` (one per state) -> `(n_states,)`."""
     if values is None:
         return None
-    if isinstance(values, str):
-        raise ConfigError(f"init: {values!r} is not available before E12-T06", path="values")
+    if isinstance(values, str):  # `init: labels`: the `labels` init method fills it (E12-T06)
+        return None
     arr = np.asarray(values, dtype=np.float64)
     if arr.ndim == 0:  # one value for every state
         arr = np.full(n_states, float(arr))

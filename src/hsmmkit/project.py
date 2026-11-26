@@ -344,6 +344,7 @@ class Project:
                 self.config.data,
                 own_lags=required_own_lags(self.config),
                 series_support=required_series_support(self.config),
+                n_regimes=self.config.model.n_states,
             )
             .fit(obs, covs, _train_end(obs, self.config.backtest_cfg()))
             .transform(obs, covs)
@@ -387,6 +388,7 @@ class Project:
                 self.config.data,
                 own_lags=required_own_lags(self.config),
                 series_support=required_series_support(self.config),
+                n_regimes=self.config.model.n_states,
             )
             .fit(obs, covs, end)
             .transform_batch(obs, covs)
@@ -481,7 +483,7 @@ class Project:
                 if seq.group in known:
                     index[b] = known.index(seq.group)
             pb = dataclasses.replace(pb, group_index=jnp.asarray(index))
-        per = np.asarray(batched_loglik(engine, theta, spec, space, pb))[: len(batch.sequences)]
+        per = np.asarray(batched_loglik(engine, theta, spec, space, pb, batch.ids))[: len(batch.sequences)]
         return ScoreResult(
             loglik=float(per.sum()),
             per_sequence=pd.DataFrame(
@@ -705,6 +707,7 @@ class Project:
                 config.data,
                 own_lags=required_own_lags(config),
                 series_support=required_series_support(config),
+                n_regimes=config.model.n_states,
             )
             .fit(obs, covs, train_end=obs.require_times()[-1])
             .transform(obs, covs)

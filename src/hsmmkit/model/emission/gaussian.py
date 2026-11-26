@@ -66,8 +66,8 @@ def _broadcast_per_state(
     """`values` (one per state) -> `(n_states,)` (`flat`) or `(n_states, n_series)`."""
     if values is None:
         return None
-    if isinstance(values, str):
-        raise ConfigError(f"init: {values!r} is not available before E12-T06", path="values")
+    if isinstance(values, str):  # `init: labels`: the `labels` init method fills it (E12-T06)
+        return None
     arr = np.asarray(values, dtype=np.float64)
     if arr.ndim == 0:  # one value for every state
         arr = np.full(n_states, float(arr))
@@ -168,9 +168,7 @@ def _chol_spec_from_paramcfg(cfg: ParamCfg, n_states: int, n_series: int) -> Par
             path="model.emission.params.chol.mode",
         )
     init: np.ndarray | None = None
-    if cfg.init is not None:
-        if isinstance(cfg.init, str):
-            raise ConfigError(f"init: {cfg.init!r} is not available before E12-T06", path="values")
+    if cfg.init is not None and not isinstance(cfg.init, str):  # `init: labels` -> the `labels` init method
         flat = np.atleast_1d(np.asarray(cfg.init, dtype=np.float64))
         if flat.shape == (k,):
             init = np.tile(flat, (n_states, 1))

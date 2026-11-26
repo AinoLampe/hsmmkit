@@ -28,6 +28,7 @@ from hsmmkit.presets import get_preset, list_presets, write_preset
 from hsmmkit.project import Project, apply_overrides, check_simulate_args
 from hsmmkit.utils.errors import (
     ConfigError,
+    ConstraintError,
     DataError,
     HsmmkitError,
     NumericalError,
@@ -39,6 +40,7 @@ from hsmmkit.utils.logging import configure_logging, get_logger
 EXIT_CODES: dict[type[BaseException], int] = {
     ConfigError: 2,
     DataError: 3,
+    ConstraintError: 3,  # Part II overview §5.4: data / constraint
     NumericalError: 4,
     PersistenceError: 1,  # CLAUDE.md §3.8 (the ticket text says 2; the existing behaviour is kept)
 }

@@ -24,6 +24,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from hsmmkit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
+from hsmmkit.engine.constraints import boundary_code
 from hsmmkit.utils.errors import ConfigError, DataError
 from hsmmkit.utils.typing import Array
 
@@ -75,6 +76,11 @@ def split_sequences(
                     values=np.asarray(c.values)[rows],
                 )
             )
+        label_values = obs.meta.get("label_values")
+        if label_values is not None:
+            sub_obs = dataclasses.replace(
+                sub_obs, meta={**sub_obs.meta, "label_values": [label_values[int(r)] for r in rows]}
+            )
         group_values = obs.meta.get("group_values")
         if group_values is not None:
             groups = np.unique(np.asarray(group_values, dtype=object)[rows].astype(str))
@@ -83,7 +89,7 @@ def split_sequences(
                     f"the group column varies within sequence {sid!r} ({groups.tolist()})",
                     path="data.sequences.group_by",
                 )
-            meta = {k: v for k, v in obs.meta.items() if k != "group_values"}
+            meta = {k: v for k, v in sub_obs.meta.items() if k != "group_values"}
             sub_obs = dataclasses.replace(sub_obs, meta={**meta, "group": str(groups[0])})
         out.append((str(sid), sub_obs, sub_covs))
     return out
@@ -102,6 +108,7 @@ def split_sequences(
         "labels",
         "lengths",
         "group_index",
+        "boundary_code",
     ],
     meta_fields=["nominal_dt", "clock"],
 )
@@ -118,6 +125,8 @@ class PaddedBatch:
         labels: `(B, T_max, N)` or `None`; `True` on padding (everything allowed).
         lengths: `(B,)` int32 (0 for the empty padding sequences).
         group_index: `(B,)` int32 initial-distribution group (0 if there are no groups).
+        boundary_code: `(B, T_max)` int8 (1 = `must_switch_at`, 2 = `must_not_switch_at`) or `None` when
+            no sequence has boundaries (E12-T06).
         nominal_dt, clock: static metadata of the grid (`PreparedDataset.nominal_dt` / `clock`).
     """
 
@@ -133,6 +142,7 @@ class PaddedBatch:
     group_index: Array
     nominal_dt: float = 1.0
     clock: str = "steps"
+    boundary_code: Array | None = None
 
 
 def _bucket(max_len: int, edges: tuple[int, ...]) -> int:
@@ -262,6 +272,13 @@ class SequenceBatch:
             group_index[i] = groups[s.group if s.group is not None else self.group_names[0]]
         lengths = np.zeros(b, dtype=np.int32)
         lengths[: len(self.sequences)] = self.lengths
+        codes = None
+        if any(s.boundaries is not None for s in self.sequences):
+            codes = np.zeros((b, t_max), dtype=np.int8)
+            for i, s in enumerate(self.sequences):
+                code = boundary_code(s.boundaries, int(s.observations.shape[0]))
+                if code is not None:
+                    codes[i, : code.shape[0]] = code
         return PaddedBatch(
             observations=jnp.asarray(observations),
             mask=jnp.asarray(mask),
@@ -275,6 +292,7 @@ class SequenceBatch:
             group_index=jnp.asarray(group_index),
             nominal_dt=float(first.nominal_dt),
             clock=first.clock,
+            boundary_code=None if codes is None else jnp.asarray(codes),
         )
 
     def unpad(self, arr: Array, *, time_axis: int = 1) -> tuple[Array, ...]:

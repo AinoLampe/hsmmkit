@@ -252,7 +252,7 @@ class ParamCfg(_Base):
     mode: ParamMode
     values: list[float] | None = None
     init: list[float] | float | Literal["labels"] | None = None
-    """Initial values per state, or `"labels"` (initialize from `data.labels`; not before E12-T06)."""
+    """Initial values per state, or `"labels"` (the `labels` init method fills it from `data.labels`)."""
     init_mean_sojourn_steps: list[float] | float | None = None
     bounds: tuple[float, float] | None = None
     constraint: Literal["none", "increasing"] = "none"

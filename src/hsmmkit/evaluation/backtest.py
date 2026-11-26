@@ -348,7 +348,12 @@ def run_backtest(
 
     # The grid does not depend on the fitted statistics: one full-sample preparation fixes the fold table.
     grid = (
-        Preparer(cfg.data, own_lags=required_own_lags(cfg), series_support=required_series_support(cfg))
+        Preparer(
+            cfg.data,
+            own_lags=required_own_lags(cfg),
+            series_support=required_series_support(cfg),
+            n_regimes=cfg.model.n_states,
+        )
         .fit(obs, covs, train_end=obs.require_times()[-1])
         .transform(obs, covs)
     )
@@ -385,7 +390,10 @@ def run_backtest(
     warm: Array | None = None
     for fold in folds:
         prep = Preparer(
-            cfg.data, own_lags=required_own_lags(cfg), series_support=required_series_support(cfg)
+            cfg.data,
+            own_lags=required_own_lags(cfg),
+            series_support=required_series_support(cfg),
+            n_regimes=cfg.model.n_states,
         ).fit(
             obs,
             covs,
