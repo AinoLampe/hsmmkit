@@ -14,15 +14,19 @@ follow-up for whoever first builds a lattice-configured model end to end.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+import dataclasses
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
+
+import numpy as np
 
 import hsmmkit.model.duration
 import hsmmkit.model.emission  # noqa: F401  (registers the emission families)
 from hsmmkit.config.gates import check as gates_check
 from hsmmkit.model.emission.product import ProductEmission
 from hsmmkit.model.spec import ModelSpec
+from hsmmkit.model.topology import from_config as topology_from_config
 from hsmmkit.model.transition import JumpTransition
 from hsmmkit.plugins import REGISTRY, Kind
 from hsmmkit.utils.clock import days_to_steps
@@ -31,6 +35,7 @@ from hsmmkit.utils.errors import ConfigError
 if TYPE_CHECKING:
     from hsmmkit.config.schema import DurationCfg, ProjectConfig
     from hsmmkit.data.contracts import PreparedDataset, Support
+    from hsmmkit.model.params.spec import ParamSpec
     from hsmmkit.model.transition import TransitionModel
 
 
@@ -56,6 +61,24 @@ class _FamilyView(Mapping[str, Any]):
 
 EMISSION_FAMILIES: Mapping[str, Any] = _FamilyView("emission")
 DURATION_FAMILIES: Mapping[str, Any] = _FamilyView("duration")
+
+
+def _fix_absorbing(specs: Sequence[ParamSpec], absorbing: tuple[int, ...], n_states: int) -> list[ParamSpec]:
+    """Absorbing regimes never end a sojourn: their duration entries are `fixed` (dropped from `u`).
+
+    Applies to every duration spec whose leading axis is the state axis (`duration_conditioning: current`;
+    `pair` conditioning has no config-built duration specs, its rates are sized `N(N-1)` by the caller).
+    """
+    out: list[ParamSpec] = []
+    for sp in specs:
+        if sp.shape[:1] == (n_states,) and sp.constraint != "increasing" and sp.init is not None:
+            modes = [sp.mode] * n_states if isinstance(sp.mode, str) else list(sp.mode)
+            for i in absorbing:
+                modes[i] = "fixed"
+            value = np.array(sp.init, copy=True) if sp.value is None else sp.value
+            sp = dataclasses.replace(sp, mode=tuple(modes), value=value)
+        out.append(sp)
+    return out
 
 
 def _with_mean_sojourn_steps(
@@ -213,9 +236,16 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
             duration_cfg, n, inputs.cov_names.get("duration", ()), inputs.nominal_dt
         )
 
+    topology = topology_from_config(m.topology, n)
     transition, transition_specs = JumpTransition.from_config(
-        m.transition, n, m.transition.order, inputs.cov_names.get("transition", ())
+        m.transition,
+        n,
+        m.transition.order,
+        inputs.cov_names.get("transition", ()),
+        None if topology.is_full else topology,
     )
+    if not topology.is_full and topology.absorbing:
+        duration_specs = _fix_absorbing(duration_specs, topology.absorbing, n)
     assert m.d_max is not None  # `_resolve_d_max` (config/schema.py) always fills this in
 
     return ModelSpec(

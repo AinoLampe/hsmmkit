@@ -7,6 +7,7 @@ is created in 0.1.0). Concept refs: §4.3 Geometric/Generator, §4.4 Transitions
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING, Literal, Protocol
 
 import jax
@@ -20,6 +21,7 @@ from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
     from hsmmkit.config.schema import TransitionCfg
+    from hsmmkit.model.topology import Topology
 
 
 @dataclass(frozen=True, eq=False)
@@ -59,16 +61,30 @@ class MemoryLayout:
         return hash((self.n_states, self.order, self.tuples.tobytes(), self.current_of.tobytes()))
 
 
-def build_memory_layout(n_states: int, order: int) -> MemoryLayout:
-    """Enumerate every length-`order` sequence of regimes with no two adjacent entries equal."""
+def build_memory_layout(n_states: int, order: int, topology: Topology | None = None) -> MemoryLayout:
+    """Enumerate every length-`order` sequence of regimes with no two adjacent entries equal.
+
+    With a non-full `topology` (E12-T03) a tuple `(..., i, j)` exists only if the jump `i -> j` is allowed,
+    and `target_mask` marks the allowed targets of each tuple's current regime.
+    """
     if order < 1:
         raise ConfigError(f"transition.order must be >= 1, got {order}", path="model.transition.order")
+    allowed = None if topology is None else topology.allowed
     tuples: list[tuple[int, ...]] = [(i,) for i in range(n_states)]
     for _ in range(order - 1):
-        tuples = [(*t, j) for t in tuples for j in range(n_states) if j != t[-1]]
+        tuples = [
+            (*t, j)
+            for t in tuples
+            for j in range(n_states)
+            if (j != t[-1] if allowed is None else bool(allowed[t[-1], j]))
+        ]
+    if not tuples:
+        raise ConfigError("the topology allows no jump at all", path="model.topology")
     arr = np.asarray(tuples, dtype=np.int64)
     current_of = arr[:, -1]
-    target_mask = current_of[:, None] != np.arange(n_states)[None, :]
+    target_mask = (
+        current_of[:, None] != np.arange(n_states)[None, :] if allowed is None else allowed[current_of]
+    )
     return MemoryLayout(
         n_states=n_states, order=order, tuples=arr, current_of=current_of, target_mask=target_mask
     )
@@ -122,6 +138,9 @@ class JumpTransition:
     mode: Literal["jump", "generator"] = "jump"
     cov_idx: tuple[int, ...] = ()
     dirichlet_alpha: float | None = None
+    topology: Topology | None = None
+    """A non-full topology (E12-T03): the free logits are one flat vector `transition.a (F,)` (and
+    `transition.b (F, K_pi)`), `F = sum over rows of max(0, |A| - 1)`; `None` is the Part I layout."""
     """Set by `from_config` when covariates are configured with a Dirichlet prior: `ParamManager`'s
     per-spec prior (`prior.log_prob(theta[name])`) can't express "Dirichlet on `pi` at `z = 0`" since
     `pi` isn't `theta["transition.a"/"transition.b"]` directly; `log_prior_extra` computes it instead
@@ -130,6 +149,8 @@ class JumpTransition:
     def param_specs(self, n_states: int, order: int, cov_names: tuple[str, ...]) -> tuple[ParamSpec, ...]:
         """Default (config-free) spec: `transition.pi_rows`, free/`simplex_ref`."""
         del cov_names
+        if self.topology is not None:
+            return tuple(_flat_specs(build_memory_layout(n_states, order, self.topology), 0, None))
         layout = build_memory_layout(n_states, order)
         r = layout.tuples.shape[0]
         shape = (r, n_states - 1)
@@ -145,10 +166,34 @@ class JumpTransition:
 
     @classmethod
     def from_config(
-        cls, cfg: TransitionCfg, n_states: int, order: int, cov_names: tuple[str, ...]
+        cls,
+        cfg: TransitionCfg,
+        n_states: int,
+        order: int,
+        cov_names: tuple[str, ...],
+        topology: Topology | None = None,
     ) -> tuple[JumpTransition, tuple[ParamSpec, ...]]:
-        """Map `model.transition` config to a configured `JumpTransition` and its `ParamSpec`s."""
+        """Map `model.transition` config to a configured `JumpTransition` and its `ParamSpec`s.
+
+        `topology` is a non-full `Topology` (`None`/full: the Part I layout, bitwise unchanged).
+        """
         cov_idx = _cov_idx_from_names(cfg.covariates, cov_names, "model.transition.covariates")
+        if topology is not None and topology.is_full:
+            topology = None
+        if topology is not None:
+            if cfg.mode == "generator":
+                raise ConfigError(
+                    "a non-full topology needs transition.mode: jump", path="model.transition.mode"
+                )
+            layout = build_memory_layout(n_states, order, topology)
+            prior_flat = cfg.prior if (cfg.prior is not None and cfg.prior.type == "dirichlet") else None
+            family = cls(
+                mode=cfg.mode,
+                cov_idx=cov_idx,
+                dirichlet_alpha=None if prior_flat is None else (prior_flat.alpha or 1.0),
+                topology=topology,
+            )
+            return family, tuple(_flat_specs(layout, len(cov_idx), cfg.coef_prior_sd))
         layout = build_memory_layout(n_states, order)
         r = layout.tuples.shape[0]
         k_pi = len(cov_idx)
@@ -194,6 +239,17 @@ class JumpTransition:
         """
         if self.dirichlet_alpha is None:
             return jnp.zeros(())
+        if self.topology is not None:
+            pi = self.jump_probs_t(theta, jnp.zeros((len(self.cov_idx),)), memory)  # (R, N)
+            n_allowed = memory.target_mask.sum(axis=1)
+            rows = np.flatnonzero(n_allowed >= 2)
+            a = self.dirichlet_alpha
+            if rows.size == 0:
+                return jnp.zeros(())
+            logp = jnp.log(jnp.where(memory.target_mask[rows], pi[rows], 1.0))
+            gammaln = jax.scipy.special.gammaln
+            const = gammaln(n_allowed[rows] * a) - n_allowed[rows] * gammaln(a)
+            return jnp.sum((a - 1.0) * jnp.sum(logp, axis=1) + const)
         n_states = memory.n_states
         z0 = jnp.zeros((len(self.cov_idx),))
         pi_full = self.jump_probs_t(theta, z0, memory)  # (R, N)
@@ -203,6 +259,10 @@ class JumpTransition:
 
     def jump_probs(self, theta: Params, z_pi: Array | None, memory: MemoryLayout) -> Array:
         """`(T, R, N)` jump probabilities."""
+        if self.topology is not None:
+            if z_pi is None:
+                return self.jump_probs_t(theta, None, memory)[None]
+            return jax.vmap(lambda z: self.jump_probs_t(theta, z, memory))(z_pi)
         n_states = memory.n_states
         r = memory.current_of.shape[0]
         target_idx = _target_order(memory.current_of, n_states)
@@ -225,8 +285,33 @@ class JumpTransition:
 
         return jnp.einsum("tro,ron->trn", pi, onehot)
 
+    def _masked_probs(self, theta: Params, z_pi_t: Array | None, memory: MemoryLayout) -> Array:
+        """Masked multinomial logit: the smallest allowed target has logit 0, structural zeros stay 0."""
+        free_row, free_col = _flat_structure(memory)
+        allowed = jnp.asarray(memory.target_mask)
+        r, n = allowed.shape
+        logits = jnp.zeros((r, n))
+        if free_row.size:
+            a = theta["transition.a"]
+            if "transition.b" in theta:
+                z = (
+                    z_pi_t[jnp.asarray(self.cov_idx)]
+                    if (z_pi_t is not None and self.cov_idx)
+                    else jnp.zeros((0,))
+                )
+                a = a + theta["transition.b"] @ z
+            logits = logits.at[free_row, free_col].set(a)
+        shifted = jnp.where(allowed, logits, -jnp.inf)
+        top = jnp.max(shifted, axis=1, keepdims=True)
+        top_safe = jnp.where(jnp.isfinite(top), top, 0.0)
+        e = jnp.where(allowed, jnp.exp(jnp.where(allowed, logits, 0.0) - top_safe), 0.0)
+        total = jnp.sum(e, axis=1, keepdims=True)
+        return jnp.where(total > 0, e / jnp.where(total > 0, total, 1.0), 0.0)
+
     def jump_probs_t(self, theta: Params, z_pi_t: Array | None, memory: MemoryLayout) -> Array:
         """`(R, N)` jump probabilities at a single step."""
+        if self.topology is not None:
+            return self._masked_probs(theta, z_pi_t, memory)
         n_states = memory.n_states
         r = memory.current_of.shape[0]
         target_idx = _target_order(memory.current_of, n_states)
@@ -246,6 +331,41 @@ class JumpTransition:
             pi = jax.nn.softmax(logits, axis=-1)
 
         return jnp.einsum("ro,ron->rn", pi, onehot)
+
+
+@lru_cache(maxsize=64)
+def _flat_structure(memory: MemoryLayout) -> tuple[np.ndarray, np.ndarray]:
+    """`(free_row, free_col)`: the cells with a free logit (all allowed targets but the smallest, logit 0)."""
+    free_row: list[int] = []
+    free_col: list[int] = []
+    for r in range(memory.target_mask.shape[0]):
+        targets = np.flatnonzero(memory.target_mask[r])
+        for j in targets[1:]:
+            free_row.append(r)
+            free_col.append(int(j))
+    return np.asarray(free_row, dtype=np.int64), np.asarray(free_col, dtype=np.int64)
+
+
+def _flat_specs(memory: MemoryLayout, k_pi: int, coef_prior_sd: float | None) -> list[ParamSpec]:
+    """`transition.a (F,)` (and `transition.b (F, K)`) for a topology layout; no spec when `F == 0`."""
+    free_row, _ = _flat_structure(memory)
+    f = int(free_row.size)
+    if f == 0:
+        return []
+    specs = [ParamSpec(name="transition.a", shape=(f,), domain="real", mode="free", init=np.zeros(f))]
+    if k_pi:
+        shape = (f, k_pi)
+        specs.append(
+            ParamSpec(
+                name="transition.b",
+                shape=shape,
+                domain="real",
+                mode="free",
+                init=np.zeros(shape),
+                prior=NormalPrior(sd=1.0 if coef_prior_sd is None else coef_prior_sd),
+            )
+        )
+    return specs
 
 
 def transition_matrix_generator(theta: Params, lam: Array, dt: Array) -> Array:

@@ -131,6 +131,8 @@ def has_identifiability_guard(spec: ModelSpec) -> bool:
     """`True` if some per-state spec is `increasing`, or every location/scale emission spec is `fixed`."""
     if any(s.constraint == "increasing" for s in spec.param_specs):
         return True
+    if getattr(spec.transition, "topology", None) is not None:
+        return True  # a non-full topology fixes the order of the regimes (relabelling would break it)
     identifying = [s for s in spec.param_specs if _unprefixed(s.name) in _IDENTIFYING_EMISSION]
     if not identifying:
         return False

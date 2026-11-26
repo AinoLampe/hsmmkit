@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from hsmmkit.engine.base import Posterior
 from hsmmkit.engine.expanded_hmm import _check_finite, _check_posterior, _regime_log_emis, _safe_logsumexp
@@ -57,6 +58,7 @@ class _Inputs(NamedTuple):
     cum: Array  # (T+1, N)
     log_pi: Array  # (N, N) or (T, N, N), indexed by segment start
     log_pmf: Array  # (N, D) or (T, N, D), indexed by segment start
+    absorbing: Array | None = None  # (N,) bool: regimes whose final segment never ends (E12-T03)
 
 
 def _logaddexp(a: Array, b: Array) -> Array:
@@ -73,7 +75,7 @@ def _log_survival(log_pmf: Array) -> Array:
 def _log_jump(spec: ModelSpec, space: StateSpace, theta: Params, data: PreparedDataset) -> Array:
     """`log pi`: `(N, N)` when constant, `(T, N, N)` with transition covariates (row = segment start)."""
     z_pi = data.cov_transition
-    if z_pi is None or z_pi.shape[-1] == 0 or "transition.pi_rows" in theta:
+    if z_pi is None or z_pi.shape[-1] == 0 or "transition.b" not in theta:
         pi = spec.transition.jump_probs_t(theta, None, space.layout)
     else:
         pi = spec.transition.jump_probs(theta, z_pi, space.layout)
@@ -86,8 +88,17 @@ def _log_pmf(spec: ModelSpec, theta: Params, data: PreparedDataset) -> Array:
     family, d_max, nominal_dt = spec.duration, spec.d_max, data.nominal_dt
     z_d = data.cov_duration
     if z_d is None or z_d.shape[-1] == 0 or not getattr(family, "cov_idx", ()):
-        return jnp.asarray(family.log_pmf(theta, d_max, nominal_dt, None))
-    return jax.vmap(lambda z: family.log_pmf(theta, d_max, nominal_dt, z))(z_d)
+        lp = jnp.asarray(family.log_pmf(theta, d_max, nominal_dt, None))
+    else:
+        lp = jax.vmap(lambda z: family.log_pmf(theta, d_max, nominal_dt, z))(z_d)
+    topology = getattr(spec.transition, "topology", None)
+    if topology is not None and topology.absorbing:
+        # an absorbing regime never leaves: `p(d) = delta_{d, D_max}` and the final segment is right-censored
+        stays = np.full(d_max, -np.inf)
+        stays[-1] = 0.0
+        mask = np.isin(np.arange(spec.n_states), topology.absorbing)[:, None]
+        lp = jnp.where(jnp.asarray(mask), jnp.asarray(stays), lp)
+    return lp
 
 
 def _log_rho(spec: ModelSpec, theta: Params) -> Array:
@@ -142,8 +153,16 @@ def _build_inputs(theta: Params, spec: ModelSpec, space: StateSpace, data: Prepa
     dt = jnp.full_like(data.dt, data.nominal_dt)
     ell = _regime_log_emis(theta, spec, data, dt)  # (T, N)
     cum = jnp.concatenate([jnp.zeros((1, ell.shape[1])), jnp.cumsum(ell, axis=0)], axis=0)
+    topology = getattr(spec.transition, "topology", None)
+    absorbing = None
+    if topology is not None and topology.absorbing:
+        absorbing = jnp.asarray(np.isin(np.arange(spec.n_states), topology.absorbing))
     return _Inputs(
-        _log_rho(spec, theta), cum, _log_jump(spec, space, theta, data), _log_pmf(spec, theta, data)
+        _log_rho(spec, theta),
+        cum,
+        _log_jump(spec, space, theta, data),
+        _log_pmf(spec, theta, data),
+        absorbing,
     )
 
 
@@ -194,7 +213,13 @@ def _terminal(inp: _Inputs) -> Array:
     else:
         picked = surv[jnp.arange(t_len)[:, None], jnp.arange(n)[None, :], idx[:, None]]
     value = picked + cum[t_len][None, :] - cum[:t_len]
-    return jnp.where((length <= d_max)[:, None], value, _NEG_INF)
+    fits = (length <= d_max)[:, None]
+    if inp.absorbing is not None:
+        # an absorbing regime never leaves: its final segment has survival 1 at every length (no D_max cap)
+        never_ends = cum[t_len][None, :] - cum[:t_len]
+        value = jnp.where(inp.absorbing[None, :], never_ends, value)
+        fits = fits | inp.absorbing[None, :]
+    return jnp.where(fits, value, _NEG_INF)
 
 
 def _loglik(inner: Array, term: Array) -> Array:
@@ -407,7 +432,9 @@ def _viterbi_impl(inp: _Inputs) -> tuple[Array, Array]:
 
     def back(carry: tuple[Array, Array], t: Array) -> tuple[tuple[Array, Array], Array]:
         j, s0 = carry
-        state = (j * d_max + (t - s0)).astype(jnp.int32)  # elapsed - 1 = t - s0
+        state = (j * d_max + jnp.minimum(t - s0, d_max - 1)).astype(
+            jnp.int32
+        )  # elapsed - 1 = t - s0 (capped)
         prev = jnp.maximum(tables.pred[s0, j], 0)
         switch = t == s0
         s_prev = tables.start_of[s0, prev]
@@ -480,6 +507,13 @@ class ExplicitDurationEngine:
             chunk = max(spec.d_max, _AUTO_CHUNK)
         if chunk is not None and chunk < 1:
             raise ConfigError("chunk_size must be >= 1", path="estimation.chunk_size")
+        topology = getattr(spec.transition, "topology", None)
+        if topology is not None and topology.absorbing and data.observations.shape[0] > spec.d_max:
+            raise ConfigError(
+                "the explicit-engine posterior of an absorbing regime needs d_max >= T "
+                f"(d_max={spec.d_max}, T={data.observations.shape[0]}); loglik and viterbi do not",
+                path="model.d_max",
+            )
         _prepare(theta, spec, space, data, full_tables=chunk is None)
         log_alpha, log_beta, smoothed, loglik, _ = _forward_backward_core(theta, spec, space, data, chunk)
         _check_posterior(log_alpha, log_beta, smoothed, loglik)
