@@ -34,13 +34,7 @@ def _explicit(raw: dict[str, Any]) -> dict[str, Any]:
 # One mutation per `GATES` row, applied to the Part I core config (which builds): the row must fire.
 def _case(name: str) -> dict[str, Any]:
     raw = core_raw(Path("/tmp/x"))
-    if name == "data.sequences":
-        raw["data"]["sequences"] = {"bucket_edges": [8, 16]}
-    elif name == "data.source.sequence_column":
-        raw["data"]["source"]["sequence_column"] = "sid"
-    elif name == "model.initial_groups":
-        raw["model"]["initial_groups"] = "per_group"
-    elif name == "model.left_censored":
+    if name == "model.left_censored":
         raw = _explicit(raw)
         raw["model"]["left_censored"] = True
     elif name == "model.duration.per_state":
@@ -101,21 +95,21 @@ def test_e10_t10_validation_is_not_gated(tmp_path: Path) -> None:
 
 
 def test_e10_t10_appendix_h_build_raises_the_first_gate_in_deterministic_order() -> None:
-    """Appendix H builds into `data.sequences` -> E12-T02 first (the order of `GATES`)."""
+    """Appendix H builds into `data.labels` -> E12-T06 first (the order of `GATES`)."""
     cfg = parse_project_config(appendix_h())
     paths = [p for p, _ in gates.used_gates(cfg)]
-    assert paths[0] == "data.sequences"
+    assert paths[0] == "data.labels"
     assert paths == [p for p in gates.GATES if p in paths]  # GATES order
     with pytest.raises(ConfigError) as info:
         build_model_spec_from(cfg, INPUTS)
-    assert info.value.path == "data.sequences"
-    assert "E12-T02" in str(info.value)
+    assert info.value.path == "data.labels"
+    assert "E12-T06" in str(info.value)
 
 
 def test_e10_t10_removing_a_row_lets_the_key_through(monkeypatch: pytest.MonkeyPatch) -> None:
     """The mechanism a feature ticket uses: delete its row, and the key no longer raises."""
-    cfg = parse_project_config(_case("model.initial_groups"))
-    monkeypatch.setattr(gates, "GATES", {k: v for k, v in gates.GATES.items() if k != "model.initial_groups"})
+    cfg = parse_project_config(_case("data.labels"))
+    monkeypatch.setattr(gates, "GATES", {k: v for k, v in gates.GATES.items() if k != "data.labels"})
     gates.check(cfg)
 
 

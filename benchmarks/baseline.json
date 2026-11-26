@@ -42,5 +42,9 @@
   {
     "name": "test_e12_t01b_batched_forward_backward_time_budget",
     "mean": 0.19989
+  },
+  {
+    "name": "test_e12_t02_batched_objective_value_and_grad",
+    "mean": 0.360005
   }
 ]

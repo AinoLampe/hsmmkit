@@ -10,8 +10,10 @@ Importing this module triggers no network access and no file writes.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,9 +28,11 @@ import pydantic
 
 from hsmmkit.config.schema import BacktestCfg, ProjectConfig
 from hsmmkit.config.yaml_io import dump_resolved, load_config
+from hsmmkit.data.batch import SequenceBatch
 from hsmmkit.data.contracts import CovariateSeries, ObservationSet, PreparedDataset
 from hsmmkit.data.prepare import Preparer, prep_stats_to_json
 from hsmmkit.data.sources import load_data as load_source_data
+from hsmmkit.engine.batch import batched_loglik
 from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
 from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
 from hsmmkit.estimation import fit as fit_model
@@ -65,6 +69,7 @@ from hsmmkit.utils.rng import PURPOSE_SIMULATE, key_for
 __all__ = [
     "FetchedInputs",
     "Project",
+    "ScoreResult",
     "SimulationOutput",
     "apply_overrides",
     "check_simulate_args",
@@ -77,6 +82,14 @@ class FetchedInputs(NamedTuple):
     obs: ObservationSet
     covs: list[CovariateSeries]
     context: Any = None  # what the loader left behind (an application's context)
+
+
+@dataclass(frozen=True)
+class ScoreResult:
+    """`Project.score`: the total log-likelihood and the per-sequence table `(id, T, loglik)`."""
+
+    loglik: float
+    per_sequence: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -262,7 +275,7 @@ class Project:
         self.out_dir = Path(out_dir) if out_dir is not None else Path(config.project.output_dir)
         self.offline = offline
         self.last_fetched: FetchedInputs | None = None
-        self.last_data: PreparedDataset | None = None
+        self.last_data: PreparedDataset | SequenceBatch | None = None
         self.last_backtest_meta: dict[str, Any] | None = None
 
     @classmethod
@@ -354,6 +367,34 @@ class Project:
         )
         return dataset
 
+    def is_multi_sequence(self) -> bool:
+        """Whether `data` describes several independent sequences (`data.sequences` / `sequence_column`)."""
+        data = self.config.data
+        return data.sequences is not None or data.source.option("sequence_column") is not None
+
+    def load_batch(self, obj: object = None, *, offline: bool | None = None) -> SequenceBatch:
+        """Read `data.source` and prepare every sequence (E12-T02): rows grouped by `sequence_column`.
+
+        The standardization statistics are pooled over all sequences; own lags, lagged covariates and
+        first-step masks stay inside each sequence (`Preparer.transform_batch`). `data.sequences.group_by`
+        gives the initial-distribution group of each sequence.
+        """
+        fetched = self.load_inputs(obj, offline=offline)
+        obs, covs = fetched.obs, fetched.covs
+        end = obs.values.shape[0] - 1 if obs.times is None else obs.require_times()[-1]
+        batch = (
+            Preparer(
+                self.config.data,
+                own_lags=required_own_lags(self.config),
+                series_support=required_series_support(self.config),
+            )
+            .fit(obs, covs, end)
+            .transform_batch(obs, covs)
+        )
+        self.last_data = batch
+        get_logger("hsmmkit.data").info("load_batch_done", sequences=len(batch.sequences))
+        return batch
+
     def needs_network(self) -> bool:
         """Whether loading the data may need the network (then `--offline` forbids loading it again)."""
         return False
@@ -373,8 +414,10 @@ class Project:
 
     # --- fit ---------------------------------------------------------------------------------------
 
-    def fit(self, data: PreparedDataset | None = None, *, write: bool = False) -> FitResult:
-        """MAP-fit the configured model to `data` (default: `load_data()`).
+    def fit(self, data: PreparedDataset | SequenceBatch | None = None, *, write: bool = False) -> FitResult:
+        """MAP-fit the configured model to `data`.
+
+        The default data is `load_batch()` for a multi-sequence config, else `load_data()`.
 
         `write=True` saves the bundle `<out_dir>/<name>.hsmm` and writes `fit_report.json` and
         `config.resolved.yaml`.
@@ -384,7 +427,9 @@ class Project:
             NumericalError: no restart produced a finite fit.
             PersistenceError: the outputs cannot be written.
         """
-        dataset = data if data is not None else self.load_data()
+        dataset = data
+        if dataset is None:
+            dataset = self.load_batch() if self.is_multi_sequence() else self.load_data()
         spec = build_model_spec(self.config, dataset)
         result = fit_model(spec, dataset, self.config.estimation, self.config.project.seed)
         self.last_data = dataset
@@ -397,11 +442,60 @@ class Project:
         )
         return result
 
-    def _write_fit_report(self, fit: FitResult, data: PreparedDataset) -> None:
+    def score(self, fit: FitResult, data: PreparedDataset | SequenceBatch) -> ScoreResult:
+        """The log-likelihood of `data` under `fit`: total and per sequence (E12-T02).
+
+        A single `PreparedDataset` is a one-sequence batch. With per-group initial distributions each
+        sequence starts from its group's row; a group the model has not seen falls back (with a warning)
+        to the mean of the group rows.
+
+        Raises:
+            NumericalError: a non-finite log-likelihood.
+        """
+        batch = data if isinstance(data, SequenceBatch) else SequenceBatch.of(data)
         spec = fit.spec
         space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
+        engine = engine_for(self.config, spec.engine)
+        theta = dict(fit.params)
+        pb = batch.padded()
+        if spec.n_groups > 1:
+            known = [g for g in (fit.diagnostics.get("initial_groups") or [])]
+            rows = np.asarray(theta["initial.logits"])
+            theta["initial.logits"] = jnp.asarray(np.vstack([rows, rows.mean(axis=0, keepdims=True)]))
+            index = np.full(pb.group_index.shape, len(known), dtype=np.int32)  # unseen -> the fallback row
+            unseen = sorted({s.group for s in batch.sequences if s.group not in known}, key=str)
+            if unseen:
+                warnings.warn(
+                    f"initial-distribution groups {unseen} were not seen in the fit: "
+                    "using the mean of the group rows",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            for b, seq in enumerate(batch.sequences):
+                if seq.group in known:
+                    index[b] = known.index(seq.group)
+            pb = dataclasses.replace(pb, group_index=jnp.asarray(index))
+        per = np.asarray(batched_loglik(engine, theta, spec, space, pb))[: len(batch.sequences)]
+        return ScoreResult(
+            loglik=float(per.sum()),
+            per_sequence=pd.DataFrame(
+                {
+                    "id": list(batch.ids),
+                    "T": [int(t) for t in batch.lengths],
+                    "loglik": per.astype(float),
+                }
+            ),
+        )
+
+    def _write_fit_report(self, fit: FitResult, data: PreparedDataset | SequenceBatch) -> None:
+        spec = fit.spec
+        space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
+        first = data.sequences[0] if isinstance(data, SequenceBatch) else data
         try:
-            diagnostics = diagnose(fit, spec, space, engine_for(self.config, spec.engine), data)
+            if isinstance(data, SequenceBatch):  # the batch fit already reports per sequence
+                diagnostics = dict(fit.diagnostics)
+            else:
+                diagnostics = diagnose(fit, spec, space, engine_for(self.config, spec.engine), data)
         except HsmmkitError as exc:  # the fit itself succeeded: report without diagnostics
             get_logger("hsmmkit.fit").warning("diagnostics_unavailable", error=str(exc))
             diagnostics = {}
@@ -413,7 +507,7 @@ class Project:
             "objective": fit.objective,
             "loglik": fit.loglik,
             "n_free": ParamManager(spec.param_specs).n_free,
-            "snapshot_ids": list(data.snapshot_ids),
+            "snapshot_ids": list(first.snapshot_ids),
             "restarts": fit.restarts.to_dict(orient="records"),
             "diagnostics": diagnostics,
         }
@@ -425,7 +519,9 @@ class Project:
 
     # --- save / load -------------------------------------------------------------------------------
 
-    def save(self, fit: FitResult, path: Path | str, data: PreparedDataset | None = None) -> Path:
+    def save(
+        self, fit: FitResult, path: Path | str, data: PreparedDataset | SequenceBatch | None = None
+    ) -> Path:
         """Write `fit` as a model bundle; `data` defaults to the dataset of the last `fit` / `load_data`."""
         dataset = data if data is not None else self.last_data
         if dataset is None:

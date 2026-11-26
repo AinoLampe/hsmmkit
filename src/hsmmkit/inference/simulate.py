@@ -10,6 +10,8 @@ describes the *semantics*, not literally one `emission.sample` call per step.
 
 from __future__ import annotations
 
+import dataclasses
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING
@@ -24,6 +26,7 @@ from hsmmkit.statespace.builders import initial_log_rho
 from hsmmkit.utils.errors import ConfigError, NumericalError
 
 if TYPE_CHECKING:
+    from hsmmkit.data.batch import SequenceBatch
     from hsmmkit.model.params.manager import Params
     from hsmmkit.model.spec import ModelSpec
     from hsmmkit.statespace.index import StateSpace
@@ -205,3 +208,67 @@ def simulate_dataset(
         prep_stats=stats,
         snapshot_ids=(),
     )
+
+
+def simulate_batch(
+    params: Params,
+    spec: ModelSpec,
+    lengths: Sequence[int],
+    key: Array,
+    groups: Sequence[str] | None = None,
+    *,
+    clock: str = "steps",
+    nominal_dt: float = 1.0,
+) -> SequenceBatch:
+    """Simulate one sequence of each length in `lengths` as a `SequenceBatch` (E12-T02).
+
+    Sequence `b` is drawn with `jax.random.fold_in(key, b)` on a regular grid of step `nominal_dt`, so the
+    result is deterministic per `key` and independent of the other sequences. With `groups` (one name per
+    sequence; the model must have `initial.logits` of shape `(G, S_phase1)`) sequence `b` starts from the
+    row of its group (`sorted(set(groups))` indexes the rows, as `SequenceBatch.group_names` does) and
+    carries `group = groups[b]`. Covariate-free models only.
+
+    Raises:
+        ConfigError: `groups` given for a model without per-group initial distributions (or the wrong
+            number of groups), or a model with covariates.
+    """
+    from hsmmkit.data.batch import (
+        SequenceBatch,
+    )
+    from hsmmkit.statespace.builders import build_expanded, build_explicit
+
+    lengths = [int(n) for n in lengths]
+    if any(n < 1 for n in lengths):
+        raise ConfigError("every sequence length must be >= 1", path="lengths")
+    grouped = "initial.logits" in params and params["initial.logits"].ndim == 2
+    names: tuple[str, ...] = ()
+    if groups is not None:
+        if not grouped:
+            raise ConfigError("groups need a model with initial_groups: per_group", path="groups")
+        if len(groups) != len(lengths):
+            raise ConfigError("groups and lengths differ in length", path="groups")
+        names = tuple(sorted(set(groups)))
+        if len(names) != params["initial.logits"].shape[0]:
+            raise ConfigError(
+                f"the model has {params['initial.logits'].shape[0]} groups, groups has {len(names)}",
+                path="groups",
+            )
+    elif grouped:
+        raise ConfigError("a per_group model needs groups= to simulate", path="groups")
+    space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
+    datasets = []
+    for b, n in enumerate(lengths):
+        theta = params
+        if groups is not None:
+            theta = {**params, "initial.logits": params["initial.logits"][names.index(groups[b])]}
+        ds = simulate_dataset(
+            jax.random.fold_in(key, b),
+            theta,
+            spec,
+            space,
+            jnp.full((n,), float(nominal_dt)),
+            clock=clock,
+            nominal_dt=float(nominal_dt),
+        )
+        datasets.append(dataclasses.replace(ds, group=None if groups is None else str(groups[b])))
+    return SequenceBatch(tuple(datasets), (), tuple(str(b) for b in range(len(lengths))))

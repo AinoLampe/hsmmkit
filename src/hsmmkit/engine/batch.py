@@ -10,7 +10,8 @@ are static, so there is one compiled program per `(B, T_max)` bucket. Padding se
   start in the padding have survival term `-inf`.
 
 Empty padding sequences (`length == 0`) contribute exactly 0 to the log-likelihood and 0 posterior mass.
-Initial distributions are the single shared one (per-group initial laws: E12-T02).
+With `initial.logits` of shape `(G, S_phase1)` (`initial_groups: per_group`, E12-T02) sequence `b` starts from
+row `group_index[b]`.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -45,7 +47,13 @@ if TYPE_CHECKING:
     from hsmmkit.model.spec import ModelSpec
     from hsmmkit.statespace.index import StateIndex, StateSpace
 
-__all__ = ["BatchedPosterior", "batched_forward_backward", "batched_loglik", "batched_viterbi"]
+__all__ = [
+    "BatchedEngine",
+    "BatchedPosterior",
+    "batched_forward_backward",
+    "batched_loglik",
+    "batched_viterbi",
+]
 
 _STATS = PrepStats(
     cov_mean=np.zeros(0), cov_std=np.ones(0), train_window=("", ""), cov_names=(), transforms={}, lags={}
@@ -183,16 +191,22 @@ def _batched_core(
 ) -> tuple[Array, ...]:
     data = _dataset_view(pb)
 
-    def explicit_fn(d: PreparedDataset, n: Array) -> tuple[Array, ...]:
-        return _explicit_one(theta, spec, space, d, n, kind)
+    grouped = "initial.logits" in theta and theta["initial.logits"].ndim == 2
 
-    def expanded_fn(d: PreparedDataset, v: Array) -> tuple[Array, ...]:
-        return _expanded_one(theta, spec, space, d, v, kind)
+    def theta_of(g: Array) -> Params:
+        """The parameters of one sequence: its group's row of `initial.logits` when there are groups."""
+        return {**theta, "initial.logits": theta["initial.logits"][g]} if grouped else theta
+
+    def explicit_fn(d: PreparedDataset, n: Array, g: Array) -> tuple[Array, ...]:
+        return _explicit_one(theta_of(g), spec, space, d, n, kind)
+
+    def expanded_fn(d: PreparedDataset, v: Array, g: Array) -> tuple[Array, ...]:
+        return _expanded_one(theta_of(g), spec, space, d, v, kind)
 
     if spec.engine == "explicit":
-        out = jax.vmap(explicit_fn)(data, pb.lengths)
+        out = jax.vmap(explicit_fn)(data, pb.lengths, pb.group_index)
     else:
-        out = jax.vmap(expanded_fn)(data, pb.valid)
+        out = jax.vmap(expanded_fn)(data, pb.valid, pb.group_index)
     empty = pb.lengths == 0
     if kind == "loglik":
         return (jnp.where(empty, 0.0, out[0]),)
@@ -242,6 +256,20 @@ def batched_loglik(
         _check_all_finite(out)
     loglik: Array = out
     return loglik
+
+
+class BatchedEngine(eqx.Module):
+    """Adapter that gives a single-sequence engine the `loglik(theta, spec, space, data)` of a `PaddedBatch`.
+
+    `data` is a `PaddedBatch` and `loglik` the sum of the per-sequence log-likelihoods (the log-likelihood
+    of independent sequences), so `estimation.objective.Objective` and the optimizers work unchanged.
+    """
+
+    inner: object = eqx.field(static=True)
+
+    def loglik(self, theta: Params, spec: ModelSpec, space: StateSpace, data: PaddedBatch) -> Array:
+        """Total log-likelihood `sum_b loglik_b` (0-d)."""
+        return jnp.sum(batched_loglik(self.inner, theta, spec, space, data))
 
 
 @dataclass(frozen=True)

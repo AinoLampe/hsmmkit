@@ -33,10 +33,14 @@ from hsmmkit.utils.errors import NumericalError
 from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
+    from hsmmkit.data.batch import PaddedBatch
     from hsmmkit.engine.base import InferenceEngine
+    from hsmmkit.engine.batch import BatchedEngine
     from hsmmkit.model.params import ParamManager, Params
     from hsmmkit.model.spec import ModelSpec
     from hsmmkit.statespace.index import StateSpace
+
+    type Data = PreparedDataset | PaddedBatch  # one sequence, or a padded batch of sequences (E12-T02)
 
 _CANONICAL_STATS = PrepStats(
     cov_mean=np.zeros(0),
@@ -48,8 +52,10 @@ _CANONICAL_STATS = PrepStats(
 )
 
 
-def _canonical(data: PreparedDataset) -> PreparedDataset:
+def _canonical(data: Data) -> Data:
     """`data` with the static bookkeeping fields replaced by constants (they never reach an engine)."""
+    if not isinstance(data, PreparedDataset):  # a PaddedBatch carries no such bookkeeping
+        return data
     times = np.zeros(data.observations.shape[0], dtype="datetime64[ns]")
     return dataclasses.replace(data, times=times, prep_stats=_CANONICAL_STATS, snapshot_ids=())
 
@@ -60,7 +66,9 @@ def canonical_data(data: PreparedDataset) -> PreparedDataset:
     `times`, `prep_stats` and `snapshot_ids` sit in the dataset's pytree metadata, which jit compares by
     value: every walk-forward fold would otherwise retrace the engine functions (see `Objective`).
     """
-    return _canonical(data)
+    out = _canonical(data)
+    assert isinstance(out, PreparedDataset)
+    return out
 
 
 def _log_prior(theta: Params, spec: ModelSpec, space: StateSpace, manager: ParamManager) -> Array:
@@ -75,14 +83,14 @@ def _log_prior(theta: Params, spec: ModelSpec, space: StateSpace, manager: Param
 def _objective(
     u: Array,
     space: StateSpace,
-    data: PreparedDataset,
+    data: Data,
     spec: ModelSpec,
     engine: InferenceEngine,
     manager: ParamManager,
     use_priors: bool,
 ) -> Array:
     theta = manager.unflatten(u)
-    value = -engine.loglik(theta, spec, space, data)
+    value = -engine.loglik(theta, spec, space, data)  # type: ignore[arg-type]  # a BatchedEngine takes a PaddedBatch
     if use_priors:
         value = value - _log_prior(theta, spec, space, manager) - manager.log_det_jac(u)
     return value
@@ -95,7 +103,7 @@ _STATIC = ("spec", "engine", "manager", "use_priors")
 def _value(
     u: Array,
     space: StateSpace,
-    data: PreparedDataset,
+    data: Data,
     spec: ModelSpec,
     engine: InferenceEngine,
     manager: ParamManager,
@@ -108,7 +116,7 @@ def _value(
 def _value_and_grad(
     u: Array,
     space: StateSpace,
-    data: PreparedDataset,
+    data: Data,
     spec: ModelSpec,
     engine: InferenceEngine,
     manager: ParamManager,
@@ -121,13 +129,13 @@ def _value_and_grad(
 def _loglik(
     u: Array,
     space: StateSpace,
-    data: PreparedDataset,
+    data: Data,
     spec: ModelSpec,
     engine: InferenceEngine,
     manager: ParamManager,
 ) -> Array:
     theta = manager.unflatten(u)
-    return engine.loglik(theta, spec, space, data)
+    return engine.loglik(theta, spec, space, data)  # type: ignore[arg-type]  # a BatchedEngine takes a PaddedBatch
 
 
 class Objective(eqx.Module):
@@ -144,9 +152,9 @@ class Objective(eqx.Module):
 
     spec: ModelSpec = eqx.field(static=True)
     space: StateSpace
-    engine: InferenceEngine = eqx.field(static=True)
+    engine: InferenceEngine | BatchedEngine = eqx.field(static=True)
     manager: ParamManager = eqx.field(static=True)
-    data: PreparedDataset
+    data: Data
     use_priors: bool = eqx.field(static=True)
 
     @property
@@ -154,13 +162,13 @@ class Objective(eqx.Module):
         """`p`, the length of `u`."""
         return self.manager.n_free
 
-    def value(self, u: Array, data: PreparedDataset | None = None) -> Array:
+    def value(self, u: Array, data: Data | None = None) -> Array:
         """`J(u)` (0-d), jitted; `data` overrides the bound dataset (same shapes reuse the compilation)."""
         d = _canonical(self.data if data is None else data)
         out: Array = _value(u, self.space, d, self.spec, self.engine, self.manager, self.use_priors)
         return out
 
-    def value_and_grad(self, u: Array, data: PreparedDataset | None = None) -> tuple[Array, Array]:
+    def value_and_grad(self, u: Array, data: Data | None = None) -> tuple[Array, Array]:
         """`(J(u), dJ/du)`, jitted. The caller checks finiteness with `check_finite`."""
         d = _canonical(self.data if data is None else data)
         out: tuple[Array, Array] = _value_and_grad(
@@ -168,7 +176,7 @@ class Objective(eqx.Module):
         )
         return out
 
-    def loglik(self, u: Array, data: PreparedDataset | None = None) -> Array:
+    def loglik(self, u: Array, data: Data | None = None) -> Array:
         """`ell(theta(u))` alone (no priors/log-det-Jacobian), jitted with the same cache as `value`."""
         d = _canonical(self.data if data is None else data)
         out: Array = _loglik(u, self.space, d, self.spec, self.engine, self.manager)
@@ -178,9 +186,9 @@ class Objective(eqx.Module):
 def make_objective(
     spec: ModelSpec,
     space: StateSpace,
-    engine: InferenceEngine,
+    engine: InferenceEngine | BatchedEngine,
     manager: ParamManager,
-    data: PreparedDataset,
+    data: Data,
     use_priors: bool,
 ) -> Objective:
     """Bind the pieces into an `Objective`.

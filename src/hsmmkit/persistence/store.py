@@ -44,6 +44,7 @@ from safetensors.numpy import load_file, save_file
 
 from hsmmkit.config.schema import ProjectConfig
 from hsmmkit.config.yaml_io import dump_resolved, load_config
+from hsmmkit.data.batch import SequenceBatch
 from hsmmkit.data.prepare import prep_stats_from_json, prep_stats_to_json
 from hsmmkit.estimation.results import FitResult
 from hsmmkit.model.build import BuildInputs, build_model_spec_from
@@ -122,7 +123,7 @@ class ModelStore:
         fit: FitResult,
         path: Path | str,
         cfg: ProjectConfig,
-        data: PreparedDataset,
+        data: PreparedDataset | SequenceBatch,
         *,
         seed: int | None = None,
         extensions: Mapping[str, Any] | None = None,
@@ -146,6 +147,7 @@ class ModelStore:
         }
         arrays = {**theta, U_KEY: np.ascontiguousarray(np.asarray(fit.uparams, dtype=np.float64))}
         inputs = BuildInputs.from_data(data)
+        first = data.sequences[0] if isinstance(data, SequenceBatch) else data
         try:  # the bundle must be loadable: cfg + data have to rebuild the model that was fitted
             _check_param_layout(
                 [{"name": s.name, "shape": list(s.shape)} for s in spec.param_specs],
@@ -188,11 +190,12 @@ class ModelStore:
                 "cov_names": {k: list(v) for k, v in inputs.cov_names.items()},
                 "clock": inputs.clock,
                 "nominal_dt": inputs.nominal_dt,
+                "n_groups": inputs.n_groups,
             },
             "params": [{"name": s.name, "shape": list(s.shape)} for s in spec.param_specs],
             "n_free": manager.n_free,
         }
-        provenance = {"snapshot_ids": list(data.snapshot_ids)}
+        provenance = {"snapshot_ids": list(first.snapshot_ids)}
         report = {
             "objective": fit.objective,
             "loglik": fit.loglik,
@@ -299,6 +302,7 @@ class ModelStore:
             {k: tuple(v) for k, v in bi["cov_names"].items()},
             bi["clock"],
             float(bi["nominal_dt"]),
+            int(bi.get("n_groups", 1)),
         )
         try:
             spec = build_model_spec_from(cfg, inputs)

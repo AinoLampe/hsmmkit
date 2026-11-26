@@ -230,13 +230,13 @@ def post_sort_states(theta: Params, spec: ModelSpec, by: str | None = None) -> t
                 sorted_theta.update(_relabel_transition(theta, n, spec.order, perm))
                 transition_done = True
         elif name == "initial.logits":
-            if arr.shape[0] != n:
+            if arr.shape[-1] != n:
                 raise ConfigError(
                     "post-sorting a free initial distribution over expanded states is not supported "
                     f"(shape {arr.shape}, n_states={n})",
                     path=name,
                 )
-            sorted_theta[name] = arr[jnp.asarray(perm)]
+            sorted_theta[name] = arr[..., jnp.asarray(perm)]  # `(n,)` or one row per group `(G, n)`
         else:
             raise ConfigError(f"don't know how to relabel parameter {name!r}", path=name)
     return sorted_theta, perm
