@@ -32,6 +32,7 @@ def _setup(
     order: int,
     edges: tuple[int, ...],
     seed: int,
+    topology: str = "full",
 ) -> tuple[Any, SequenceBatch, Any, dict[str, Any]]:
     rng = np.random.default_rng(seed)
     raw = core_raw(tmp_path)
@@ -43,6 +44,7 @@ def _setup(
     }
     m["duration"]["params"]["rate"]["init_mean_sojourn_steps"] = [6.0] * n
     m["transition"]["order"] = order
+    m["topology"] = topology
     if engine == "expanded":
         m["transition"]["covariates"] = ["c"]
     raw_model = {
@@ -189,3 +191,21 @@ def test_e12_t01b_decode_of_a_sequence_batch_matches_single_decodes(tmp_path: Pa
         np.testing.assert_allclose(np.asarray(res.smoothed), np.asarray(single.smoothed), atol=1e-12)
         assert abs(res.loglik - single.loglik) <= 1e-10 * abs(single.loglik)
         assert res.segments == single.segments
+
+
+def test_e12_t01b_absorbing_topology_and_a_single_step_sequence_under_padding(tmp_path: Path) -> None:
+    """Review fix: an absorbing regime adds no mass for starts in the padding; a short sequence works."""
+    spec, batch, eng, extra = _setup(
+        tmp_path,
+        (9, 20, 14, 5),
+        n=3,
+        engine="explicit",
+        order=1,
+        edges=(32,),
+        seed=3,
+        topology="left_to_right",
+    )
+    theta, space = extra["theta"], extra["space"]
+    ll_b = np.asarray(batched_loglik(eng, theta, spec, space, batch.padded()))
+    singles = [float(eng.loglik(theta, spec, space, ds)) for ds in batch.sequences]
+    np.testing.assert_allclose(ll_b[: len(singles)], singles, rtol=1e-10)

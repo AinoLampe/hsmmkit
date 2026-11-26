@@ -261,6 +261,7 @@ def _terminal(inp: _Inputs) -> Array:
         never_ends = cum[t_end][None, :] - cum[:t_len]
         value = jnp.where(inp.absorbing[None, :], never_ends, value)
         fits = fits | inp.absorbing[None, :]
+    fits = fits & (length >= 1)[:, None]  # no segment starts in the padding of a batched sequence
     return jnp.where(fits, value, _NEG_INF)
 
 
