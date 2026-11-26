@@ -31,6 +31,8 @@ class ModelSpec(eqx.Module):
     d_max: int = eqx.field(static=True)
     initial: Literal["uniform", "stationary", "free"] = eqx.field(static=True)
     param_specs: tuple[ParamSpec, ...] = eqx.field(static=True)
+    duration_dependent_jumps: bool = eqx.field(static=True, default=False)
+    """`pi_ij` depends on the duration of the segment being left (E12-T05, explicit engine only)."""
     left_censored: bool = eqx.field(static=True, default=False)
     """The sequence starts inside a running segment (E12-T04): residual-life first segment (explicit)."""
     memory_mode: Literal["segments", "steps"] = eqx.field(static=True, default="segments")

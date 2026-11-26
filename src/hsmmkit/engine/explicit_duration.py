@@ -523,6 +523,10 @@ class ExplicitDurationEngine:
         self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
     ) -> tuple[Array, Array]:
         """`(log_alpha (T, N * D_max), loglik)`; `loglik` is the right-censored 0-d log-likelihood."""
+        if spec.duration_dependent_jumps:
+            from hsmmkit.engine import explicit_dd
+
+            return explicit_dd.forward(theta, spec, data)
         _prepare(theta, spec, space, data, full_tables=True)
         log_alpha, loglik = _forward_core(theta, spec, space, data)
         _check_finite(loglik)
@@ -530,6 +534,10 @@ class ExplicitDurationEngine:
 
     def loglik(self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
         """`log p(y_1:T)`, differentiable w.r.t. `theta`."""
+        if spec.duration_dependent_jumps:
+            from hsmmkit.engine import explicit_dd
+
+            return explicit_dd.loglik(theta, spec, data)
         _prepare(theta, spec, space, data, full_tables=False)
         loglik: Array = _loglik_core(theta, spec, space, data)
         _check_finite(loglik)
@@ -539,6 +547,10 @@ class ExplicitDurationEngine:
         self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
     ) -> Posterior:
         """Posterior over `(regime, elapsed)`, or over regimes when chunked; `engine == "explicit"`."""
+        if spec.duration_dependent_jumps:
+            from hsmmkit.engine import explicit_dd
+
+            return explicit_dd.forward_backward(theta, spec, data)
         chunk = self.chunk_size
         if chunk is None and _cells(spec, data) > MAX_CELLS:
             chunk = max(spec.d_max, _AUTO_CHUNK)
@@ -571,6 +583,10 @@ class ExplicitDurationEngine:
         Raises:
             NumericalError: if the best segmentation has non-finite log-probability.
         """
+        if spec.duration_dependent_jumps:
+            from hsmmkit.engine import explicit_dd
+
+            return explicit_dd.viterbi(theta, spec, data)
         _prepare(theta, spec, space, data, full_tables=False)
         path: Array
         best: Array

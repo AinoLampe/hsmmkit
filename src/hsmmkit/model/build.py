@@ -15,6 +15,7 @@ follow-up for whoever first builds a lattice-configured model end to end.
 from __future__ import annotations
 
 import dataclasses
+import re
 import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ import numpy as np
 import hsmmkit.model.duration
 import hsmmkit.model.emission  # noqa: F401  (registers the emission families)
 from hsmmkit.config.gates import check as gates_check
+from hsmmkit.model.duration.per_state import PerStateDuration, prefix_specs
 from hsmmkit.model.emission.product import ProductEmission
 from hsmmkit.model.spec import ModelSpec
 from hsmmkit.model.topology import from_config as topology_from_config
@@ -72,7 +74,11 @@ def _fix_absorbing(specs: Sequence[ParamSpec], absorbing: tuple[int, ...], n_sta
     """
     out: list[ParamSpec] = []
     for sp in specs:
-        if sp.shape[:1] == (n_states,) and sp.constraint != "increasing" and sp.init is not None:
+        owner = re.match(r"duration\.s(\d+)\.", sp.name)  # a per-state member's own parameter
+        if owner is not None and int(owner.group(1)) in absorbing and sp.init is not None:
+            value = np.array(sp.init, copy=True) if sp.value is None else sp.value
+            sp = dataclasses.replace(sp, mode="fixed", value=value)
+        elif sp.shape[:1] == (n_states,) and sp.constraint != "increasing" and sp.init is not None:
             modes = [sp.mode] * n_states if isinstance(sp.mode, str) else list(sp.mode)
             for i in absorbing:
                 modes[i] = "fixed"
@@ -165,6 +171,63 @@ def build_model_spec(cfg: ProjectConfig, data: PreparedDataset) -> ModelSpec:
     return build_model_spec_from(cfg, BuildInputs.from_data(data))
 
 
+def _single_duration(cfg: ProjectConfig, inputs: BuildInputs) -> tuple[Any, tuple[ParamSpec, ...]]:
+    """One duration family for every regime (`model.duration.family`)."""
+    m = cfg.model
+    n = m.n_states
+    assert m.duration.family is not None
+    dur_cls = DURATION_FAMILIES.get(m.duration.family)
+    if dur_cls is None:
+        raise ConfigError(f"unknown duration family {m.duration.family!r}", path="model.duration.family")
+    duration_cfg = _with_mean_sojourn_steps(
+        m.duration, inputs.clock, inputs.nominal_dt, cfg.data.clock_options
+    )
+    if m.duration.family == "nonparametric":
+        duration, duration_specs = dur_cls.from_config(
+            duration_cfg, n, inputs.cov_names.get("duration", ()), inputs.nominal_dt, d_max=m.d_max
+        )
+    else:
+        duration, duration_specs = dur_cls.from_config(
+            duration_cfg, n, inputs.cov_names.get("duration", ()), inputs.nominal_dt
+        )
+    return duration, tuple(duration_specs)
+
+
+def _per_state_duration(cfg: ProjectConfig, inputs: BuildInputs) -> tuple[Any, tuple[ParamSpec, ...]]:
+    """One duration family per regime (`model.duration.per_state`, explicit engine, E12-T05)."""
+    m = cfg.model
+    cov_names = inputs.cov_names.get("duration", ())
+    families: list[Any] = []
+    specs: tuple[ParamSpec, ...] = ()
+    assert m.duration.per_state is not None
+    for i, ps in enumerate(m.duration.per_state):
+        path = f"model.duration.per_state[{i}]"
+        cls = DURATION_FAMILIES.get(ps.family)
+        if cls is None:
+            raise ConfigError(f"unknown duration family {ps.family!r}", path=f"{path}.family")
+        member_cfg = _with_mean_sojourn_steps(
+            m.duration.model_copy(
+                update={
+                    "family": ps.family,
+                    "params": ps.params,
+                    "r": None if ps.r is None else [ps.r],
+                    "per_state": None,
+                    "duration_dependent_jumps": False,
+                }
+            ),
+            inputs.clock,
+            inputs.nominal_dt,
+            cfg.data.clock_options,
+        )
+        if ps.family == "nonparametric":
+            family, member_specs = cls.from_config(member_cfg, 1, cov_names, inputs.nominal_dt, d_max=m.d_max)
+        else:
+            family, member_specs = cls.from_config(member_cfg, 1, cov_names, inputs.nominal_dt)
+        families.append(family)
+        specs += prefix_specs(tuple(member_specs), i)
+    return PerStateDuration(tuple(families)), specs
+
+
 def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
     """`build_model_spec` from explicit `BuildInputs` (no dataset needed).
 
@@ -220,22 +283,10 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
     ):  # per-series masks and shared parameters (E9-T01); M = 1 keeps the bare family
         emission = ProductEmission.of(emission, n_series)
 
-    if m.duration.family is None:  # `per_state` (gated until E12-T05)
-        raise ConfigError("a duration family per state is not supported yet", path="model.duration.per_state")
-    dur_cls = DURATION_FAMILIES.get(m.duration.family)
-    if dur_cls is None:
-        raise ConfigError(f"unknown duration family {m.duration.family!r}", path="model.duration.family")
-    duration_cfg = _with_mean_sojourn_steps(
-        m.duration, inputs.clock, inputs.nominal_dt, cfg.data.clock_options
-    )
-    if m.duration.family == "nonparametric":
-        duration, duration_specs = dur_cls.from_config(
-            duration_cfg, n, inputs.cov_names.get("duration", ()), inputs.nominal_dt, d_max=m.d_max
-        )
+    if m.duration.family is None:
+        duration, duration_specs = _per_state_duration(cfg, inputs)
     else:
-        duration, duration_specs = dur_cls.from_config(
-            duration_cfg, n, inputs.cov_names.get("duration", ()), inputs.nominal_dt
-        )
+        duration, duration_specs = _single_duration(cfg, inputs)
 
     topology = topology_from_config(m.topology, n)
     transition, transition_specs = JumpTransition.from_config(
@@ -244,9 +295,24 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
         m.transition.order,
         inputs.cov_names.get("transition", ()),
         None if topology.is_full else topology,
+        duration_dependent=m.duration.duration_dependent_jumps,
     )
     if not topology.is_full and topology.absorbing:
-        duration_specs = _fix_absorbing(duration_specs, topology.absorbing, n)
+        duration_specs = tuple(_fix_absorbing(duration_specs, topology.absorbing, n))
+    if m.duration.duration_dependent_jumps:
+        if not topology.is_full and topology.absorbing:
+            raise ConfigError(
+                "duration-dependent jumps do not combine with absorbing regimes", path="model.topology"
+            )
+        if m.left_censored:
+            raise ConfigError(
+                "duration-dependent jumps do not combine with left_censored yet", path="model.left_censored"
+            )
+        if inputs.cov_names.get("duration"):
+            raise ConfigError(
+                "duration-dependent jumps do not combine with duration covariates",
+                path="model.duration.covariates",
+            )
     initial = m.initial_state
     if m.left_censored and m.engine == "explicit" and initial != "free" and not topology.is_full:
         allowed = topology.allowed
@@ -281,5 +347,6 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
         initial=initial,
         param_specs=tuple(emission_specs) + tuple(duration_specs) + tuple(transition_specs),
         left_censored=m.left_censored,
+        duration_dependent_jumps=m.duration.duration_dependent_jumps,
         memory_mode=memory_mode,
     )
