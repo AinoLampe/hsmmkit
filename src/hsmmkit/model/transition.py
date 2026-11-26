@@ -138,6 +138,8 @@ class JumpTransition:
     mode: Literal["jump", "generator"] = "jump"
     cov_idx: tuple[int, ...] = ()
     dirichlet_alpha: float | None = None
+    duration_dependent: bool = False
+    """`pi_ij(d)` depends on the duration `d` of the segment being left (`transition.c`; explicit engine)."""
     topology: Topology | None = None
     """A non-full topology (E12-T03): the free logits are one flat vector `transition.a (F,)` (and
     `transition.b (F, K_pi)`), `F = sum over rows of max(0, |A| - 1)`; `None` is the Part I layout."""
@@ -172,6 +174,7 @@ class JumpTransition:
         order: int,
         cov_names: tuple[str, ...],
         topology: Topology | None = None,
+        duration_dependent: bool = False,
     ) -> tuple[JumpTransition, tuple[ParamSpec, ...]]:
         """Map `model.transition` config to a configured `JumpTransition` and its `ParamSpec`s.
 
@@ -180,6 +183,10 @@ class JumpTransition:
         cov_idx = _cov_idx_from_names(cfg.covariates, cov_names, "model.transition.covariates")
         if topology is not None and topology.is_full:
             topology = None
+        if duration_dependent and topology is None:
+            from hsmmkit.model.topology import from_config as topology_from_name
+
+            topology = topology_from_name("full", n_states)  # the flat layout carries `transition.c`
         if topology is not None:
             if cfg.mode == "generator":
                 raise ConfigError(
@@ -192,8 +199,11 @@ class JumpTransition:
                 cov_idx=cov_idx,
                 dirichlet_alpha=None if prior_flat is None else (prior_flat.alpha or 1.0),
                 topology=topology,
+                duration_dependent=duration_dependent,
             )
-            return family, tuple(_flat_specs(layout, len(cov_idx), cfg.coef_prior_sd))
+            return family, tuple(
+                _flat_specs(layout, len(cov_idx), cfg.coef_prior_sd, with_c=duration_dependent)
+            )
         layout = build_memory_layout(n_states, order)
         r = layout.tuples.shape[0]
         k_pi = len(cov_idx)
@@ -285,7 +295,18 @@ class JumpTransition:
 
         return jnp.einsum("tro,ron->trn", pi, onehot)
 
-    def _masked_probs(self, theta: Params, z_pi_t: Array | None, memory: MemoryLayout) -> Array:
+    def jump_probs_dur(
+        self, theta: Params, z_pi_t: Array | None, memory: MemoryLayout, durations: Array
+    ) -> Array:
+        """`(D, R, N)` jump probabilities `pi_ij(d)` for the durations `d` of the segment being left.
+
+        `logit_ij(d) = a_ij + b_ij . z + c_ij log d` on the free cells (`c = 0` without `transition.c`).
+        """
+        return jax.vmap(lambda d: self._masked_probs(theta, z_pi_t, memory, jnp.log(d)))(durations)
+
+    def _masked_probs(
+        self, theta: Params, z_pi_t: Array | None, memory: MemoryLayout, log_d: Array | None = None
+    ) -> Array:
         """Masked multinomial logit: the smallest allowed target has logit 0, structural zeros stay 0."""
         free_row, free_col = _flat_structure(memory)
         allowed = jnp.asarray(memory.target_mask)
@@ -300,6 +321,8 @@ class JumpTransition:
                     else jnp.zeros((0,))
                 )
                 a = a + theta["transition.b"] @ z
+            if log_d is not None and "transition.c" in theta:
+                a = a + theta["transition.c"] * log_d
             logits = logits.at[free_row, free_col].set(a)
         shifted = jnp.where(allowed, logits, -jnp.inf)
         top = jnp.max(shifted, axis=1, keepdims=True)
@@ -346,13 +369,26 @@ def _flat_structure(memory: MemoryLayout) -> tuple[np.ndarray, np.ndarray]:
     return np.asarray(free_row, dtype=np.int64), np.asarray(free_col, dtype=np.int64)
 
 
-def _flat_specs(memory: MemoryLayout, k_pi: int, coef_prior_sd: float | None) -> list[ParamSpec]:
+def _flat_specs(
+    memory: MemoryLayout, k_pi: int, coef_prior_sd: float | None, *, with_c: bool = False
+) -> list[ParamSpec]:
     """`transition.a (F,)` (and `transition.b (F, K)`) for a topology layout; no spec when `F == 0`."""
     free_row, _ = _flat_structure(memory)
     f = int(free_row.size)
     if f == 0:
         return []
     specs = [ParamSpec(name="transition.a", shape=(f,), domain="real", mode="free", init=np.zeros(f))]
+    if with_c:
+        specs.append(
+            ParamSpec(
+                name="transition.c",
+                shape=(f,),
+                domain="real",
+                mode="free",
+                init=np.zeros(f),
+                prior=NormalPrior(sd=1.0 if coef_prior_sd is None else coef_prior_sd),
+            )
+        )
     if k_pi:
         shape = (f, k_pi)
         specs.append(

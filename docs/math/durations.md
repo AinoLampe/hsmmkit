@@ -89,3 +89,27 @@ the pmf as given; an untruncated geometric pmf has constant hazard `a`, and a pm
 | nonparametric pmf | `duration.logits` |
 | mean sojourn | `DurationFamily.mean_sojourn(theta, nominal_dt)` |
 | families | `GeometricDuration`, `NegBinDuration`, `PoissonDuration`, `GammaDuration`, `WeibullDuration`, `LogNormalDuration`, `NonparametricDuration` |
+
+## Per-state duration families
+
+`model.duration.per_state: [{family, params, r?}, ...]` (one entry per regime, `engine: explicit`) gives each regime
+its own sojourn law. Every member is built for one regime by its family's own `from_config` (so `init_mean_sojourn_steps`
+and `nonparametric` logits work per regime), its parameters are named `duration.s{i}.<name>`, and `log_pmf` stacks the
+members' rows into the usual `(N, D_max)` table. Phase families (`geometric`, `negbin`) may be members: they
+contribute their explicit pmf. Duration covariates are shared (`model.duration.covariates`).
+
+## Duration-dependent jump probabilities
+
+With `duration_dependent_jumps: true` (explicit engine only) the jump out of a segment depends on how long it lasted:
+
+$$\pi_{ij}(d) \propto \Omega_{ij}\exp\big(a_{ij} + b_{ij}^\top z^\pi_t + c_{ij}\log d\big),$$
+
+with the duration `d` of the segment being left, evaluated at its end. The free cells are those of the masked logit of
+the topology (one coefficient `transition.c` per free logit; the reference target of each row has none, so only
+differences `c_ij − c_i,ref` are identified). The engine is the first-order Markov chain on `(regime, elapsed)`:
+`(i, e) → (i, e+1)` with probability `1 − h_i(e)` and `(i, e) → (j, 1)` with probability `h_i(e) π_ij(e)`,
+`h_i(e) = p_i(e) / P(d ≥ e)`; forward-backward and Viterbi are those of the expanded HMM engine on this chain, at
+`O(N² D_max²)` per step (dense transition) against `O(N²)` for the constant-`π` segmental recursion, which stays
+the path of every model without the option. Right-censoring of the last segment is the absence of an end
+constraint. Not combined (yet) with entry-time duration covariates or `left_censored`. With `c = 0` the likelihood
+equals the constant-`π` engine's (to rounding, `≤ 1e-10` relative: the two evaluate the sums in a different order).

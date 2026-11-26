@@ -323,6 +323,8 @@ class PerStateDurationCfg(_Base):
 
     family: str
     params: dict[str, ParamCfg] = Field(default_factory=dict)
+    r: int | None = None
+    """`negbin`: the number of phases of this regime."""
 
     @field_validator("family")
     @classmethod
@@ -823,7 +825,7 @@ def _check_part2_keys(config: ProjectConfig) -> None:
         raise ConfigError("per_state requires engine: explicit", path="model.duration.per_state")
     if m.duration.duration_dependent_jumps and m.engine != "explicit":
         raise ConfigError(
-            "duration_dependent_jumps requires engine: explicit",
+            "only the explicit engine can express duration-dependent jumps",
             path="model.duration.duration_dependent_jumps",
         )
     if m.duration.per_state is not None and len(m.duration.per_state) != n:

@@ -35,11 +35,6 @@ GATES: dict[str, Gate] = {
         "E12-T02",
     ),
     "model.initial_groups": (lambda c: c.model.initial_groups == "per_group", "E12-T02"),
-    "model.duration.per_state": (lambda c: c.model.duration.per_state is not None, "E12-T05"),
-    "model.duration.duration_dependent_jumps": (
-        lambda c: c.model.duration.duration_dependent_jumps,
-        "E12-T05",
-    ),
     "data.labels": (lambda c: c.data.labels is not None, "E12-T06"),
     "estimation.init": (lambda c: "labels" in c.estimation.init, "E12-T06"),
     "estimation.method=em": (lambda c: c.estimation.method == "em", "E13-T02a"),
