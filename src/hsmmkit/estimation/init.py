@@ -18,9 +18,10 @@ import numpy as np
 from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.model.transition import build_memory_layout
 from hsmmkit.plugins import register
-from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.errors import ConfigError, DataError
 
 if TYPE_CHECKING:
+    from hsmmkit.data.batch import SequenceBatch
     from hsmmkit.data.contracts import PreparedDataset
     from hsmmkit.model.params.manager import Params
     from hsmmkit.model.params.spec import ParamSpec
@@ -94,9 +95,14 @@ def _spec_shape(spec: ModelSpec, name: str) -> tuple[int, ...]:
     return next(ps.shape for ps in spec.param_specs if ps.name == name)
 
 
-def _mean_run_length_steps(labels: np.ndarray, n_clusters: int) -> np.ndarray:
-    """`(n_clusters,)`: mean run length (in grid steps) of each label, via run-length encoding."""
-    change = np.flatnonzero(np.diff(labels)) + 1
+def _mean_run_length_steps(
+    labels: np.ndarray, n_clusters: int, breaks: np.ndarray | None = None
+) -> np.ndarray:
+    """`(n_clusters,)`: mean run length (in grid steps) of each label, via run-length encoding.
+
+    `breaks` are the indices where a new sequence starts (pooled batches): a run never crosses them.
+    """
+    change = _run_starts(labels, breaks)
     starts = np.concatenate(([0], change))
     ends = np.concatenate((change, [labels.shape[0]]))
     run_labels = labels[starts]
@@ -109,7 +115,17 @@ def _mean_run_length_steps(labels: np.ndarray, n_clusters: int) -> np.ndarray:
     return out
 
 
-def _empirical_pi_rows(labels: np.ndarray, spec: ModelSpec) -> np.ndarray | None:
+def _run_starts(labels: np.ndarray, breaks: np.ndarray | None) -> np.ndarray:
+    """Indices (> 0) where a new run starts: a label change or the start of another sequence."""
+    change = np.flatnonzero(np.diff(labels)) + 1
+    if breaks is None or breaks.size == 0:
+        return change
+    return np.union1d(change, breaks[breaks > 0])
+
+
+def _empirical_pi_rows(
+    labels: np.ndarray, spec: ModelSpec, breaks: np.ndarray | None = None
+) -> np.ndarray | None:
     """`(R, N-1)` empirical jump distribution from run-boundary label transitions, or `None`.
 
     Only the order-1 marginal (state `i` -> state `j`) is estimated from the k-means label sequence; at
@@ -121,12 +137,14 @@ def _empirical_pi_rows(labels: np.ndarray, spec: ModelSpec) -> np.ndarray | None
     if "transition.pi_rows" not in {s.name for s in spec.param_specs}:
         return None
     n = spec.n_states
-    change = np.flatnonzero(np.diff(labels)) + 1
-    run_labels = labels[np.concatenate(([0], change))]
+    change = _run_starts(labels, breaks)
+    starts = np.concatenate(([0], change))
+    run_labels = labels[starts]
+    new_sequence = np.isin(starts, breaks) if breaks is not None else np.zeros(starts.shape, dtype=bool)
     counts = np.ones((n, n))
     np.fill_diagonal(counts, 0.0)
-    for a, b in itertools.pairwise(run_labels):
-        if a != b:
+    for i, (a, b) in enumerate(itertools.pairwise(run_labels), start=1):
+        if a != b and not new_sequence[i]:
             counts[a, b] += 1.0
     trans = counts / counts.sum(axis=1, keepdims=True)
 
@@ -167,8 +185,47 @@ def observed_rows(data: PreparedDataset) -> PreparedDataset:
     )
 
 
+def pool_sequences(batch: SequenceBatch) -> tuple[PreparedDataset, np.ndarray]:
+    """The observed rows of every sequence of `batch` concatenated, and each sequence's start row.
+
+    The pooled data set feeds the data-driven inits (`rolling_kmeans(..., segments=starts)` keeps windows
+    inside a sequence); sequences with no observed row contribute nothing.
+    """
+    parts = [observed_rows(s) for s in batch.sequences]
+    parts = [p for p in parts if p.observations.shape[0] > 0]
+    if not parts:
+        raise DataError("no sequence has an observed row to initialize from", path="data")
+    first = parts[0]
+
+    def cat_opt(name: str) -> Array | None:
+        blocks = [getattr(p, name) for p in parts]
+        return None if blocks[0] is None else jnp.concatenate([jnp.asarray(b) for b in blocks], axis=0)
+
+    def cat(name: str) -> Array:
+        out = cat_opt(name)
+        assert out is not None
+        return out
+
+    pooled = dataclasses.replace(
+        first,
+        times=np.concatenate([np.asarray(p.times) for p in parts]),
+        observations=cat("observations"),
+        dt=cat("dt"),
+        mask=cat("mask"),
+        cov_transition=cat_opt("cov_transition"),
+        cov_duration=cat_opt("cov_duration"),
+        cov_emission=cat_opt("cov_emission"),
+        labels=cat_opt("labels"),
+        boundaries=None,
+    )
+    starts = np.concatenate(([0], np.cumsum([p.observations.shape[0] for p in parts])[:-1])).astype(np.int64)
+    return pooled, starts
+
+
 @register("init", "rolling_kmeans")
-def rolling_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
+def rolling_kmeans(
+    data: PreparedDataset, spec: ModelSpec, key: Array, segments: np.ndarray | None = None
+) -> Params:
     """Cluster a rolling scale series (21 steps, `sqrt(mean(y^2) / nominal_dt)`) into `n_states` regimes.
 
     The clusters (k-means++ with the given key, sorted by scale) give `theta`:
@@ -176,6 +233,9 @@ def rolling_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params
     cluster's mean run length via `spec.duration.init_from_mean_sojourn`, and (order-1 marginal, see
     `_empirical_pi_rows`) `transition.pi_rows` from run-boundary label transitions. Every other spec
     (coefficients, `nu`, covariate-conditioned transition logits, ...) keeps its config baseline.
+
+    `segments` (pooled batches, E12-T02): the start index of every sequence in `data`; windows, runs and
+    transitions never cross a sequence boundary.
     """
     theta = _baseline_theta(spec)
     n = spec.n_states
@@ -183,10 +243,19 @@ def rolling_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params
     multi = y_all.shape[1] > 1
     # Several series share one regime process: cluster the pooled (root-mean-square) volatility.
     y = np.sqrt(np.mean(y_all**2, axis=1)) if multi else y_all[:, 0]
-    if y.shape[0] <= _ROLL_WINDOW:
+    bounds = np.append(np.asarray([0] if segments is None else segments, dtype=np.int64), y.shape[0])
+    spans = [(int(a), int(b)) for a, b in itertools.pairwise(bounds) if b - a >= _ROLL_WINDOW]
+    if y.shape[0] <= _ROLL_WINDOW if segments is None else not spans:
         return theta
+    win_end = np.concatenate([np.arange(a + _ROLL_WINDOW - 1, b) for a, b in spans])  # window ends in `y`
+    breaks = np.cumsum([b - a - _ROLL_WINDOW + 1 for a, b in spans])[
+        :-1
+    ]  # first window of each later sequence
 
-    rv = _rolling_realized_vol(y, data.nominal_dt)
+    def rolling(x: np.ndarray) -> np.ndarray:
+        return np.concatenate([_rolling_realized_vol(x[a:b], data.nominal_dt) for a, b in spans])
+
+    rv = rolling(y)
     labels, centers = _kmeans_1d(rv, n, _seed_from_key(key))
     order = np.argsort(centers)
     relabel = np.empty(n, dtype=np.int64)
@@ -199,9 +268,7 @@ def rolling_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params
     scale_name = next((s.name for s in spec.param_specs if s.name in _SCALE_NAMES), None)
     if scale_name is not None and not is_mixture:
         if multi:
-            rv_m = np.stack(
-                [_rolling_realized_vol(y_all[:, m], data.nominal_dt) for m in range(y_all.shape[1])], axis=1
-            )  # (W, M)
+            rv_m = np.stack([rolling(y_all[:, m]) for m in range(y_all.shape[1])], axis=1)  # (W, M)
             sigma_nm = np.array(
                 [
                     [
@@ -218,7 +285,7 @@ def rolling_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params
     loc_name = next((s.name for s in spec.param_specs if s.name in _LOCATION_NAMES), None)
     if loc_name is not None and not is_mixture:
         if multi:
-            y_win_m = y_all[_ROLL_WINDOW - 1 :] / data.nominal_dt  # (W, M)
+            y_win_m = y_all[win_end] / data.nominal_dt  # (W, M)
             mu_nm = np.array(
                 [
                     [
@@ -232,15 +299,15 @@ def rolling_kmeans(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params
                 _series_values(mu_nm, mu_nm.mean(axis=1), _spec_shape(spec, loc_name))
             )
         else:
-            y_win = y[_ROLL_WINDOW - 1 :] / data.nominal_dt
+            y_win = y[win_end] / data.nominal_dt
             mu = np.array([y_win[labels == k].mean() if np.any(labels == k) else 0.0 for k in range(n)])
             theta[loc_name] = jnp.asarray(mu)
 
     if _duration_primary_names(spec):
-        mean_steps = jnp.asarray(_mean_run_length_steps(labels, n))
+        mean_steps = jnp.asarray(_mean_run_length_steps(labels, n, breaks))
         theta.update(spec.duration.init_from_mean_sojourn(mean_steps, data.nominal_dt))
 
-    pi_rows = _empirical_pi_rows(labels, spec)
+    pi_rows = _empirical_pi_rows(labels, spec, breaks)
     if pi_rows is not None:
         theta["transition.pi_rows"] = jnp.asarray(pi_rows)
 

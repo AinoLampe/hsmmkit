@@ -133,6 +133,20 @@ expected exit counts. The pair $(m, \sigma)$ is a bijective reparameterization o
 emission update is exact in one step. The log-likelihood is non-decreasing; covariates, Student-t, the explicit
 engine, order above 1 and irregular grids raise `ConfigError`.
 
+## Batches of sequences and initial-distribution groups
+
+For $B$ independent sequences the objective is
+$J(u) = -\sum_b \ell_b(\theta(u)) - \log p(\theta) - \log|\det J|$ (`BatchedEngine.loglik` sums
+`batched_loglik`, E12-T01b). The pooled data-driven inits (`rolling_kmeans`) compute the rolling scale inside each
+sequence, so a window never straddles a boundary, and count sojourn runs and jump transitions per sequence.
+
+With `initial_state: free` the initial law is a free parameter `initial.logits` over the $S_1$ first-phase states.
+`initial_groups: per_group` gives it one row per group, $\rho^{(g)}$, and sequence $b$ starts from the row of its
+group; `FitResult.diagnostics["initial_groups"]` lists the group names (sorted, the order of
+`SequenceBatch.group_names`) and `Project.score` maps a new batch's groups to rows, with the mean of the rows as
+fallback (and a warning) for a group the fit has not seen. A `B = 1` batch without groups is fitted as the single
+sequence it holds, so its `uparams` equal the single-sequence fit bit for bit.
+
 ## Symbols and code names
 
 | Math | Code |

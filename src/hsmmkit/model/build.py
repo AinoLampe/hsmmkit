@@ -26,8 +26,10 @@ import numpy as np
 import hsmmkit.model.duration
 import hsmmkit.model.emission  # noqa: F401  (registers the emission families)
 from hsmmkit.config.gates import check as gates_check
+from hsmmkit.data.batch import SequenceBatch
 from hsmmkit.model.duration.per_state import PerStateDuration, prefix_specs
 from hsmmkit.model.emission.product import ProductEmission
+from hsmmkit.model.params.spec import ParamSpec
 from hsmmkit.model.spec import ModelSpec
 from hsmmkit.model.topology import from_config as topology_from_config
 from hsmmkit.model.transition import JumpTransition
@@ -38,7 +40,6 @@ from hsmmkit.utils.errors import ConfigError
 if TYPE_CHECKING:
     from hsmmkit.config.schema import DurationCfg, ProjectConfig
     from hsmmkit.data.contracts import PreparedDataset, Support
-    from hsmmkit.model.params.spec import ParamSpec
     from hsmmkit.model.transition import TransitionModel
 
 
@@ -121,11 +122,22 @@ class BuildInputs:
     cov_names: dict[str, tuple[str, ...]]
     clock: str
     nominal_dt: float
+    n_groups: int = 1
 
     @classmethod
-    def from_data(cls, data: PreparedDataset) -> BuildInputs:
-        """The inputs of a prepared dataset."""
-        return cls(int(data.observations.shape[1]), dict(data.cov_names), data.clock, float(data.nominal_dt))
+    def from_data(cls, data: PreparedDataset | SequenceBatch) -> BuildInputs:
+        """The inputs of a prepared dataset (or of a `SequenceBatch`, whose groups set `n_groups`)."""
+        n_groups = 1
+        if isinstance(data, SequenceBatch):
+            n_groups = len(data.group_names)
+            data = data.sequences[0]
+        return cls(
+            int(data.observations.shape[1]),
+            dict(data.cov_names),
+            data.clock,
+            float(data.nominal_dt),
+            n_groups,
+        )
 
 
 def required_own_lags(cfg: ProjectConfig) -> int:
@@ -158,7 +170,7 @@ def required_series_support(cfg: ProjectConfig) -> tuple[Support, ...] | None:
     return tuple(cast("Support", s) for _, s in sorted(pairs))
 
 
-def build_model_spec(cfg: ProjectConfig, data: PreparedDataset) -> ModelSpec:
+def build_model_spec(cfg: ProjectConfig, data: PreparedDataset | SequenceBatch) -> ModelSpec:
     """Assemble a `ModelSpec` (structure + `param_specs`) from `cfg.model` and `data`'s covariate names.
 
     `data` supplies what the config alone cannot (see `BuildInputs`). `cfg.model.d_max` is always a
@@ -334,7 +346,7 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
         initial = "stationary"
     assert m.d_max is not None  # `_resolve_d_max` (config/schema.py) always fills this in
 
-    return ModelSpec(
+    spec = ModelSpec(
         n_states=n,
         n_series=n_series,
         emission=emission,
@@ -349,4 +361,44 @@ def build_model_spec_from(cfg: ProjectConfig, inputs: BuildInputs) -> ModelSpec:
         left_censored=m.left_censored,
         duration_dependent_jumps=m.duration.duration_dependent_jumps,
         memory_mode=memory_mode,
+    )
+    return _with_initial(spec, m.initial_groups, inputs.n_groups)
+
+
+def _with_initial(spec: ModelSpec, initial_groups: str, n_groups: int) -> ModelSpec:
+    """Add the `initial.logits` ParamSpec of `initial_state: free` (one row per group under `per_group`).
+
+    Raises:
+        ConfigError: `initial_groups: per_group` without `initial_state: free`.
+    """
+    per_group = initial_groups == "per_group"
+    if per_group and spec.initial != "free":
+        raise ConfigError(
+            "initial_groups: per_group needs initial_state: free (the group laws are free parameters)",
+            path="model.initial_groups",
+        )
+    if per_group and n_groups < 2:
+        raise ConfigError(
+            "initial_groups: per_group needs at least 2 groups in the data "
+            "(set data.sequences.group_by to a column that is constant within a sequence)",
+            path="model.initial_groups",
+        )
+    if spec.initial != "free":
+        return spec
+    # the number of start states depends on the state space the structure alone defines
+    from hsmmkit.statespace.builders import build_expanded, build_explicit
+
+    space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
+    n1 = int(space.phase1_idx.shape[0])
+    groups = max(n_groups, 1) if per_group else 1
+    shape = (groups, n1) if per_group else (n1,)
+    initial = ParamSpec(
+        name="initial.logits",
+        shape=shape,
+        domain="simplex_ref",
+        mode="free",
+        init=np.full(shape, 1.0 / n1),
+    )
+    return dataclasses.replace(
+        spec, param_specs=(*spec.param_specs, initial), n_groups=groups if per_group else 1
     )

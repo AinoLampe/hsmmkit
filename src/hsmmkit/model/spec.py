@@ -35,6 +35,9 @@ class ModelSpec(eqx.Module):
     """`pi_ij` depends on the duration of the segment being left (E12-T05, explicit engine only)."""
     left_censored: bool = eqx.field(static=True, default=False)
     """The sequence starts inside a running segment (E12-T04): residual-life first segment (explicit)."""
+    n_groups: int = eqx.field(static=True, default=1)
+    """Initial-distribution groups (E12-T02): `1` is one shared `initial.logits`; `G > 1` (`initial_groups:
+    per_group`, `initial_state: free`) gives `initial.logits` the shape `(G, S_phase1)`, one row per group."""
     memory_mode: Literal["segments", "steps"] = eqx.field(static=True, default="segments")
     """`segments`: the segment memory of Part I (`transition.order`); `steps`: time-step tuples with repeats
     `(s_{t-p}, ..., s_t)` for an emission that depends on the regimes of the previous steps (E11-T05)."""
