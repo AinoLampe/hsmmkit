@@ -203,3 +203,78 @@ def test_e13_t01a_labels_restrict_the_regime_marginals_like_the_engine() -> None
     np.testing.assert_allclose(got, np.asarray(post.regime_smoothed()), rtol=0, atol=1e-10)
     assert np.all(got[10:25, 1] > 1 - 1e-10)
     assert np.all(got[40:50, 0] < 1e-12)
+
+
+def test_e13_t01a_tempered_counts_match_the_reference_on_scaled_emissions() -> None:
+    """`beta < 1`: the counts are the reference's on `beta * ell`; `loglik` is the untempered one."""
+    sc = make_scenario(3, [2, 3, 2], 1, 70, n_cov_pi=2, n_cov_d=2, seed=14)
+    beta = 0.4
+    stats = expanded_estep(
+        ENGINE, sc.theta, sc.spec, sc.space, SequenceBatch.of(sc.data).padded(), beta_temper=beta
+    )
+    plain = _reference_sequence(sc, sc.data)
+    # the reference on scaled emissions
+    import hsmmkit.engine.expanded_hmm as eh
+
+    ell = np.asarray(eh._expanded_log_emis(sc.theta, sc.spec, sc.space, sc.data))
+    scaled = _reference_with_emissions(sc, sc.data, ell * beta)
+    for key in ("stay", "advance", "occupancy", "jump"):
+        np.testing.assert_allclose(np.asarray(getattr(stats, key)), scaled[key], rtol=0, atol=1e-8)
+    np.testing.assert_allclose(
+        np.asarray(stats.gamma_regime[0, :70]), scaled["gamma_regime"], rtol=0, atol=1e-8
+    )
+    assert abs(float(stats.loglik[0]) - plain["loglik"]) <= 1e-8 * abs(plain["loglik"])
+
+
+def _reference_with_emissions(sc: Any, data: Any, ell: np.ndarray) -> dict[str, Any]:  # noqa: ANN401
+    """`_reference_sequence` with a given `(T, S)` emission table."""
+    import hsmmkit.engine.expanded_hmm as eh
+
+    original = eh._expanded_log_emis
+    try:
+        eh._expanded_log_emis = lambda *_a, **_k: jnp.asarray(ell)  # type: ignore[assignment]
+        globals()["_expanded_log_emis"] = eh._expanded_log_emis
+        return _reference_sequence(sc, data)
+    finally:
+        eh._expanded_log_emis = original
+        globals()["_expanded_log_emis"] = original
+
+
+def test_e13_t01a_per_group_initial_distributions_sum_gamma1_per_group() -> None:
+    """With `G = 2` groups `gamma1[g]` sums the first-step posteriors of the group's sequences only."""
+    import dataclasses
+
+    sc = make_scenario(3, [2, 2, 2], 1, 100, n_cov_pi=2, n_cov_d=2, seed=3, initial="free")
+    n1 = int(sc.space.phase1_idx.shape[0])
+    rng = np.random.default_rng(0)
+    rows = rng.dirichlet(np.ones(n1), size=2)
+    theta = {**sc.theta, "initial.logits": jnp.asarray(rows)}
+    spec = dataclasses.replace(sc.spec, n_groups=2)
+    seqs = [
+        dataclasses.replace(sc.data.window(0, 40), group="a"),
+        dataclasses.replace(sc.data.window(30, 90), group="b"),
+        dataclasses.replace(sc.data.window(10, 30), group="a"),
+    ]
+    batch = SequenceBatch(tuple(seqs), (64,))
+    stats = expanded_estep(ENGINE, theta, spec, sc.space, batch.padded())
+    for g, name in enumerate(batch.group_names):
+        single = SequenceBatch(tuple(s for s in seqs if s.group == name), (64,))
+        th = {**sc.theta, "initial.logits": jnp.asarray(rows[g])}
+        spec1 = dataclasses.replace(sc.spec, n_groups=1)
+        want = expanded_estep(ENGINE, th, spec1, sc.space, single.padded())
+        np.testing.assert_allclose(np.asarray(stats.gamma1[g]), np.asarray(want.gamma1[0]), atol=1e-10)
+    assert float(np.asarray(stats.gamma1).sum()) == pytest.approx(3.0, abs=1e-9)  # one unit per sequence
+
+
+def test_e13_t01a_an_impossible_sequence_is_a_numerical_error() -> None:
+    """Labels that exclude every regime at a step give a non-finite log-likelihood: refused, not zeros."""
+    import dataclasses
+
+    from hsmmkit.utils.errors import NumericalError
+
+    sc = make_scenario(3, [2, 2, 2], 1, 30, seed=1)
+    labels = np.ones((30, 3), dtype=bool)
+    labels[5, :] = False
+    data = dataclasses.replace(sc.data, labels=jnp.asarray(labels))
+    with pytest.raises(NumericalError, match="non-finite"):
+        expanded_estep(ENGINE, sc.theta, sc.spec, sc.space, SequenceBatch.of(data).padded())

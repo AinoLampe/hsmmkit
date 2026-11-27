@@ -31,13 +31,14 @@ from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from hsmmkit.engine.base import InferenceEngine
 from hsmmkit.engine.batch import _dataset_view
 from hsmmkit.engine.constraints import apply_transition_mask
 from hsmmkit.engine.expanded_hmm import _safe_logsumexp, regime_log_emis
 from hsmmkit.statespace.builders import initial_log_rho
-from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.errors import ConfigError, NumericalError
 from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
@@ -110,7 +111,6 @@ def _estep_one(
     log_rho = initial_log_rho(spec, space, theta, data.nominal_dt)
     log_eye = jnp.where(jnp.eye(n_state, dtype=bool), 0.0, -jnp.inf)
     ell_reg = _regime_emissions(theta, spec, data, valid)  # (T, N), untempered
-    ell_use = ell_reg * beta if tempered else ell_reg
     regime_of = idx.regime_of
     steps = jnp.arange(1, t_len)
 
@@ -120,22 +120,38 @@ def _estep_one(
             log_a = apply_transition_mask(log_a, regime_of[:, None] != regime_of[None, :], code[t])
         return jnp.where(valid[t], log_a, log_eye)
 
+    def row_of(ell_table: Array, t: Array | int, scaled: bool) -> Array:
+        """The `(S,)` emission row of step `t`, scaled by `beta` when tempering (no scaled table)."""
+        row = ell_table[t]
+        return (row * beta if scaled and tempered else row)[regime_of]
+
     def forward(ell_table: Array) -> Array:
         """`(T, S)` forward vectors, written in place into one buffer (no stacked-and-concatenated copy)."""
-        alpha_0 = log_rho + ell_table[0][regime_of]
+        alpha_0 = log_rho + row_of(ell_table, 0, True)
 
         def step(carry: tuple[Array, Array], t: Array) -> tuple[tuple[Array, Array], None]:
             alpha_prev, buf = carry
-            alpha_t = ell_table[t][regime_of] + _safe_logsumexp(alpha_prev[:, None] + log_a_at(t), axis=0)
+            alpha_t = row_of(ell_table, t, True) + _safe_logsumexp(alpha_prev[:, None] + log_a_at(t), axis=0)
             return (alpha_t, buf.at[t].set(alpha_t)), None
 
         buf0 = jnp.zeros((t_len, n_state)).at[0].set(alpha_0)
         (_, buf), _ = jax.lax.scan(step, (alpha_0, buf0), steps)
         return buf
 
-    log_alpha = forward(ell_use)
+    log_alpha = forward(ell_reg)
     ll_use = _safe_logsumexp(log_alpha[-1], axis=0)
-    ll = _safe_logsumexp(forward(ell_reg)[-1], axis=0) if tempered else ll_use
+
+    def forward_loglik(ell_table: Array) -> Array:
+        """The log-likelihood alone: a carry-only forward pass (no `(T, S)` buffer)."""
+
+        def step(alpha_prev: Array, t: Array) -> tuple[Array, None]:
+            alpha_t = row_of(ell_table, t, False) + _safe_logsumexp(alpha_prev[:, None] + log_a_at(t), axis=0)
+            return alpha_t, None
+
+        alpha_last, _ = jax.lax.scan(step, log_rho + row_of(ell_table, 0, False), steps)
+        return _safe_logsumexp(alpha_last, axis=0)
+
+    ll = forward_loglik(ell_reg) if tempered else ll_use
 
     last = space.is_last_phase[:, None] & (space.exit_targets >= 0)  # (S, N) exits that exist
     targets = jnp.maximum(space.exit_targets, 0)
@@ -143,7 +159,7 @@ def _estep_one(
 
     def reduce(xi: Array) -> tuple[Array, Array, Array]:
         diag = jnp.diagonal(xi)
-        leave = jnp.sum(xi, axis=1) - diag
+        leave = jnp.maximum(jnp.sum(xi, axis=1) - diag, 0.0)  # rounding must not give a negative count
         stay = jnp.zeros(n_rate).at[space.rate_index_of].add(diag)
         adv = jnp.zeros(n_rate).at[space.rate_index_of].add(leave)
         exits = jnp.where(last, xi[rows[:, None], targets], 0.0)  # (S, N)
@@ -158,7 +174,7 @@ def _estep_one(
         beta_t, stay, adv, occ, jmp, gbuf = carry
         alpha_prev, alpha_t, v = log_alpha[t - 1], log_alpha[t], valid[t]
         log_a = log_a_at(t)
-        ell_s = ell_use[t][regime_of]
+        ell_s = row_of(ell_reg, t, True)
         log_xi = alpha_prev[:, None] + log_a + (ell_s + beta_t)[None, :] - ll_use
         ok = jnp.isfinite(log_xi) & v
         xi = jnp.where(ok, jnp.exp(jnp.where(ok, log_xi, 0.0)), 0.0)
@@ -240,11 +256,24 @@ def expanded_estep(
     Raises:
         ConfigError: explicit engine, time-step memory, or `beta_temper` outside `(0, 1]`.
     """
-    if spec.engine != "expanded" or not hasattr(engine, "forward_backward") or spec.memory_mode != "segments":
-        raise ConfigError("expanded_estep needs the expanded engine with segment memory", path="model.engine")
+    if spec.engine != "expanded":
+        raise ConfigError(
+            "expanded_estep needs engine: expanded (the explicit engine: E13-T01b)", path="model.engine"
+        )
+    if spec.memory_mode != "segments":
+        raise ConfigError("expanded_estep needs segment memory (not memory_mode: steps)", path="model")
     if not 0.0 < beta_temper <= 1.0:
         raise ConfigError(f"beta_temper must be in (0, 1], got {beta_temper}", path="estimation.em.tempering")
     stats: ExpandedEStats = _estep_batch(
         params, spec, space, pb, jnp.asarray(beta_temper), beta_temper != 1.0
     )
+    live = np.asarray(pb.lengths) > 0
+    ll = np.asarray(stats.loglik)[live]
+    if not np.all(np.isfinite(ll)):
+        bad = int(np.flatnonzero(~np.isfinite(ll))[0])
+        raise NumericalError(
+            f"non-finite log-likelihood in the E-step (sequence {bad}): the labels or boundaries rule out "
+            "every path, or the parameters give zero probability",
+            path="loglik",
+        )
     return stats

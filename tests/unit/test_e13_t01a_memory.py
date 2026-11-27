@@ -66,3 +66,15 @@ def test_e13_t01a_peak_memory_stays_below_the_budget() -> None:
     budget = 5 * (T * N + 60 * 60) * 8
     print(f"E13-T01a E-step memory: temp+output {used / 1e6:.1f} MB, budget {budget / 1e6:.1f} MB")
     assert used <= budget
+
+
+def test_e13_t01a_tempered_program_also_stays_below_the_budget() -> None:
+    """The tempered program (extra untempered forward pass for the log-likelihood) has the same bound."""
+    sc = _scenario()
+    pb = SequenceBatch.of(sc.data).padded()
+    compiled = _estep_batch.lower(sc.theta, sc.spec, sc.space, pb, jnp.asarray(0.5), True).compile()
+    analysis = compiled.memory_analysis()
+    assert analysis is not None
+    used = analysis.temp_size_in_bytes + analysis.output_size_in_bytes
+    print(f"E13-T01a tempered E-step memory: {used / 1e6:.1f} MB")
+    assert used <= 5 * (T * N + 60 * 60) * 8
