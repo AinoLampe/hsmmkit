@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -131,6 +131,28 @@ class OnlineCovariatePreparer:
                 continue
             out[k] = value
         return (out - self._mean) / self._std
+
+    def state_dict(self) -> dict[str, Any]:
+        """The preparer's state as JSON-serializable data (`NaN` as `None`); `load_state_dict` restores it."""
+
+        def num(x: float | None) -> float | None:
+            return None if x is None or np.isnan(x) else float(x)
+
+        return {
+            "n_pushed": self.n_pushed,
+            "prev": [[num(v) for v in stages] for stages in self._prev],
+            "hist": [[[j, num(value), idx] for j, value, idx in h] for h in self._hist],
+        }
+
+    def load_state_dict(self, blob: Mapping[str, Any]) -> None:
+        """Restore a state written by `state_dict` (same covariates, lags and transforms)."""
+        if len(blob["hist"]) != len(self.names) or len(blob["prev"]) != len(self.names):
+            raise ConfigError("the saved covariate state has another number of covariates", path="state")
+        self.n_pushed = int(blob["n_pushed"])
+        self._prev = [list(stages) for stages in blob["prev"]]
+        for h, saved in zip(self._hist, blob["hist"], strict=True):
+            h.clear()
+            h.extend((int(j), float("nan") if v is None else float(v), int(idx)) for j, v, idx in saved)
 
     def z(self, t: int) -> dict[str, np.ndarray]:
         """`row(t)` split by entry point, as `ExpandedOnlineFilter.update` expects (needs `entry_points`)."""

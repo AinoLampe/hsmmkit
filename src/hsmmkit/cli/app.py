@@ -354,6 +354,9 @@ def build_app(
                 detail = "; ".join(failing) if failing else "non-reproducible fit"
                 raise NumericalError(f"selftest failed for {', '.join(bad)} ({detail})")
 
+    from hsmmkit.cli.stream import add_stream_command
+
+    add_stream_command(app, exit_on_error)
     for add in extra_commands:
         add(app)
     return app

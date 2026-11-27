@@ -3,7 +3,8 @@
 Concept refs: Part II §14.11, §15.3; NFR-15. The per-step body is `engine.expanded_hmm.forward_step`, the same
 function the offline forward scan runs, and the emission row of one observation comes from the same
 `expanded_log_emis` code with `T = 1`, so the filtered probabilities and the running log-likelihood equal
-the offline results bitwise. `theta`, `space` are arguments of the jitted step (never closed-over constants)
+the offline results bitwise (to ~1e-14 for a family whose vectorized `exp`/`log` rounds shape-dependently).
+`theta`, `space` are arguments of the jitted step (never closed-over constants)
 and `spec` is static, exactly as in the offline engine; the step is compiled once per fit.
 
 Only the expanded engine with segment memory and families without a recurrent emission carry can filter

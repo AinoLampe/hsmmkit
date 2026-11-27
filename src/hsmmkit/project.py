@@ -50,6 +50,7 @@ from hsmmkit.inference.results import ForecastResult, PosteriorResult
 from hsmmkit.inference.simulate import segments_of, simulate_paths
 from hsmmkit.model.build import build_model_spec, required_own_lags, required_series_support
 from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.online.session import OnlineSession
 from hsmmkit.persistence.results import (
     BACKTEST_META,
     read_backtest,
@@ -540,6 +541,31 @@ class Project:
     def load(cls, path: Path | str) -> FitResult:
         """Read a model bundle back as a `FitResult`."""
         return ModelStore.load(path, cls.config_cls)
+
+    # --- online ------------------------------------------------------------------------------------
+
+    def online(
+        self,
+        fit: FitResult,
+        *,
+        initial: PreparedDataset | None = None,
+        lag: int | None = None,
+        nominal_dt: float | None = None,
+        group: str | None = None,
+    ) -> OnlineSession:
+        """A streaming session of `fit` under this project's configuration (`push`, `push_many`, `forecast`).
+
+        Args:
+            fit: the fitted model (`engine: expanded`).
+            initial: prepared history for a warm start.
+            lag: fixed-lag smoothing delay (default `online.lag`).
+            nominal_dt: grid step for a cold start under a calendar clock.
+            group: initial-distribution group of the stream.
+
+        Raises:
+            ConfigError: an unsupported model or configuration (explicit engine, own-lag emissions, ...).
+        """
+        return OnlineSession(fit, self.config, initial=initial, lag=lag, nominal_dt=nominal_dt, group=group)
 
     # --- decode / forecast -------------------------------------------------------------------------
 

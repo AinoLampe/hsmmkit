@@ -68,7 +68,7 @@ def test_e10_t07b_core_cli_runs_fit_decode_forecast_backtest_end_to_end(world: d
 
 
 def test_e10_t07b_core_app_has_no_fetch_and_the_documented_commands() -> None:
-    """AC2: `fetch` does not exist in the core app; the nine core commands do."""
+    """AC2: `fetch` does not exist in the core app; the ten core commands do."""
     commands = {c.name for c in app.registered_commands}
     assert commands == {
         "validate-config",
@@ -80,6 +80,7 @@ def test_e10_t07b_core_app_has_no_fetch_and_the_documented_commands() -> None:
         "backtest",
         "compare",
         "selftest",
+        "stream",
     }
     result = _runner.invoke(app, ["fetch", "config.yaml"])
     assert result.exit_code == 2  # no such command (Click's usage error)

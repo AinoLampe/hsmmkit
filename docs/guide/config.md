@@ -134,6 +134,7 @@ The whole resolved configuration of the domain-neutral core.
 |---|---|---|
 | `lag` | `int` | `0` |
 | `alerts` | `list[AlertCfg]` | `[]` |
+| `checkpoint_every` | `int` | `1000` |
 
 ## `data.source`
 
