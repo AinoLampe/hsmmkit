@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Literal
 
 import jax
 import jax.numpy as jnp
+import jax.scipy.special as jsp
 import numpy as np
 
 from hsmmkit.model.conjugate import DirichletConjugate
@@ -141,6 +142,17 @@ class CategoricalFamily(DiscreteBase):
         p = jnp.maximum(safe_ratio(stats["counts"], stats["w"][:, None]), CLIP)
         return {"emission.eta": jnp.log(p[:, 1:]) - jnp.log(p[:, :1])}
 
-    def conjugate_prior(self) -> DirichletConjugate:
-        """Symmetric `Dirichlet(1)`."""
-        return DirichletConjugate()
+    def conjugate_prior(self) -> DirichletConjugate | None:
+        """Symmetric `Dirichlet(1)` (`None` with covariate links)."""
+        return None if self.mean_idx else DirichletConjugate()
+
+    def expected_log_prob(self, y: Array, dt: Array, q_theta: object, z: Array | None) -> Array | None:
+        """`E_q[log p_y]`, `(T, N)`, under `Dirichlet(alpha)` category probabilities `q_theta` (`(N, K)`)."""
+        if self.mean_idx or not isinstance(q_theta, dict):
+            return None
+        del dt, z
+        alpha = q_theta["alpha"]
+        log_p = jsp.digamma(alpha) - jsp.digamma(jnp.sum(alpha, axis=-1, keepdims=True))  # (N, K)
+        idx = y[:, 0].astype(jnp.int32)
+        out: Array = jnp.take(log_p, idx, axis=1).T  # (T, N)
+        return out

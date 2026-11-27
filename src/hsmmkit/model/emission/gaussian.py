@@ -19,9 +19,11 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 
 import jax
 import jax.numpy as jnp
+import jax.scipy.special as jsp
 import jax.scipy.stats
 import numpy as np
 
+from hsmmkit.model.conjugate import NormalGamma
 from hsmmkit.model.dists import (
     mvn_logpdf,
     normal_logpdf,
@@ -231,6 +233,75 @@ class NormalWishart:
         w_inv = jnp.linalg.inv(w0)[None] + scatter + shrink
         mean = (self.kappa0 * m0[None] + s1) / kappa[:, None]
         return {"m": mean, "kappa": kappa, "W": jnp.linalg.inv(w_inv), "nu": nu0 + n}
+
+    def with_data_scale(self, mean: Array, cov: Array) -> NormalWishart:
+        """The prior centred on the data: `m0 = mean`, `E[Lambda] = nu0 W0 = cov^-1`."""
+        m = int(cov.shape[0])
+        nu0 = float(m + 2) if self.nu0 is None else self.nu0
+        return NormalWishart(self.kappa0, nu0, jnp.asarray(mean), jnp.linalg.inv(jnp.asarray(cov)) / nu0)
+
+    def _prior(self, m: int) -> tuple[Array, Array, float]:
+        m0 = jnp.zeros((m,)) if self.m0 is None else self.m0
+        w0 = jnp.eye(m) if self.w0 is None else self.w0
+        return m0, w0, float(m + 2) if self.nu0 is None else self.nu0
+
+    @staticmethod
+    def _expected_logdet(q: dict[str, Array]) -> Array:
+        """`E[log |Lambda|]` of `Wishart(W, nu)`, `(N,)`."""
+        m = q["m"].shape[-1]
+        i = jnp.arange(1, m + 1)
+        psi = jnp.sum(jsp.digamma(0.5 * (q["nu"][:, None] + 1.0 - i[None, :])), axis=-1)
+        out: Array = psi + m * jnp.log(2.0) + jnp.linalg.slogdet(q["W"])[1]
+        return out
+
+    def expected_log_params(self, q: dict[str, Array]) -> dict[str, Array]:
+        """`E[log |Lambda|]`, `(N,)`."""
+        return {"logdet": self._expected_logdet(q)}
+
+    @staticmethod
+    def _log_gamma_m(v: Array, m_dim: int) -> Array:
+        """`log Gamma_M(v / 2)`, the multivariate gamma function."""
+        i = jnp.arange(m_dim)
+        return jnp.sum(jsp.gammaln(0.5 * (v[..., None] - i)), axis=-1) + 0.25 * m_dim * (m_dim - 1) * jnp.log(
+            jnp.pi
+        )
+
+    def kl(self, q: dict[str, Array]) -> Array:
+        """`KL(NW(m, kappa, W, nu) || NW(m0, kappa0, W0, nu0))` summed over the regimes."""
+        m_dim = q["m"].shape[-1]
+        m0, w0, nu0 = self._prior(m_dim)
+        nu, w, kappa = q["nu"], q["W"], q["kappa"]
+        logdet = self._expected_logdet(q)
+        slog_w, slog_w0 = jnp.linalg.slogdet(w)[1], jnp.linalg.slogdet(w0)[1]
+        tr = jnp.einsum("ij,njk->nik", jnp.linalg.inv(w0), w)
+        tr = jnp.trace(tr, axis1=-2, axis2=-1)
+        ln2 = jnp.log(2.0)
+        wishart = (
+            0.5 * (nu - m_dim - 1.0) * logdet
+            - 0.5 * nu * m_dim
+            - 0.5 * nu * m_dim * ln2
+            - 0.5 * nu * slog_w
+            - self._log_gamma_m(nu, m_dim)
+            - (
+                0.5 * (nu0 - m_dim - 1.0) * logdet
+                - 0.5 * nu * tr
+                - 0.5 * nu0 * m_dim * ln2
+                - 0.5 * nu0 * slog_w0
+                - self._log_gamma_m(jnp.asarray(nu0), m_dim)
+            )
+        )
+        diff = q["m"] - m0
+        quad = nu * jnp.einsum("nj,njk,nk->n", diff, w, diff)
+        normal = 0.5 * (
+            m_dim * self.kappa0 / kappa - m_dim + self.kappa0 * quad + m_dim * jnp.log(kappa / self.kappa0)
+        )
+        return jnp.sum(wishart + normal)
+
+    def mean_params(self, q: dict[str, Array]) -> dict[str, Array]:
+        """Posterior mean `m` and the Cholesky factor of `(nu W)^-1` as `emission.mean` / `emission.chol`."""
+        sigma = jnp.linalg.inv(q["nu"][:, None, None] * q["W"])
+        sigma = 0.5 * (sigma + jnp.swapaxes(sigma, -1, -2))
+        return {"emission.mean": q["m"], "emission.chol": pack_lower(jnp.linalg.cholesky(sigma))}
 
 
 @register("emission", "gaussian")
@@ -575,15 +646,44 @@ class GaussianFamily(BaseEmission):
         mean = m + 0.5 * var if self.ito_correction else m
         return {self.mean_name(): mean, self.scale_name(): jnp.sqrt(var)}
 
-    def conjugate_prior(self) -> NormalWishart | None:
+    def conjugate_prior(self) -> NormalWishart | NormalGamma | None:
         """Normal-Wishart prior of a `full` covariance (`None` for the diagonal family).
 
         Defaults `(m0 = 0, kappa0 = 0.01, W0 = I, nu0 = M + 2)` are weakly informative for standardized
         data; E13-T05a rescales `W0` by the data scale. Valid without time scaling (`scale_by_dt` false).
         """
-        if not self.joint or self.scale_by_dt:
+        if self.mean_idx or self.scale_idx or self.ito_correction or self.scale_by_dt:
             return None
-        return NormalWishart()
+        return NormalWishart() if self.joint else NormalGamma()
+
+    def expected_log_prob(self, y: Array, dt: Array, q_theta: object, z: Array | None) -> Array | None:
+        """`E_q[log f_i(y_t)]`, `(T, N)`, under the Normal-Gamma (diagonal) or Normal-Wishart (full) `q`.
+
+        `q_theta` is the dict `NormalGamma.update` / `NormalWishart.update` returns. `None` when the family
+        has covariate links, an Ito correction or time scaling (no conjugate form).
+        """
+        prior = self.conjugate_prior()
+        if prior is None or not isinstance(q_theta, dict):
+            return None
+        del dt, z
+        if self.joint:
+            m_dim = y.shape[-1]
+            logdet = prior.expected_log_params(q_theta)["logdet"]  # (N,)
+            diff = y[:, None, :] - q_theta["m"][None]  # (T, N, M)
+            quad = q_theta["nu"][None, :] * jnp.einsum("tnj,njk,tnk->tn", diff, q_theta["W"], diff)
+            out: Array = (
+                0.5 * logdet[None, :]
+                - 0.5 * m_dim * jnp.log(2.0 * jnp.pi)
+                - 0.5 * (m_dim / q_theta["kappa"][None, :] + quad)
+            )
+            return out
+        e = prior.expected_log_params(q_theta)
+        diff2 = (y[:, None, :] - q_theta["m"][None]) ** 2  # (T, N, M)
+        per = 0.5 * (e["log_tau"][None] - jnp.log(2.0 * jnp.pi)) - 0.5 * (
+            e["tau"][None] * diff2 + 1.0 / q_theta["kappa"][None]
+        )
+        out2: Array = jnp.sum(per, axis=-1)
+        return out2
 
     def sufficient_stats(self, y: Array, dt: Array, gamma: Array, z: Array | None = None) -> dict[str, Array]:
         """Weighted sums for the closed-form M-step (E5-T06), covariate-free, single series.

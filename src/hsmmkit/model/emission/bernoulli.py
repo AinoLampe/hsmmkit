@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal
 
 import jax
 import jax.numpy as jnp
+import jax.scipy.special as jsp
 import numpy as np
 
 from hsmmkit.model.conjugate import BetaConjugate
@@ -114,6 +115,17 @@ class BernoulliFamily(DiscreteBase):
         p = jnp.clip(safe_ratio(stats["wy"], stats["w"][:, None]), CLIP, 1.0 - CLIP)
         return {"emission.eta": jnp.log(p) - jnp.log1p(-p)}
 
-    def conjugate_prior(self) -> BetaConjugate:
-        """`Beta(1, 1)`."""
-        return BetaConjugate()
+    def conjugate_prior(self) -> BetaConjugate | None:
+        """`Beta(1, 1)` (`None` with covariate links)."""
+        return None if self.mean_idx else BetaConjugate()
+
+    def expected_log_prob(self, y: Array, dt: Array, q_theta: object, z: Array | None) -> Array | None:
+        """`E_q[log Bernoulli(y | p)]`, `(T, N)`, under `Beta(a, b)` probabilities `q_theta`."""
+        if self.mean_idx or not isinstance(q_theta, dict):
+            return None
+        del dt, z
+        psi = jsp.digamma(q_theta["a"] + q_theta["b"])
+        log_p, log_1mp = jsp.digamma(q_theta["a"]) - psi, jsp.digamma(q_theta["b"]) - psi  # (N, M)
+        yy = y[:, None, :]
+        out: Array = jnp.sum(yy * log_p[None] + (1.0 - yy) * log_1mp[None], axis=-1)
+        return out

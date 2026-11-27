@@ -206,6 +206,25 @@ duration covariates the counts per segment start (`eta_entry`) enter and `(phi, 
 Transition covariates, duration-dependent jumps, tempering and tied / ordered transition parameters are refused
 with a `ConfigError`. `diagnostics["gem"]` names the method per block.
 
+## VB (`estimation.method: vb`)
+
+`VBEstimator` is mean-field variational Bayes `q(theta) prod_b q(s_b)` for fully conjugate models. Given `q(theta)`
+the optimal `q(s)` is the exact forward-backward posterior of the chain whose log-weights are the expected
+log-parameters: `E_q[log f_i(y_t)]` for the emissions (`EmissionFamily.expected_log_prob`: Normal-Gamma per series
+for the diagonal Gaussian, Normal-Wishart for the full one, Gamma for Poisson, Beta for Bernoulli, Dirichlet for
+Categorical), `E[log a_k]` / `E[log(1 - a_k)]` for the phase advance (`a_k ~ Beta`, geometric and negative-binomial
+durations at a constant step) and `psi(alpha_rj) - psi(sum alpha_r)` for the jump rows (Dirichlet over the allowed
+targets). The weights are sub-normalized; the forward normalizer is `log Z~`, and
+`ELBO = log Z~ - sum KL(q || prior)` is non-decreasing over the iterations (coordinate ascent: E-step, then
+`q <- posterior(prior, expected counts)` from `ExpandedEStats`). A run starts from the point estimate of an
+initialization strategy (one E-step there gives the first `q`); restarts follow MAP and the best final ELBO wins.
+`FitResult.params` are the posterior means (`rate = a/b`, `scale = sqrt(b/a)`, `pi ~ alpha`, `a = a/(a+b)` through
+`from_advance_prob`), `objective = -ELBO`, `loglik` the log-likelihood at those means, and
+`diagnostics["vb"]` has `elbo_trace` and `q_params`. Priors are the weakly informative defaults (Gaussian priors
+scaled to the data: `E[tau] = 1 / var(y)`, `kappa0 = 0.01`; Beta(1, 1); Dirichlet(1)); `use_priors: false` is
+invalid. Expanded engine, `initial_state: uniform`, no covariates, constant step, no fixed / tied / ordered
+parameters; everything else is refused ("VB-EM hybrid available from E13-T05b").
+
 ## E-step accumulators (expanded engine)
 
 `engine.estep.expanded_estep` computes everything EM and VB need that is not a family sufficient statistic from one
