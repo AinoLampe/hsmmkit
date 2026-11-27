@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -171,3 +172,17 @@ def test_e15_t01_the_online_gate_is_removed_but_lag_and_alerts_stay_gated(tmp_pa
     raw["online"] = {"lag": 5}
     with pytest.raises(ConfigError, match="not available before E15-T02"):
         gates.check(parse_project_config(raw))
+
+
+def test_e15_t01_review_fixes_nominal_dt_param_values_and_time_types(case: dict[str, Any]) -> None:
+    """Review: cold `update_from_time` needs `nominal_dt`; the hash covers values; times are normalized."""
+    filt = ExpandedOnlineFilter(case["fit"])
+    with pytest.raises(ConfigError, match="nominal_dt"):
+        filt.update_from_time(filt.start(), 0, case["y"][0], {k: v[0] for k, v in case["z"].items()})
+    shifted = dataclasses.replace(case["fit"], params={k: v + 1e-9 for k, v in case["fit"].params.items()})
+    assert spec_hash(shifted) != spec_hash(case["fit"])
+    from hsmmkit.online.filter import _normalize_time
+
+    assert _normalize_time("2020-01-02") == np.datetime64("2020-01-02", "ns")
+    assert _normalize_time(np.datetime64("2020-01-02", "D")).dtype == np.dtype("datetime64[ns]")
+    assert _normalize_time(3) == 3

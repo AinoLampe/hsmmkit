@@ -78,7 +78,11 @@ jax.tree_util.register_pytree_node(OnlineState, _flatten, _unflatten)
 
 
 def spec_hash(fit: FitResult) -> str:
-    """sha256 of the model structure (`spec`) and the parameter names and shapes of `fit`."""
+    """sha256 of the model structure, the parameter names and shapes and the parameter values of `fit`.
+
+    The values are included because a state is a filter result under *these* parameters: two fits of the same
+    structure must not exchange states.
+    """
     spec: ModelSpec = fit.spec
     payload = {
         "n_states": spec.n_states,
@@ -95,7 +99,11 @@ def spec_hash(fit: FitResult) -> str:
         "transition": type(spec.transition).__name__,
         "params": [[s.name, list(s.shape)] for s in spec.param_specs],
     }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8"))
+    for name in sorted(fit.params):
+        digest.update(name.encode("utf-8"))
+        digest.update(np.ascontiguousarray(np.asarray(fit.params[name], dtype=np.float64)).tobytes())
+    return digest.hexdigest()
 
 
 def _time_to_json(value: Any) -> Any:  # noqa: ANN401

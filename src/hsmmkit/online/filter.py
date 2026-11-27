@@ -48,6 +48,13 @@ Covariates = Mapping[str, Any]
 """Covariate rows of one step: keys `transition`, `duration`, `emission`, each `(K,)` (missing: width 0)."""
 
 
+def _normalize_time(value: Any) -> Any:  # noqa: ANN401
+    """A timestamp as `datetime64[ns]` (datetime-like, `pandas.Timestamp`, string); numbers stay numbers."""
+    if value is None or isinstance(value, (int, float, np.integer, np.floating)):
+        return value
+    return np.datetime64(value, "ns")
+
+
 def _row(z: Covariates | None, key: str, width: int | None) -> np.ndarray:
     value = None if z is None else z.get(key)
     if value is None:
@@ -118,14 +125,15 @@ class ExpandedOnlineFilter:
         group: the initial-distribution group of the stream when the fit has per-group initial
             distributions (`model.initial_groups: per_group`); an unseen group uses the mean of the group rows
             (with a warning), as `Project.score` does.
-        nominal_dt: the regular-grid step for a `stationary` initial distribution (overridden by
-            `start(initial)`, which takes `initial.nominal_dt`).
+        nominal_dt: the median step of the fitting grid (`PreparedDataset.nominal_dt`). Needed for
+            a cold start (`start()`) with a `stationary` initial distribution and as the `dt` of the first
+            observation in `update_from_time`; `start(initial)` takes `initial.nominal_dt`.
 
     Raises:
         ConfigError: `engine: explicit`, time-step memory, a recurrent emission carry, or a missing `group`.
     """
 
-    def __init__(self, fit: FitResult, *, group: str | None = None, nominal_dt: float = 1.0) -> None:
+    def __init__(self, fit: FitResult, *, group: str | None = None, nominal_dt: float | None = None) -> None:
         """Validate the model, build the state space and freeze the parameters used by every step."""
         spec = fit.spec
         if spec.engine != "expanded":
@@ -176,7 +184,15 @@ class ExpandedOnlineFilter:
     def start(self, initial: PreparedDataset | None = None) -> OnlineState:
         """The state before the first observation, or warm-started by the offline forward on `initial`."""
         if initial is None:
-            log_rho = initial_log_rho(self.spec, self.space, self.theta, self.nominal_dt)
+            if self.nominal_dt is None and self.spec.initial == "stationary":
+                raise ConfigError(
+                    "a cold start with a stationary initial distribution needs nominal_dt "
+                    "(ExpandedOnlineFilter(..., nominal_dt=...)) or a warm start",
+                    path="nominal_dt",
+                )
+            log_rho = initial_log_rho(
+                self.spec, self.space, self.theta, 1.0 if self.nominal_dt is None else self.nominal_dt
+            )
             return OnlineState(
                 log_alpha=log_rho,
                 log_norm=jnp.zeros(()),
@@ -186,6 +202,8 @@ class ExpandedOnlineFilter:
                 buffer=None,
                 spec_hash=self.hash,
             )
+        if initial.observations.shape[0] == 0:
+            raise ConfigError("the warm-start dataset is empty", path="initial")
         self.nominal_dt = float(initial.nominal_dt)
         log_alpha, loglik = ExpandedHMMEngine().forward(self.theta, self.spec, self.space, initial)
         times = np.asarray(initial.times)
@@ -194,7 +212,7 @@ class ExpandedOnlineFilter:
             log_norm=loglik,
             t=jnp.asarray(initial.observations.shape[0], dtype=jnp.int64),
             carry=None,
-            last_time=times[-1] if times.shape[0] else None,
+            last_time=_normalize_time(times[-1]),
             buffer=None,
             spec_hash=self.hash,
         )
@@ -312,18 +330,24 @@ class ExpandedOnlineFilter:
     ) -> tuple[OnlineState, Array]:
         """`update` with `dt` computed from `state.last_time` and `time` by the configured clock.
 
-        The first observation of a stream without a warm start uses `nominal_dt` (its `dt` is not used by the
-        recursion). `last_time` of the returned state is `time`.
+        The first observation of a stream without a warm start has no predecessor: its `dt` is `nominal_dt`
+        (it enters the emission, e.g. a family with `scale_by_dt`). The returned `last_time` is `time`.
         """
         if state.last_time is None:
+            if self.nominal_dt is None:
+                raise ConfigError(
+                    "the first observation of a cold-started stream needs nominal_dt as its dt "
+                    "(ExpandedOnlineFilter(..., nominal_dt=...))",
+                    path="nominal_dt",
+                )
             dt: Any = self.nominal_dt
         else:
             clk = get_clock(self._clock)
             opts = parse_clock_options(self._clock, self._clock_options)
-            pair = np.asarray([state.last_time, time])
+            pair = np.asarray([state.last_time, _normalize_time(time)])
             dt = float(clk.dt(pair, 1, opts)[0])
         new, filtered = self.update(state, y, dt, z)
-        t = np.datetime64(time, "ns") if isinstance(time, np.datetime64) else time
+        t = _normalize_time(time)
         return OnlineState(
             new.log_alpha, new.log_norm, new.t, new.carry, t, new.buffer, new.spec_hash
         ), filtered
