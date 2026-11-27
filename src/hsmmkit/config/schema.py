@@ -626,6 +626,8 @@ class OnlineCfg(_Base):
 
     lag: int = Field(default=0, ge=0)
     alerts: list[AlertCfg] = Field(default_factory=list)
+    checkpoint_every: int = Field(default=1000, ge=1)
+    """Rows between state checkpoints of `hsmmkit stream --state`."""
 
     @model_validator(mode="after")
     def _alert_names_and_sources(self) -> OnlineCfg:
