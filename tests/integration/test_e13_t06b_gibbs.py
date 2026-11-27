@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import jax.numpy as jnp
+import jax.scipy.special as jsp
 import numpy as np
 import pytest
 
@@ -12,6 +16,8 @@ pytest.importorskip("arviz")
 
 from hsmmkit.config.schema import EstimationSection
 from hsmmkit.estimation.mcmc import MCMCEstimator
+from hsmmkit.model.duration.geometric import GeometricDuration
+from hsmmkit.model.emission.gaussian import GaussianFamily
 from hsmmkit.utils.errors import ConfigError
 from tests.helpers import em_models
 
@@ -70,16 +76,59 @@ def test_e13_t06b_nuts_draws_are_relabelled_when_nothing_identifies_the_states(t
     assert res.diagnostics["mcmc"]["relabelled_fraction"] == 0.0
 
 
+@dataclass(frozen=True)
+class _NGGaussian(GaussianFamily):
+    """Gaussian family with the Gibbs sampler's Normal-Gamma prior as a joint prior on `(mean, scale)`."""
+
+    m0: float = 0.0
+    var0: float = 1.0
+
+    def log_prior_extra(self, theta: dict[str, Any]) -> Any:  # noqa: ANN401
+        """`log p(mean, scale)` of `NG(m0, kappa0 = 0.01, a0 = 1, b0 = var0)` (density in `(mean, scale)`)."""
+        kappa0, a0, b0 = 0.01, 1.0, self.var0
+        mu, sigma = theta["emission.mean"], theta["emission.scale"]
+        tau = sigma**-2
+        log_gamma = a0 * jnp.log(b0) - jsp.gammaln(a0) + (a0 - 1.0) * jnp.log(tau) - b0 * tau
+        log_normal = 0.5 * jnp.log(kappa0 * tau / (2.0 * jnp.pi)) - 0.5 * kappa0 * tau * (mu - self.m0) ** 2
+        return jnp.sum(log_gamma + log_normal + jnp.log(2.0) - 3.0 * jnp.log(sigma))
+
+
+@dataclass(frozen=True)
+class _BetaGeometric(GeometricDuration):
+    """Geometric durations with a `Beta(1, 1)` prior on the advance probability `a = 1 - exp(-rate)`."""
+
+    def log_prior_extra(self, theta: dict[str, Any]) -> Any:  # noqa: ANN401
+        """`log p(rate)` of the uniform prior on `a` (`dt = 1` steps): `-rate`."""
+        return jnp.sum(-theta["duration.rate"])
+
+
 @pytest.mark.slow
 def test_e13_t06b_gibbs_and_nuts_agree_on_the_two_regime_fixture(tmp_path: Path) -> None:
-    """AC1 (Appendix E, Gaussian + geometric): means within 2 MC SE of each other, 2 SD of truth, R-hat."""
+    """AC1 (Appendix E, Gaussian + geometric): same priors, means within 2 MC SE, 2 SD of truth, R-hat."""
     spec, data = _model(tmp_path, t_len=5000, seed=4)
+    y = np.asarray(data.observations)
+    ng = dataclasses.replace(
+        spec,
+        emission=_NGGaussian(
+            **{f.name: getattr(spec.emission, f.name) for f in dataclasses.fields(spec.emission) if f.init},
+            m0=float(y.mean()),
+            var0=float(y.var()),
+        ),  # type: ignore[arg-type]
+        duration=_BetaGeometric(
+            **{f.name: getattr(spec.duration, f.name) for f in dataclasses.fields(spec.duration) if f.init}
+        ),  # type: ignore[arg-type]
+    )
     results = {}
-    for sampler in ("gibbs", "nuts"):
+    for sampler, model in (("gibbs", spec), ("nuts", ng)):
         cfg = EstimationSection.model_validate(
-            {"method": "mcmc", "restarts": 1, "init": ["rolling_kmeans"], "mcmc": {"sampler": sampler}}
+            {
+                "method": "mcmc",
+                "restarts": 1,
+                "init": ["rolling_kmeans"],
+                "mcmc": {"sampler": sampler, "default_priors": sampler == "gibbs"},
+            }
         )
-        results[sampler] = MCMCEstimator().fit(spec, data, cfg, 0)
+        results[sampler] = MCMCEstimator().fit(model, data, cfg, 0)
     truth = {
         "emission.mean": np.array([[0.0], [1.5]]),
         "emission.scale": np.array([[0.5], [1.2]]),

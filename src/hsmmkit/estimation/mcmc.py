@@ -86,7 +86,14 @@ def _default_prior(spec: ParamSpec) -> Any:  # noqa: ANN401
 def improper_parameters(spec: ModelSpec) -> list[str]:
     """Names of the specs with free entries of an unbounded domain and no prior (an improper posterior)."""
     out = []
+    joint = {  # a family with its own joint prior (`log_prior_extra`) makes its block proper
+        p
+        for p, f in (("emission.", spec.emission), ("duration.", spec.duration))
+        if hasattr(f, "log_prior_extra")
+    }
     for s in spec.param_specs:
+        if s.name.startswith(tuple(joint)):
+            continue
         if s.domain in _IMPROPER and "free" in _modes(s) and s.tie_group is None:
             out.append(s.name)
     return out

@@ -77,6 +77,10 @@ def _log_prior(theta: Params, spec: ModelSpec, space: StateSpace, manager: Param
     extra = getattr(spec.transition, "log_prior_extra", None)
     if extra is not None:
         total = total + extra(theta, space.layout)
+    for family in (spec.emission, spec.duration):  # optional joint priors of a family's own parameters
+        joint = getattr(family, "log_prior_extra", None)
+        if joint is not None:
+            total = total + joint(theta)
     return total
 
 
