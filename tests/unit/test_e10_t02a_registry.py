@@ -63,6 +63,7 @@ def test_e10_t02a_all_kinds_exist_and_clock_transform_preset_start_empty_or_regi
     """All kinds exist and clock transform preset start empty or registered."""
     reg = Registry()
     assert set(KINDS) == {
+        "estimator",
         "emission",
         "duration",
         "metric",

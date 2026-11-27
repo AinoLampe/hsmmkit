@@ -197,6 +197,7 @@ class ModelStore:
         }
         provenance = {"snapshot_ids": list(first.snapshot_ids)}
         report = {
+            "estimator": fit.estimator,
             "objective": fit.objective,
             "loglik": fit.loglik,
             "converged": fit.converged,
@@ -335,7 +336,7 @@ class ModelStore:
         restarts = raw_restarts.reindex(columns=_RESTART_COLUMNS)
         std_errors = report["std_errors"]
         return FitResult(
-            estimator="map",
+            estimator="em" if report.get("estimator") == "em" else "map",
             params=theta,
             uparams=u,
             objective=float(report["objective"]),

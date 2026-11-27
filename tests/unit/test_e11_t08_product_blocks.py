@@ -18,6 +18,7 @@ from hsmmkit.model.build import build_model_spec
 from hsmmkit.model.emission.gaussian import GaussianFamily
 from hsmmkit.model.emission.poisson import PoissonFamily
 from hsmmkit.model.emission.product import BlockProductEmission, ProductEmission
+from hsmmkit.model.emission.student_t import StudentTFamily
 from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.statespace.builders import build_expanded
 from hsmmkit.utils.errors import ConfigError, DataError
@@ -190,8 +191,8 @@ def test_e11_t08_independent_blocks_reproduce_the_per_series_product_bitwise(tmp
 
 
 def test_e11_t08_m_step_partial_has_holes_for_blocks_without_a_closed_form(tmp_path: Path) -> None:
-    """A diagonal Gaussian block has no M-step: `m_step` is `None`, `m_step_partial` keeps the others."""
-    diag, pois = GaussianFamily(), PoissonFamily(scale_by_dt=False)
+    """A block without a closed-form M-step (Student-t): `m_step` is `None`, `m_step_partial` keeps others."""
+    diag, pois = StudentTFamily(), PoissonFamily(scale_by_dt=False)
     prod = BlockProductEmission.of((diag, pois), ((0,), (1,)))
     rng = np.random.default_rng(3)
     y = jnp.asarray(np.column_stack([rng.normal(size=80), rng.poisson(3.0, 80)]))
@@ -202,7 +203,7 @@ def test_e11_t08_m_step_partial_has_holes_for_blocks_without_a_closed_form(tmp_p
     assert partial[0] is None
     assert partial[1] is not None
     assert set(partial[1]) == {"emission.b1.eta"}
-    assert prod.conjugate_prior() is None  # the diagonal Gaussian has no conjugate prior
+    assert prod.conjugate_prior() is None  # the Student-t block has no conjugate prior
 
 
 def test_e11_t08_sample_and_cdf_place_blocks_at_their_columns() -> None:

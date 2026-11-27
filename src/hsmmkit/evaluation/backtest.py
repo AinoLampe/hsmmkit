@@ -23,7 +23,7 @@ from hsmmkit.data.prepare import Preparer
 from hsmmkit.engine.base import Posterior
 from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
 from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
-from hsmmkit.estimation.map import fit as fit_map
+from hsmmkit.estimation import fit as fit_model
 from hsmmkit.estimation.objective import canonical_data
 from hsmmkit.evaluation.metrics.predictive import one_step_mixture_weights, pit_histogram
 from hsmmkit.evaluation.metrics.registry import resolve
@@ -406,7 +406,7 @@ def run_backtest(
 
         train = data.window(fold.train_start, fold.train_end)
         started = time.perf_counter()
-        fitted = fit_map(
+        fitted = fit_model(
             spec,
             pad_dataset(train),
             cfg.estimation,

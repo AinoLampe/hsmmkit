@@ -105,6 +105,10 @@ class NegBinDuration:
         r = jnp.asarray(self.r, dtype=jnp.float64)
         return (r / a) * nominal_dt
 
+    def from_advance_prob(self, a: Array, nominal_dt: float) -> Params:
+        """Invert `a = 1 - exp(-rate dt)` (constant step, no covariates): `rate = -log(1 - a) / dt`."""
+        return {"duration.rate": -jnp.log1p(-a) / nominal_dt}
+
     def init_from_mean_sojourn(self, mean_steps: Array, nominal_dt: float) -> Params:
         """`rate_i = r_i / (mean_steps_i * nominal_dt)`."""
         r = jnp.asarray(self.r, dtype=jnp.float64)

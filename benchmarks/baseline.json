@@ -50,5 +50,9 @@
   {
     "name": "test_e15_t01_update_time_budget",
     "mean": 0.000158
+  },
+  {
+    "name": "test_e13_t02a_one_em_iteration_time_budget",
+    "mean": 0.132196
   }
 ]

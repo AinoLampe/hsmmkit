@@ -86,16 +86,21 @@ def test_e5_t06_debug_mode_raises_when_the_loglik_decreases(monkeypatch: pytest.
     spec, data = _problem("geometric", 4, t_len=800)
     good = em_fit(spec, data, _cfg(max_iter=3), 4)
     assert isinstance(good, EMResult)
-    original = em_module._m_step
+    original = em_module.em_update
 
-    def broken(*args: object) -> dict[str, jnp.ndarray]:
-        out = dict(original(*args))
+    def broken(*args: object, **kwargs: object) -> dict[str, jnp.ndarray]:
+        out = dict(original(*args, **kwargs))  # type: ignore[arg-type]
         out["emission.scale"] = out["emission.scale"] * 3.0
         return out
 
-    monkeypatch.setattr(em_module, "_m_step", broken)
-    with pytest.raises(NumericalError, match="decreased"):
-        em_fit(spec, data, _cfg(max_iter=20), 4, debug=True)
+    monkeypatch.setattr(em_module, "em_update", broken)
+    em_module._em_step.clear_cache()  # the compiled step closes over the (patched) function at trace time
+    try:
+        with pytest.raises(NumericalError, match="decreased"):
+            em_fit(spec, data, _cfg(max_iter=20), 4, debug=True)
+    finally:
+        monkeypatch.undo()
+        em_module._em_step.clear_cache()
 
 
 @pytest.mark.parametrize("duration", ["geometric", "negbin"])
@@ -133,21 +138,29 @@ def test_e5_t06_sufficient_stats_give_the_gaussian_mle() -> None:
 
 
 def test_e5_t06_unsupported_models_raise_config_error() -> None:
-    """AC3: covariates, non-GBM families, the explicit engine and irregular grids are refused."""
-    for kwargs in ({"cov_em": True}, {"cov_du": True}, {"cov_tr": True}):
+    """Components without a closed form, the explicit engine and irregular grids are refused."""
+    for kwargs, pattern in (
+        ({"cov_em": True}, "closed-form"),
+        ({"cov_du": True}, "covariates"),
+        ({"cov_tr": True}, "covariates"),
+    ):
         case = make_case("gbm", "negbin", 1, t_len=60, **kwargs)  # type: ignore[arg-type]
-        with pytest.raises(ConfigError, match="covariates"):
+        with pytest.raises(ConfigError, match=pattern):
             em_fit(case.spec, case.data, _cfg(), 0)
     student = make_case("student_t", "negbin", 1, t_len=60)
-    with pytest.raises(ConfigError, match="gaussian"):
+    with pytest.raises(ConfigError, match="closed-form"):
         em_fit(student.spec, student.data, _cfg(), 0)
     explicit = make_case("gbm", "gamma", 1, t_len=60)
     with pytest.raises(ConfigError, match="expanded engine"):
         em_fit(explicit.spec, explicit.data, _cfg(), 0)
-    order2 = make_case("gbm", "negbin", 2, t_len=60)
-    with pytest.raises(ConfigError, match="order 1"):
-        em_fit(order2.spec, order2.data, _cfg(), 0)
     base = make_case("gbm", "negbin", 1, t_len=60)
     irregular = dataclasses.replace(base.data, dt=base.data.dt * jnp.asarray([1.0, 3.0] * 30))
     with pytest.raises(ConfigError, match="constant time step"):
         em_fit(base.spec, irregular, _cfg(), 0)
+
+
+def test_e5_t06_order_two_memory_is_supported_and_monotone() -> None:
+    """Order-2 memory (refused by the GBM-only EM of E5-T06) now runs and is monotone."""
+    case = make_case("gbm", "negbin", 2, t_len=400, seed=3)
+    ll = np.asarray(em_fit(case.spec, case.data, _cfg(max_iter=15), 3, debug=True).logliks)
+    assert np.all(np.diff(ll) >= -1e-8 * np.abs(ll[:-1]))
