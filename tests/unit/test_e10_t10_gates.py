@@ -82,15 +82,15 @@ def test_e10_t10_validation_is_not_gated(tmp_path: Path) -> None:
 
 
 def test_e10_t10_appendix_h_build_raises_the_first_gate_in_deterministic_order() -> None:
-    """Appendix H builds into `estimation.method=gem` -> E13-T03a first (the order of `GATES`)."""
+    """Appendix H builds into `evaluation.cv` -> E14-T01 first (the order of `GATES`)."""
     cfg = parse_project_config(appendix_h())
     paths = [p for p, _ in gates.used_gates(cfg)]
-    assert paths[0] == "estimation.method=gem"
+    assert paths[0] == "evaluation.cv"
     assert paths == [p for p in gates.GATES if p in paths]  # GATES order
     with pytest.raises(ConfigError) as info:
         build_model_spec_from(cfg, INPUTS)
-    assert info.value.path == "estimation.method"
-    assert "E13-T03a" in str(info.value)
+    assert info.value.path == "evaluation.cv"
+    assert "E14-T01" in str(info.value)
 
 
 def test_e10_t10_removing_a_row_lets_the_key_through(monkeypatch: pytest.MonkeyPatch) -> None:

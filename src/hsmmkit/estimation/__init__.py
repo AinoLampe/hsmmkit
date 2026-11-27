@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from hsmmkit.estimation import em as _em  # noqa: F401  (registers the `em` estimator)
+from hsmmkit.estimation import gem as _gem  # noqa: F401  (registers the `gem` estimator)
 from hsmmkit.estimation.map import fit as fit_map
 from hsmmkit.plugins import REGISTRY
 
