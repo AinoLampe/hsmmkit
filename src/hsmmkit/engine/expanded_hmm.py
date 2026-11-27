@@ -69,14 +69,20 @@ def _log_a(
 def _regime_log_emis(theta: Params, spec: ModelSpec, data: PreparedDataset, dt: Array | None = None) -> Array:
     """`(T, N)` per-regime emission log-densities; masked steps contribute 0 (shared with E4-T06a).
 
-    With a `ProductEmission` (`M > 1`) the mask acts per series: an unobserved series contributes 0 and the
-    observed ones keep their density. Single-series (bare family) models drop the step as before.
-
     `dt` overrides `data.dt` (the explicit-duration engine uses `nominal_dt` everywhere).
     """
-    y, mask = data.observations, data.mask
     dt = data.dt if dt is None else dt
-    z_e = _block(data.cov_emission, y.shape[0])
+    z_e = _block(data.cov_emission, data.observations.shape[0])
+    return regime_log_emis(theta, spec, data.observations, data.mask, dt, z_e)
+
+
+def regime_log_emis(theta: Params, spec: ModelSpec, y: Array, mask: Array, dt: Array, z_e: Array) -> Array:
+    """Array form of `_regime_log_emis`: `y, mask (T, M)`, `dt (T,)`, `z_e (T, K_e)` -> `(T, N)`.
+
+    With a `ProductEmission` (`M > 1`) the mask acts per series: an unobserved series contributes 0 and the
+    observed ones keep their density. Single-series (bare family) models drop the step as before. The
+    online filter (E15-T01) calls this with `T = 1` so both paths run the same code.
+    """
     # Masked observations contribute zero log-density; sanitize `y` too so a NaN print cannot
     # leak NaN gradients through the untaken branch (double `where`).
     y_safe = jnp.where(mask, y, 0.0)
@@ -94,21 +100,34 @@ def _regime_log_emis(theta: Params, spec: ModelSpec, data: PreparedDataset, dt: 
 
 
 def _expanded_log_emis(theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
-    """`(T, S)` emission table of the expanded states.
+    """`(T, S)` emission table of the expanded states (see `expanded_log_emis`)."""
+    z_e = _block(data.cov_emission, data.observations.shape[0])
+    return expanded_log_emis(theta, spec, space, data.observations, data.mask, data.dt, z_e, data.labels)
+
+
+def expanded_log_emis(
+    theta: Params,
+    spec: ModelSpec,
+    space: StateSpace,
+    y: Array,
+    mask: Array,
+    dt: Array,
+    z_e: Array,
+    labels: Array | None = None,
+) -> Array:
+    """`(T, S)` emission table of the expanded states from plain arrays.
 
     Segment memory: the per-regime table gathered by `regime_of`. Time-step memory (`memory_mode: steps`): the
     emission is evaluated per tuple `(s_{t-p}, ..., s_t)`; masked steps contribute 0.
     """
     if spec.memory_mode != "steps":
-        ell = jnp.take(_regime_log_emis(theta, spec, data), space.index.regime_of, axis=1)
+        ell = jnp.take(regime_log_emis(theta, spec, y, mask, dt, z_e), space.index.regime_of, axis=1)
     else:
-        y, mask = data.observations, data.mask
-        z_e = _block(data.cov_emission, y.shape[0])
         tuples = jnp.concatenate([space.index.memory_of, space.index.regime_of[:, None]], axis=1)
-        ell = spec.emission.log_prob_tuples(jnp.where(mask, y, 0.0), data.dt, theta, z_e, tuples)  # type: ignore[attr-defined]
+        ell = spec.emission.log_prob_tuples(jnp.where(mask, y, 0.0), dt, theta, z_e, tuples)  # type: ignore[attr-defined]
         ell = jnp.where(jnp.all(mask, axis=-1)[:, None], ell, 0.0)
-    if data.labels is not None:  # supervision: a label forbids the other regimes at that step (E12-T06)
-        ell = jnp.where(label_log_mask(data.labels, space.index.regime_of), ell, -jnp.inf)
+    if labels is not None:  # supervision: a label forbids the other regimes at that step (E12-T06)
+        ell = jnp.where(label_log_mask(labels, space.index.regime_of), ell, -jnp.inf)
     return ell
 
 
@@ -129,6 +148,26 @@ def _emission_inputs(
     return log_rho, ell[0], ell, (ell[1:], z_pi[1:], z_d[1:], data.dt[1:], code_arr[1:])
 
 
+def forward_step(
+    space: StateSpace,
+    theta: Params,
+    active: bool,
+    alpha_prev: Array,
+    ell_t: Array,
+    z_pi_t: Array,
+    z_d_t: Array,
+    dt_t: Array,
+    code_t: Array,
+) -> Array:
+    """One forward step `log alpha_t = ell_t + logsumexp_i(log alpha_{t-1}[i] + log A_t[i, :])`.
+
+    The single body of the offline scan and of `online.OnlineFilter.update`, so that both run the same
+    floating-point operations in the same order (NFR-15, bitwise).
+    """
+    log_a = _log_a(space, theta, z_pi_t, z_d_t, dt_t, code_t, active)
+    return ell_t + _safe_logsumexp(alpha_prev[:, None] + log_a, axis=0)
+
+
 def _forward_impl(
     theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
 ) -> tuple[Array, Array, _Xs]:
@@ -139,9 +178,7 @@ def _forward_impl(
     active = data.boundaries is not None
 
     def step(alpha_prev: Array, xs_t: _Xs) -> tuple[Array, Array]:
-        ell_t, z_pi_t, z_d_t, dt_t, code_t = xs_t
-        log_a = _log_a(space, theta, z_pi_t, z_d_t, dt_t, code_t, active)
-        alpha_t = ell_t + _safe_logsumexp(alpha_prev[:, None] + log_a, axis=0)
+        alpha_t = forward_step(space, theta, active, alpha_prev, *xs_t)
         return alpha_t, alpha_t
 
     _, rest = jax.lax.scan(step, alpha_0, xs)

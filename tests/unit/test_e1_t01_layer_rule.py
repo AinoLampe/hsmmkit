@@ -14,7 +14,7 @@ from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "hsmmkit"
 
-LAYER_RULE_PACKAGES = ("model", "statespace", "engine", "estimation", "inference")
+LAYER_RULE_PACKAGES = ("model", "statespace", "engine", "estimation", "inference", "online")
 PROFILE_RULE_PACKAGES = (
     "config",
     "data",
@@ -25,6 +25,7 @@ PROFILE_RULE_PACKAGES = (
     "inference",
     "evaluation",
     "persistence",
+    "online",
 )
 
 

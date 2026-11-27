@@ -196,3 +196,26 @@ def make_explicit_scenario(
     z_pi = rng.normal(size=(t_len, n_cov_pi)) if has_pi else None
     z_d = rng.normal(size=(t_len, n_cov_d)) if n_cov_d else None
     return Scenario(spec, space, theta, make_dataset(y, dt, z_pi=z_pi, z_d=z_d))
+
+
+def fit_of(sc: Scenario) -> object:
+    """A `FitResult` around a scenario's parameters (no estimation; for inference-side tests)."""
+    import pandas as pd
+
+    from hsmmkit.estimation.results import FitResult
+
+    return FitResult(
+        estimator="map",
+        params=sc.theta,
+        uparams=jnp.zeros(0),
+        objective=0.0,
+        loglik=0.0,
+        restarts=pd.DataFrame(),
+        converged=True,
+        n_iter=0,
+        std_errors=None,
+        diagnostics={},
+        spec=sc.spec,
+        prep_stats=sc.data.prep_stats,
+        config_resolved={},
+    )
