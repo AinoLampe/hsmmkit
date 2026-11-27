@@ -11,5 +11,5 @@
 | poisson | negbin | full | closed-form | 1.6e-15 | 1.9e-07 | ok |
 | student_t | geometric | full | ecm | 3.2e-15 | 4.0e-07 | ok |
 
-Not in the table: `msar` and `mixture` (the data preparer / component labelling need their own
-fixtures; their EM = MAP agreement is covered by the family contract suites), covariate-link rows (ECM, see `test_e13_t02b_ecm.py`).
+Not in the table: `msar` and `mixture` rows (they need their own preparer / component-labelling
+fixtures; recorded as a Follow-up) and covariate-link rows (ECM, see `test_e13_t02b_ecm.py`).
