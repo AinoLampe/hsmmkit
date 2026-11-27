@@ -115,14 +115,14 @@ def test_e13_t05a_refusals_and_registration(tmp_path: Path) -> None:
     res = dispatch_fit(spec, data, EstimationSection(method="vb", restarts=0, max_iter=5), 0, start)
     assert res.estimator == "vb"
     spec_t, theta_t = em_models.build(tmp_path, "student_t", "geometric")
-    with pytest.raises(ConfigError, match="E13-T05b"):
-        VBEstimator().fit(
-            spec_t,
-            em_models.dataset("student_t", 100, 1),
-            EstimationSection(method="vb", restarts=0),
-            0,
-            warm_start=_start(spec_t, theta_t),
-        )
+    hybrid = VBEstimator().fit(
+        spec_t,
+        em_models.dataset("student_t", 100, 1),
+        EstimationSection(method="vb", restarts=0, max_iter=5),
+        0,
+        warm_start=_start(spec_t, theta_t),
+    )
+    assert hybrid.diagnostics["vb"]["treatment"]["emission"] == "point"  # E13-T05b: no longer refused
 
 
 def test_e13_t05a_multi_start_picks_the_best_elbo_and_batches_work(tmp_path: Path) -> None:
@@ -187,21 +187,23 @@ def test_e13_t05a_the_elbo_bounds_the_evidence_with_three_regimes(tmp_path: Path
     assert elbo > log_ev - 4.0
 
 
-def test_e13_t05a_unsupported_parameter_modes_are_refused(tmp_path: Path) -> None:
-    """Bounded / prior parameters (which VB would silently ignore) are refused up front."""
+def test_e13_t05a_unsupported_parameter_modes_make_the_block_a_point_block(tmp_path: Path) -> None:
+    """Bounded / prior parameters (ignored by a conjugate update) turn their block into a point block."""
     import dataclasses
 
     spec, theta0 = em_models.build(tmp_path, "poisson", "geometric")
     bounded = tuple(
-        dataclasses.replace(s, mode="bounded", bounds=(0.1, 5.0)) if s.name == "emission.eta" else s
+        dataclasses.replace(s, mode="bounded", domain="interval", bounds=(-3.0, 3.0))
+        if s.name == "emission.eta"
+        else s
         for s in spec.param_specs
     )
     bad = dataclasses.replace(spec, param_specs=bounded)
-    with pytest.raises(ConfigError, match="bounded"):
-        VBEstimator().fit(
-            bad,
-            em_models.dataset("poisson", 80, 1),
-            EstimationSection(method="vb", restarts=0),
-            0,
-            warm_start=_start(spec, theta0),
-        )
+    res = VBEstimator().fit(
+        bad,
+        em_models.dataset("poisson", 80, 1),
+        EstimationSection(method="vb", restarts=0, max_iter=5),
+        0,
+        warm_start=_start(spec, theta0),
+    )
+    assert res.diagnostics["vb"]["treatment"]["emission"] == "point"

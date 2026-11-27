@@ -77,6 +77,7 @@ def _decode_batch(
                 aic=ic.aic,
                 bic=ic.bic,
                 icl=ic.icl,
+                pruned_states=fit.pruned_states,
                 path_samples=None if drawn is None else drawn[:, b, : seq.observations.shape[0]],
                 boundary_prob=None
                 if drawn is None
@@ -178,6 +179,7 @@ def decode(
         aic=ic.aic,
         bic=ic.bic,
         icl=ic.icl,
+        pruned_states=fit.pruned_states,
         path_samples=drawn,
         boundary_prob=None if drawn is None else boundary_probability(drawn),
     )

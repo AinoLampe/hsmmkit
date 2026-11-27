@@ -205,6 +205,7 @@ class ModelStore:
             "restarts": _jsonable(fit.restarts.to_dict(orient="records")),
             "diagnostics": _jsonable(fit.diagnostics),
             "std_errors": None if fit.std_errors is None else _jsonable(fit.std_errors),
+            "pruned_states": list(fit.pruned_states),
         }
         try:
             out.mkdir(parents=True, exist_ok=True)
@@ -349,6 +350,7 @@ class ModelStore:
             spec=spec,
             prep_stats=prep_stats_from_json((src / PREP_STATS).read_text(encoding="utf-8")),
             config_resolved=cfg.model_dump(mode="json"),
+            pruned_states=tuple(int(i) for i in report.get("pruned_states", ())),
         )
 
 
