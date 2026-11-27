@@ -49,7 +49,7 @@ def test_e13_t03a_nonparametric_gem_is_monotone(
     assert res.estimator == "gem"
     assert trace[-1] > trace[0]
     assert np.all(np.diff(trace[:-1]) >= -(1e-10 + 1e-13 * np.abs(trace[:-2])))
-    assert res.diagnostics["gem"]["duration"].startswith("closed-form")
+    assert res.diagnostics["gem"]["duration"] == "censored-pmf"
     pmf = np.asarray(res.params["duration.logits"])
     np.testing.assert_allclose(pmf.sum(axis=1), 1.0, atol=1e-10)
 
