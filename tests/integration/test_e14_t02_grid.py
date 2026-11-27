@@ -148,3 +148,28 @@ def test_e14_t02_the_two_regime_fixture_selects_two_states_by_bic_and_cv(base: d
     assert table.loc[table["bic"].idxmin(), "n_states"] == 2
     assert table.loc[table["cv_log_score"].idxmax(), "n_states"] == 2
     assert table.loc[table["recommended"], "n_states"].tolist() == [2]
+
+
+def test_e14_t02_the_r_axis_survives_the_duration_axis_and_n_states_resizes_r(base: dict[str, Any]) -> None:
+    """Review: `r` follows a duration swap, is resized with `n_states` and is refused for other families."""
+    nb = {**base["raw"]}
+    nb["model"] = {**nb["model"], "duration": {**nb["model"]["duration"], "family": "negbin", "r": [3, 3]}}
+    nb["evaluation"] = {**nb["evaluation"], "grid": {"n_states": [2, 3], "r_same_for_all": [1, 4]}}
+    path = _dump(nb, base["root"] / "nb.yaml")
+    cells = make_cells(Project.from_yaml(path, offline=True).config)
+    by_axes = {(c.axes["n_states"], c.axes["r"]): c for c in cells}
+    assert all(c.raw is not None for c in cells)
+    assert by_axes[(3, 4)].raw["model"]["duration"]["r"] == [4, 4, 4]  # type: ignore[index]
+    geo = _project(base, "geo_r", grid={"r_same_for_all": [2, 3]})
+    cells = make_cells(geo.config)
+    assert all(c.raw is None and "negbin" in c.skipped_reason for c in cells)
+    swap = {
+        **nb,
+        "evaluation": {
+            **nb["evaluation"],
+            "grid": {"duration": ["geometric", "negbin"], "r_same_for_all": [2]},
+        },
+    }
+    cells = make_cells(Project.from_yaml(_dump(swap, base["root"] / "swap.yaml"), offline=True).config)
+    assert [c.raw is None for c in cells] == [True, False]
+    assert cells[1].raw["model"]["duration"]["r"] == [2, 2]  # type: ignore[index]

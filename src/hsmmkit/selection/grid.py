@@ -125,13 +125,13 @@ def _apply(raw: dict[str, Any], axes: dict[str, Any]) -> dict[str, Any]:
     if n != old_n:
         out["model"] = model = _resize_lists(model, old_n, n)
         model["n_states"] = n
+        base_r = model["duration"].get("r")
+        if isinstance(base_r, list) and len(base_r) == old_n:
+            model["duration"]["r"] = [round(v) for v in _resize([float(v) for v in base_r], n)]
         if isinstance(model.get("topology"), dict):  # a structural topology does not survive a change of N
             raise ConfigError(
                 "n_states cannot change under an explicit topology matrix", path="model.topology"
             )
-    if "r" in axes:
-        r = axes["r"]
-        model["duration"]["r"] = list(r) if isinstance(r, list | tuple) else [int(r)] * n
     if "emission" in axes and axes["emission"] != model["emission"].get("family"):
         family = axes["emission"]
         model["emission"] = {"family": family, "params": copy.deepcopy(FAMILY_PARAMS.get(family, {}))}
@@ -163,6 +163,14 @@ def _apply(raw: dict[str, Any], axes: dict[str, Any]) -> dict[str, Any]:
         model["duration"] = {"family": family, "params": params}
         if family == "negbin":
             model["duration"]["r"] = [2] * n
+    if "r" in axes:
+        if model["duration"].get("family") != "negbin":
+            raise ConfigError("the r axis needs negbin durations", path="evaluation.grid.r")
+        r = axes["r"]
+        r_list = list(r) if isinstance(r, list | tuple) else [int(r)] * n
+        if len(r_list) != n:
+            raise ConfigError(f"r has {len(r_list)} entries for {n} regimes", path="evaluation.grid.r")
+        model["duration"]["r"] = r_list
     if "estimator" in axes:
         out["estimation"]["method"] = axes["estimator"]
     return out
@@ -258,7 +266,7 @@ def _run_cell(
     objectives = objectives[np.isfinite(objectives)]
     row["objective_spread"] = float(objectives[-1] - objectives[0]) if objectives.size > 1 else 0.0
     if isinstance(data, SequenceBatch):
-        n_obs = int(sum(int(np.asarray(s.mask).any(axis=-1).sum()) for s in data.sequences))
+        n_obs = int(sum(int(np.asarray(s.mask).all(axis=-1).sum()) for s in data.sequences))
         row["aic"] = 2.0 * n_free - 2.0 * fit.loglik
         row["bic"] = n_free * float(np.log(max(n_obs, 1))) - 2.0 * fit.loglik
         row["icl"] = float("nan")
