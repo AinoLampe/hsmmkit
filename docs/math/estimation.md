@@ -147,6 +147,28 @@ group; `FitResult.diagnostics["initial_groups"]` lists the group names (sorted, 
 fallback (and a warning) for a group the fit has not seen. A `B = 1` batch without groups is fitted as the single
 sequence it holds, so its `uparams` equal the single-sequence fit bit for bit.
 
+## E-step accumulators (expanded engine)
+
+`engine.estep.expanded_estep` computes everything EM and VB need that is not a family sufficient statistic from one
+forward pass and one fused backward / accumulation scan. With the pairwise posterior of a step,
+
+$$\xi_t(s,s') = \exp\big(\log\alpha_{t-1}(s) + \log A_t(s,s') + \ell_t(s') + \log\beta_t(s') - \ell\big),$$
+
+the `(S, S)` matrix of the current step is reduced at once with the static index arrays of the state space and added
+to the carry; `(T, S, S)` is never formed (the program holds `alpha (T, S)`, the per-regime emissions `(T, N)` and
+the regime marginals). Over the valid transitions of every sequence:
+
+| Statistic | Definition |
+|---|---|
+| `stay[k]` | `sum xi_t(s, s)` over the states `s` of duration-rate row `k` |
+| `advance[k]` | the other mass leaving `s`: the phase advance and the exits of the last phase |
+| `occupancy[k]` | `sum gamma_{t-1}(s)` over the same states, so `stay + advance = occupancy` |
+| `jump[r, j]` | `sum xi_t(s, entry(r, j))` over the last-phase states of jump-matrix row `r` |
+| `gamma1[g]` | the first-step posterior summed over the sequences of initial group `g` |
+| `gamma_regime` | regime marginals `(B, T, N)`, 0 on padding |
+
+Tempered EM (`beta_temper = beta < 1`) runs the pass on `beta * ell`; `loglik` is always the untempered value.
+
 ## Symbols and code names
 
 | Math | Code |
@@ -157,3 +179,4 @@ sequence it holds, so its `uparams` equal the single-sequence fit bit for bit.
 | restarts | `FitResult.restarts` (one row per start) |
 | standard errors | `estimation.report.std_errors` |
 | EM | `estimation.em.em_fit`, `GBMFamily.sufficient_stats` |
+| E-step counts | `engine.estep.expanded_estep`, `ExpandedEStats` |

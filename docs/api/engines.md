@@ -29,3 +29,8 @@
     options:
       show_root_heading: true
       heading_level: 3
+
+::: hsmmkit.engine.estep
+    options:
+      show_root_heading: true
+      heading_level: 3
