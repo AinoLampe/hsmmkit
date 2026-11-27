@@ -46,5 +46,9 @@
   {
     "name": "test_e12_t02_batched_objective_value_and_grad",
     "mean": 0.360005
+  },
+  {
+    "name": "test_e15_t01_update_time_budget",
+    "mean": 0.000158
   }
 ]
