@@ -295,6 +295,7 @@ The whole resolved configuration of the domain-neutral core.
 | `default_priors` | `bool` | `True` |
 | `jitter` | `float` | `0.05` |
 | `log_likelihood` | `bool` | `True` |
+| `keep_paths_every` | `int` | `0` |
 
 ## `forecast.covariate_forecaster`
 

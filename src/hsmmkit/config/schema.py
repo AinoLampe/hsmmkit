@@ -457,6 +457,8 @@ class McmcCfg(_Base):
     """Standard deviation of the Gaussian jitter added to the MAP start of each chain (unconstrained)."""
     log_likelihood: bool = True
     """Store the per-sequence log-likelihood of every draw in the `log_likelihood` group."""
+    keep_paths_every: int = Field(default=0, ge=0)
+    """Gibbs only: keep the sampled regime paths of every k-th draw in a `path_samples` group (0: none)."""
 
 
 class EstimationSection(_Base):

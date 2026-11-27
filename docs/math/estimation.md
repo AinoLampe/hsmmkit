@@ -260,8 +260,25 @@ With `default_priors: false` the parameters without a prior are listed in a `Con
 (`diverging`, `tree_depth` (approximate: `round(log2(num_steps + 1))`), `energy`, `potential_energy`) and `log_likelihood` (per sequence). `params` are the
 posterior means on the constrained scale, `std_errors` the posterior SDs, `diagnostics["mcmc"]` has `r_hat`,
 `ess_bulk`, `ess_tail` per parameter, `divergences`, the sampler settings and the library versions. Without an
-identifiability guard the posterior can be multimodal (label switching): a warning is issued; relabelling and the
-blocked Gibbs sampler are E13-T06b. See ADR-0024.
+identifiability guard (an ordering constraint or fixed location / scale parameters) the posterior can be multimodal by
+label switching: the draws are relabelled afterwards (below). See ADR-0024.
+
+**Blocked Gibbs (`sampler: gibbs`).** For fully conjugate models (the components of `vb_treatment` all `conjugate`) one
+sweep draws the state paths by FFBS (`engine.ffbs`, one draw per sequence), forms the statistics of the sampled
+paths (one-hot regime weights; stay / advance / exit counts per rate and jump row) and draws every block from its
+conjugate posterior (Normal-Gamma / Normal-Wishart, Gamma, Beta, Dirichlet; `sample_params` of the conjugate
+classes). The chains are `vmap`ped in one `lax.scan`; the key of chain `c`, sweep `k` is
+`fold_in(fold_in(key_for(seed, PURPOSE_MCMC, c), 2), k)`. The priors are those of VB (the sampler targets the posterior under the VB default priors, not under the
+`default_priors` of NUTS; a block with ordered / fixed / user-prior parameters is not conjugate and is refused). The
+chains start at the MAP optimum with the same jitter as NUTS. `keep_paths_every: k` adds a
+`path_samples` group with the regime paths of every k-th draw. Non-conjugate components give a `ConfigError`
+listing them and suggesting `nuts`.
+
+**Relabelling.** `estimation.relabel.relabel_draws` maps every draw to the labelling closest to the MAP pivot: the
+permutation `sigma` minimizes `sum_i ||f_sigma(i)(draw) - f_i(pivot)||^2` over the emission location parameters
+standardized by the spread of the pivot's states (Hungarian matching, `evaluation.metrics.matching.hungarian`) and
+is applied to all state-indexed blocks by `model.lattice.permute_states`; `diagnostics["mcmc"]["relabelled_fraction"]`
+is the share of draws that moved.
 
 ## E-step accumulators (expanded engine)
 
@@ -321,6 +338,6 @@ Explicit engine: the last segment `(s, j)` is drawn from `inner + term` (right-c
 | restarts | `FitResult.restarts` (one row per start) |
 | standard errors | `estimation.report.std_errors` |
 | EM | `estimation.em.EMEstimator`, `em_fit`, `estimation.mstep` |
-| MCMC | `estimation.mcmc.MCMCEstimator`, `interop.arviz.to_inference_data` |
+| MCMC | `estimation.mcmc.MCMCEstimator`, `estimation.gibbs.run_gibbs`, `estimation.relabel.relabel_draws`, `interop.arviz.to_inference_data` |
 | GEM | `estimation.gem.GEMEstimator`, `censored_pmf`, `estimation.newton.newton_minimize` |
 | E-step counts | `engine.estep.expanded_estep`, `ExpandedEStats` |

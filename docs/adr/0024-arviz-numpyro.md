@@ -29,6 +29,7 @@ candidates; ArviZ is the de-facto format for posterior draws, diagnostics (R-hat
 ## Consequences
 
 - The sampler is exact for the marginal posterior of the parameters; state paths are drawn afterwards by FFBS
-  (E13-T04) if needed. Label switching without an identifiability guard is only warned about; relabelling and the
-  blocked Gibbs sampler are E13-T06b.
+  (E13-T04) if needed. Label switching without an identifiability guard is undone by post-hoc relabelling towards
+  the MAP pivot (E13-T06b, `estimation.relabel`); the blocked Gibbs sampler for conjugate models shares the output
+  format.
 - `FitResult.posterior_samples` is not persisted in the model bundle.

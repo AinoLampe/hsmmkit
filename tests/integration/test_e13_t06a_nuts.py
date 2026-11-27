@@ -29,9 +29,9 @@ def _cfg(**mcmc: Any) -> EstimationSection:  # noqa: ANN401
     )
 
 
-def _model(tmp_path: Path, t_len: int = 300, seed: int = 3):  # noqa: ANN202
-    spec, _ = em_models.build(tmp_path, "gaussian", "geometric")
-    return spec, em_models.dataset("gaussian", t_len, seed)
+def _model(tmp_path: Path, t_len: int = 300, seed: int = 3, family: str = "gaussian"):  # noqa: ANN202
+    spec, _ = em_models.build(tmp_path, family, "geometric")
+    return spec, em_models.dataset(family, t_len, seed)
 
 
 def test_e13_t06a_seeded_runs_are_reproducible_bitwise(tmp_path: Path) -> None:
@@ -89,8 +89,8 @@ def test_e13_t06a_improper_posteriors_and_unsupported_options_are_refused(tmp_pa
     flat = _cfg().model_copy(update={"use_priors": False})
     with pytest.raises(ConfigError, match="use_priors"):
         MCMCEstimator().fit(spec, data, flat, 0)
-    with pytest.raises(ConfigError, match="E13-T06b"):
-        MCMCEstimator().fit(spec, data, _cfg(sampler="gibbs"), 0)
+    with pytest.raises(ConfigError, match="nuts"):  # a non-conjugate model cannot be Gibbs-sampled
+        MCMCEstimator().fit(*_model(tmp_path, family="student_t"), _cfg(sampler="gibbs"), 0)
 
 
 def test_e13_t06a_vectorized_chains_run(tmp_path: Path) -> None:

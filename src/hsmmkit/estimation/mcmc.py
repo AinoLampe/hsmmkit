@@ -11,7 +11,8 @@ Free parameters without a prior make the posterior improper: with `estimation.mc
 weakly informative defaults of `docs/math/estimation.md` are attached (real: `Normal(0, 10 max(1, |init|))`,
 positive: `LogNormal(mean log init, 3)`, `nu > 2`: `LogNormal(log 10, 1.5)`, packed Cholesky:
 `LogNormal` on the diagonal); otherwise they are a `ConfigError`. Without an identifiability guard the
-posterior can be multimodal (label switching): a warning is issued; relabelling is E13-T06b. Same seed,
+posterior can be multimodal (label switching): the draws are relabelled towards the MAP pivot afterwards
+(`estimation.relabel`). Same seed,
 backend and library versions give
 identical draws; the versions are recorded in `diagnostics["mcmc"]["versions"]`.
 """
@@ -32,8 +33,10 @@ from hsmmkit.data.contracts import PreparedDataset
 from hsmmkit.engine.batch import BatchedEngine, batched_loglik
 from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
 from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.estimation.gibbs import run_gibbs
 from hsmmkit.estimation.map import fit as map_fit
 from hsmmkit.estimation.objective import _objective, make_objective
+from hsmmkit.estimation.relabel import relabel_draws
 from hsmmkit.estimation.results import FitResult
 from hsmmkit.interop.arviz import summary_table, to_inference_data
 from hsmmkit.model.lattice import has_identifiability_guard
@@ -49,9 +52,11 @@ from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
     from hsmmkit.config.schema import EstimationSection
+    from hsmmkit.data.batch import PaddedBatch
     from hsmmkit.model.params import Params
     from hsmmkit.model.params.spec import ParamSpec
     from hsmmkit.model.spec import ModelSpec
+    from hsmmkit.statespace.index import StateSpace
 
 __all__ = ["MCMCEstimator", "improper_parameters", "with_default_priors"]
 
@@ -81,7 +86,14 @@ def _default_prior(spec: ParamSpec) -> Any:  # noqa: ANN401
 def improper_parameters(spec: ModelSpec) -> list[str]:
     """Names of the specs with free entries of an unbounded domain and no prior (an improper posterior)."""
     out = []
+    joint = {  # a family with its own joint prior (`log_prior_extra`) makes its block proper
+        p
+        for p, f in (("emission.", spec.emission), ("duration.", spec.duration))
+        if hasattr(f, "log_prior_extra")
+    }
     for s in spec.param_specs:
+        if s.name.startswith(tuple(joint)):
+            continue
         if s.domain in _IMPROPER and "free" in _modes(s) and s.tie_group is None:
             out.append(s.name)
     return out
@@ -133,40 +145,33 @@ class MCMCEstimator:
 
         Raises:
             ImportError: the `bayes` extra (NumPyro, ArviZ) is not installed.
-            ConfigError: `use_priors: false`, the Gibbs sampler (E13-T06b) or improper parameters without
+            ConfigError: `use_priors: false`, components that are not conjugate with `sampler: gibbs`, or
+                improper parameters without
                 `default_priors`.
             NumericalError: a non-finite potential at the start.
         """
-        optional_import("numpyro", extra="bayes")
         optional_import("arviz", extra="bayes")
-        infer = optional_import("numpyro.infer", extra="bayes")
         m_cfg = cfg.mcmc if cfg.mcmc is not None else McmcCfg()
+        nuts = m_cfg.sampler == "nuts"
+        if nuts:
+            optional_import("numpyro", extra="bayes")
         if not cfg.use_priors:
             raise ConfigError("MCMC needs priors (estimation.use_priors: true)", path="estimation.use_priors")
-        if m_cfg.sampler != "nuts":
-            raise ConfigError(
-                f"sampler {m_cfg.sampler!r} is available from E13-T06b", path="estimation.mcmc.sampler"
-            )
         jax_setup(cfg.device)
-        if m_cfg.default_priors:
-            spec = with_default_priors(spec)
-        bad = improper_parameters(spec)
-        if bad:
-            raise ConfigError(
-                f"free parameters without a prior make the posterior improper: {bad}; "
-                "set estimation.mcmc.default_priors: true or give them priors "
-                "(a spec that mixes free and prior entries keeps its own prior)",
-                path="estimation.mcmc.default_priors",
-            )
+        if nuts:
+            if m_cfg.default_priors:
+                spec = with_default_priors(spec)
+            bad = improper_parameters(spec)
+            if bad:
+                raise ConfigError(
+                    f"free parameters without a prior make the posterior improper: {bad}; "
+                    "set estimation.mcmc.default_priors: true or give them priors "
+                    "(a spec that mixes free and prior entries keeps its own prior)",
+                    path="estimation.mcmc.default_priors",
+                )
         batch = data if isinstance(data, SequenceBatch) else SequenceBatch.of(data)
         first = batch.sequences[0]
-        if not has_identifiability_guard(spec):
-            warnings.warn(
-                "no identifiability guard (no fixed or ordered emission location/scale spec): the posterior "
-                "can be multimodal by label switching; post-hoc relabelling comes with E13-T06b",
-                UserWarning,
-                stacklevel=2,
-            )
+        guard = has_identifiability_guard(spec)
         manager = ParamManager(spec.param_specs)
         space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
         base = (
@@ -184,6 +189,129 @@ class MCMCEstimator:
         u_map = jnp.asarray(manager.flatten(start.params))
         if not bool(jnp.isfinite(objective.value(u_map))):
             raise NumericalError("non-finite log-joint at the MAP start", path="estimation.mcmc")
+
+        chains = m_cfg.chains
+        sample_stats: dict[str, np.ndarray] | None = None
+        paths: Any = None
+        if nuts:
+            theta_draws, sample_stats = self._nuts(spec, space, engine, manager, pb, u_map, m_cfg, seed)
+        else:
+            keys0 = [key_for(seed, PURPOSE_MCMC, c) for c in range(chains)]
+            starts = jnp.stack(
+                [
+                    u_map + m_cfg.jitter * jax.random.normal(jax.random.fold_in(k, 1), (int(u_map.shape[0]),))
+                    for k in keys0
+                ]
+            )
+            theta_draws, paths = run_gibbs(
+                jax.vmap(manager.unflatten)(starts),
+                spec,
+                space,
+                pb,
+                seed=seed,
+                chains=chains,
+                warmup=m_cfg.warmup,
+                draws=m_cfg.draws,
+                keep_paths_every=m_cfg.keep_paths_every,
+            )
+        posterior = {k: np.asarray(v) for k, v in theta_draws.items()}
+
+        # --- label switching: relabel towards the MAP pivot when nothing identifies the states ------
+        relabelled_fraction = 0.0
+        if not guard:
+            posterior, relabelled_fraction = relabel_draws(posterior, spec, start.params)
+
+        # --- per-sequence log-likelihood, ArviZ --------------------------------------------------------
+        log_lik = None
+        if m_cfg.log_likelihood:
+
+            @jax.jit
+            def per_sequence(theta: Params) -> Array:
+                return batched_loglik(base, theta, spec, space, pb)
+
+            flat = {k: jnp.asarray(v.reshape(-1, *v.shape[2:])) for k, v in posterior.items()}
+            ll = jax.lax.map(per_sequence, flat)[:, : len(batch.sequences)]
+            log_lik = np.asarray(ll).reshape(chains, m_cfg.draws, -1)
+        versions = _versions()
+        extra_groups = None
+        if paths is not None:
+            extra_groups = {"path_samples": {"regime_path": np.asarray(paths)}}
+        idata = to_inference_data(
+            posterior,
+            sample_stats,
+            log_lik,
+            sequence_ids=list(batch.ids),
+            attrs={"seed": seed, "sampler": m_cfg.sampler, **versions},
+            extra_groups=extra_groups,
+        )
+        table = summary_table(idata)
+        r_hat = {k: float(v) for k, v in table["r_hat"].items()}
+        ess_bulk = {k: float(v) for k, v in table["ess_bulk"].items()}
+        ess_tail = {k: float(v) for k, v in table["ess_tail"].items()}
+        divergences = int(sample_stats["diverging"].sum()) if sample_stats is not None else 0
+
+        # --- the FitResult -----------------------------------------------------------------------
+        mean_theta: Params = {k: jnp.asarray(v.mean(axis=(0, 1))) for k, v in posterior.items()}
+        u_mean = manager.flatten(mean_theta)
+        loglik = float(objective.loglik(u_mean))
+        sd = {k: jnp.asarray(v.reshape(-1, *v.shape[2:]).std(axis=0)) for k, v in posterior.items()}
+        finite_r_hat = [v for v in r_hat.values() if np.isfinite(v)]
+        max_r_hat = max(finite_r_hat) if finite_r_hat else float("nan")  # one chain: R-hat is undefined
+        diagnostics: dict[str, Any] = {
+            "mcmc": {
+                "r_hat": r_hat,
+                "ess_bulk": ess_bulk,
+                "ess_tail": ess_tail,
+                "divergences": divergences,
+                "max_r_hat": max_r_hat,
+                "min_ess_bulk": float(np.nanmin(list(ess_bulk.values()))) if ess_bulk else float("nan"),
+                "sampler": m_cfg.sampler,
+                "chains": chains,
+                "warmup": m_cfg.warmup,
+                "draws": m_cfg.draws,
+                "target_accept": m_cfg.target_accept,
+                "max_tree_depth": m_cfg.max_tree_depth,
+                "default_priors": m_cfg.default_priors,
+                "relabelled_fraction": relabelled_fraction,
+                "versions": versions,
+            },
+            "per_sequence": [
+                {"id": sid, "group": seq.group, "T": int(seq.observations.shape[0])}
+                for sid, seq in zip(batch.ids, batch.sequences, strict=True)
+            ],
+        }
+        if divergences:
+            warnings.warn(f"MCMC: {divergences} divergent transitions", UserWarning, stacklevel=2)
+        return FitResult(
+            estimator="mcmc",
+            params=mean_theta,
+            uparams=u_mean,
+            objective=float(objective.value(u_mean)),
+            loglik=loglik,
+            restarts=start.restarts,
+            converged=bool(max_r_hat <= R_HAT_LIMIT),
+            n_iter=m_cfg.draws,
+            std_errors=sd,
+            diagnostics=diagnostics,
+            spec=spec,
+            prep_stats=first.prep_stats,
+            config_resolved={},
+            posterior_samples=idata,
+        )
+
+    @staticmethod
+    def _nuts(
+        spec: ModelSpec,
+        space: StateSpace,
+        engine: BatchedEngine,
+        manager: ParamManager,
+        pb: PaddedBatch,
+        u_map: Array,
+        m_cfg: McmcCfg,
+        seed: int,
+    ) -> tuple[dict[str, Array], dict[str, np.ndarray]]:
+        """NumPyro NUTS: constrained draws `(chain, draw, *shape)` and the sampler statistics."""
+        infer = optional_import("numpyro.infer", extra="bayes")
 
         def potential(u: Array) -> Array:
             return _objective(u, space, pb, spec, engine, manager, True)  # type: ignore[arg-type]
@@ -229,87 +357,14 @@ class MCMCEstimator:
                 draws.append(np.asarray(mcmc.get_samples()))
                 stats.append({k: np.asarray(v) for k, v in mcmc.get_extra_fields().items()})
         u_draws = jnp.asarray(np.stack(draws))  # (chain, draw, n)
-
-        # --- constrained draws, per-sequence log-likelihood, ArviZ ----------------------------------
         theta_draws = jax.jit(jax.vmap(jax.vmap(manager.unflatten)))(u_draws)
-        posterior = {k: np.asarray(v) for k, v in theta_draws.items()}
         sample_stats = {
             "diverging": np.stack([s["diverging"] for s in stats]).astype(bool),
             "tree_depth": np.log2(np.stack([s["num_steps"] for s in stats]) + 1.0).round().astype(int),
             "energy": np.stack([s["energy"] for s in stats]),
             "potential_energy": np.stack([s["potential_energy"] for s in stats]),
         }
-        log_lik = None
-        if m_cfg.log_likelihood:
-
-            @jax.jit
-            def per_sequence(u: Array) -> Array:
-                return batched_loglik(base, manager.unflatten(u), spec, space, pb)
-
-            flat_u = u_draws.reshape(-1, n)
-            ll = jax.lax.map(per_sequence, flat_u)[:, : len(batch.sequences)]
-            log_lik = np.asarray(ll).reshape(chains, m_cfg.draws, -1)
-        versions = _versions()
-        idata = to_inference_data(
-            posterior,
-            sample_stats,
-            log_lik,
-            sequence_ids=list(batch.ids),
-            attrs={"seed": seed, "sampler": "nuts", **versions},
-        )
-        table = summary_table(idata)
-        r_hat = {k: float(v) for k, v in table["r_hat"].items()}
-        ess_bulk = {k: float(v) for k, v in table["ess_bulk"].items()}
-        ess_tail = {k: float(v) for k, v in table["ess_tail"].items()}
-        divergences = int(sample_stats["diverging"].sum())
-
-        # --- the FitResult -----------------------------------------------------------------------
-        mean_theta: Params = {k: jnp.asarray(v.mean(axis=(0, 1))) for k, v in posterior.items()}
-        u_mean = manager.flatten(mean_theta)
-        loglik = float(objective.loglik(u_mean))
-        sd = {k: jnp.asarray(v.reshape(-1, *v.shape[2:]).std(axis=0)) for k, v in posterior.items()}
-        finite_r_hat = [v for v in r_hat.values() if np.isfinite(v)]
-        max_r_hat = max(finite_r_hat) if finite_r_hat else float("nan")  # one chain: R-hat is undefined
-        diagnostics: dict[str, Any] = {
-            "mcmc": {
-                "r_hat": r_hat,
-                "ess_bulk": ess_bulk,
-                "ess_tail": ess_tail,
-                "divergences": divergences,
-                "max_r_hat": max_r_hat,
-                "min_ess_bulk": float(np.nanmin(list(ess_bulk.values()))) if ess_bulk else float("nan"),
-                "sampler": "nuts",
-                "chains": chains,
-                "warmup": m_cfg.warmup,
-                "draws": m_cfg.draws,
-                "target_accept": m_cfg.target_accept,
-                "max_tree_depth": m_cfg.max_tree_depth,
-                "default_priors": m_cfg.default_priors,
-                "versions": versions,
-            },
-            "per_sequence": [
-                {"id": sid, "group": seq.group, "T": int(seq.observations.shape[0])}
-                for sid, seq in zip(batch.ids, batch.sequences, strict=True)
-            ],
-        }
-        if divergences:
-            warnings.warn(f"MCMC: {divergences} divergent transitions", UserWarning, stacklevel=2)
-        return FitResult(
-            estimator="mcmc",
-            params=mean_theta,
-            uparams=u_mean,
-            objective=float(objective.value(u_mean)),
-            loglik=loglik,
-            restarts=start.restarts,
-            converged=bool(max_r_hat <= R_HAT_LIMIT),
-            n_iter=m_cfg.draws,
-            std_errors=sd,
-            diagnostics=diagnostics,
-            spec=spec,
-            prep_stats=first.prep_stats,
-            config_resolved={},
-            posterior_samples=idata,
-        )
+        return dict(theta_draws), sample_stats
 
 
 REGISTRY.register("estimator", MCMCEstimator.name, MCMCEstimator(), provenance=provenance_of(__name__))

@@ -67,6 +67,7 @@ def to_inference_data(
     *,
     sequence_ids: list[str] | None = None,
     attrs: dict[str, Any] | None = None,
+    extra_groups: Mapping[str, Mapping[str, np.ndarray]] | None = None,
 ) -> Any:  # noqa: ANN401
     """Draws (`(chain, draw, *shape)` arrays per parameter name) as an ArviZ object.
 
@@ -76,6 +77,7 @@ def to_inference_data(
         log_likelihood: `(chain, draw, n_sequences)` per-sequence log-likelihoods.
         sequence_ids: coordinate of the `sequence` dimension.
         attrs: free-form attributes (versions, seed, ...).
+        extra_groups: further groups, e.g. `path_samples`: `{"regime_path": (chain, draw, sequence, time)}`.
 
     Raises:
         ImportError: ArviZ is not installed (`pip install 'hsmmkit[bayes]'`).
@@ -91,6 +93,14 @@ def to_inference_data(
         groups["log_likelihood"] = {"loglik": ll}
         dims["loglik"] = ["sequence"]
         coords["sequence"] = np.asarray(sequence_ids if sequence_ids is not None else range(ll.shape[-1]))
+    for group, variables in (extra_groups or {}).items():
+        groups[group] = {k: np.asarray(v) for k, v in variables.items()}
+        for k, v in variables.items():
+            dims[k] = ["sequence", "time"][: np.ndim(v) - 2]
+            coords.setdefault("time", np.arange(np.shape(v)[-1]))
+            coords.setdefault(
+                "sequence", np.asarray(sequence_ids if sequence_ids is not None else range(np.shape(v)[2]))
+            )
     if int(str(az.__version__).split(".")[0]) < 1:  # ArviZ 0.x
         data = az.from_dict(**groups, dims=dims, coords=coords, attrs=attrs or {})
     else:  # ArviZ 1.x (DataTree)

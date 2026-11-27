@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import jax
 import jax.numpy as jnp
 import jax.scipy.special as jsp
 
@@ -97,6 +98,10 @@ class GammaConjugate:
         """Posterior-mean rate as `emission.eta = log rate`."""
         return {"emission.eta": jnp.log(q["a"] / q["b"])}
 
+    def sample_params(self, key: Array, q: dict[str, Array]) -> dict[str, Array]:
+        """One draw of the rate from `Gamma(a, b)` as `emission.eta = log rate` (Gibbs)."""
+        return {"emission.eta": jnp.log(jax.random.gamma(key, q["a"]) / q["b"])}
+
     def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
         """Posterior SD of `emission.eta = log rate` (delta method): `1 / sqrt(a)`."""
         return {"emission.eta": 1.0 / jnp.sqrt(q["a"])}
@@ -130,6 +135,11 @@ class BetaConjugate:
         """Posterior-mean probability as `emission.eta = logit p`."""
         return {"emission.eta": jnp.log(q["a"]) - jnp.log(q["b"])}
 
+    def sample_params(self, key: Array, q: dict[str, Array]) -> dict[str, Array]:
+        """One draw of the probability from `Beta(a, b)` as `emission.eta = logit p` (Gibbs)."""
+        p = jax.random.beta(key, q["a"], q["b"])
+        return {"emission.eta": jnp.log(p) - jnp.log1p(-p)}
+
     def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
         """Posterior SD of `emission.eta = logit p` (delta method): `sqrt(1/a + 1/b)`."""
         return {"emission.eta": jnp.sqrt(1.0 / q["a"] + 1.0 / q["b"])}
@@ -160,6 +170,11 @@ class DirichletConjugate:
     def mean_params(self, q: dict[str, Array]) -> dict[str, Array]:
         """Posterior-mean probabilities as `emission.eta = log(p[1:] / p[0])`."""
         p = q["alpha"] / jnp.sum(q["alpha"], axis=-1, keepdims=True)
+        return {"emission.eta": jnp.log(p[:, 1:]) - jnp.log(p[:, :1])}
+
+    def sample_params(self, key: Array, q: dict[str, Array]) -> dict[str, Array]:
+        """One draw of the probabilities from `Dirichlet(alpha)` as `emission.eta` (Gibbs)."""
+        p = jax.random.dirichlet(key, q["alpha"])
         return {"emission.eta": jnp.log(p[:, 1:]) - jnp.log(p[:, :1])}
 
     def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
@@ -221,6 +236,13 @@ class NormalGamma:
     def mean_params(self, q: dict[str, Array]) -> dict[str, Array]:
         """Posterior mean `m` and `scale = 1 / sqrt(E[tau])` as `emission.mean` / `emission.scale`."""
         return {"emission.mean": q["m"], "emission.scale": jnp.sqrt(q["b"] / q["a"])}
+
+    def sample_params(self, key: Array, q: dict[str, Array]) -> dict[str, Array]:
+        """One draw `tau ~ Gamma(a, b)`, `mean | tau ~ N(m, 1 / (kappa tau))` (Gibbs)."""
+        k1, k2 = jax.random.split(key)
+        tau = jax.random.gamma(k1, q["a"]) / q["b"]
+        mean = q["m"] + jax.random.normal(k2, tau.shape) / jnp.sqrt(q["kappa"] * tau)
+        return {"emission.mean": mean, "emission.scale": 1.0 / jnp.sqrt(tau)}
 
     def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
         """Posterior SD of the mean (`sqrt(b / (kappa (a - 1)))`) and, by the delta method, of the scale."""
