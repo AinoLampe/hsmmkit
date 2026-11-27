@@ -222,7 +222,7 @@ initialization strategy (one E-step there gives the first `q`); restarts follow 
 `from_advance_prob`), `objective = -ELBO`, `loglik` the log-likelihood at those means, and
 `diagnostics["vb"]` has `elbo_trace` and `q_params`. Priors are the weakly informative defaults (Gaussian priors
 scaled to the data: `E[tau] = 1 / var(y)`, `kappa0 = 0.01`; Beta(1, 1); Dirichlet(1)); `use_priors: false` is
-invalid. Expanded engine, `initial_state: uniform`, no covariates, constant step, no fixed / tied / ordered
+invalid; `diagnostics["vb"]["q_params"]` keep the run's state numbering (`relabelled` flags a renumbering of `params`). Expanded engine, `initial_state: uniform`, no covariates, constant step, no fixed / tied / ordered
 parameters; everything else is refused ("VB-EM hybrid available from E13-T05b").
 
 ## E-step accumulators (expanded engine)

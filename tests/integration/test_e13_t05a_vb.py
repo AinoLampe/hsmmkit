@@ -136,3 +136,72 @@ def test_e13_t05a_multi_start_picks_the_best_elbo_and_batches_work(tmp_path: Pat
     elbos = [-float(o) for o in res.restarts["objective"]]
     assert len(elbos) == 3
     assert -res.objective == pytest.approx(max(elbos))
+
+
+def test_e13_t05a_the_elbo_bounds_the_evidence_with_three_regimes(tmp_path: Path) -> None:
+    """N = 3: the Dirichlet jump block (two allowed targets per row) enters the ELBO and the weights."""
+    from hsmmkit.config.schema import parse_project_config
+    from hsmmkit.model.build import BuildInputs, build_model_spec_from
+    from tests.helpers.core_config import core_raw
+
+    raw = core_raw(tmp_path)
+    m = raw["model"]
+    m["n_states"] = 3
+    m["emission"] = {
+        "family": "poisson",
+        "scale_by_dt": False,
+        "params": {"rate": {"mode": "free", "init": [2.0, 5.0, 9.0]}},
+    }
+    m["duration"]["params"]["rate"]["init_mean_sojourn_steps"] = [4.0, 4.0, 4.0]
+    spec = build_model_spec_from(
+        parse_project_config(raw), BuildInputs(n_series=1, cov_names={}, clock="steps", nominal_dt=1.0)
+    )
+    manager = ParamManager(spec.param_specs)
+    theta0 = dict(manager.unflatten(manager.init_u()))
+    rng = np.random.default_rng(3)
+    y = rng.poisson([2, 2, 6, 6, 9, 9, 3]).astype(float)[:, None]
+    from tests.helpers.engine_fixtures import make_dataset
+
+    data = make_dataset(y, np.ones(7))
+    cfg = EstimationSection(method="vb", restarts=0, max_iter=300, tol_f=1e-14)
+    res = VBEstimator().fit(spec, data, cfg, 0, warm_start=manager.flatten(theta0))
+    elbo = -res.objective
+    space, engine, n = build_expanded(spec), ExpandedHMMEngine(), 300_000
+    a = rng.uniform(size=(n, 3))
+    lam = rng.gamma(1.0, 1.0, size=(n, 3))
+    pi = rng.dirichlet(np.ones(2), size=(n, 3))  # each row: Dirichlet(1, 1) over its two targets
+
+    @jax.jit
+    def one(a_i: jnp.ndarray, lam_i: jnp.ndarray, pi_i: jnp.ndarray) -> jnp.ndarray:
+        th = dict(theta0)
+        th["duration.rate"] = -jnp.log1p(-a_i)
+        th["emission.eta"] = jnp.log(lam_i)[:, None]
+        th["transition.pi_rows"] = pi_i
+        return engine.loglik(th, spec, space, data)
+
+    ll = np.asarray(jax.vmap(one)(jnp.asarray(a), jnp.asarray(lam), jnp.asarray(pi)))
+    log_ev = special.logsumexp(ll) - np.log(n)
+    w = np.exp(ll - ll.max())
+    se = np.sqrt(np.var(w / w.mean()) / n)
+    assert elbo <= log_ev + 3 * se + 1e-9
+    assert elbo > log_ev - 4.0
+
+
+def test_e13_t05a_unsupported_parameter_modes_are_refused(tmp_path: Path) -> None:
+    """Bounded / prior parameters (which VB would silently ignore) are refused up front."""
+    import dataclasses
+
+    spec, theta0 = em_models.build(tmp_path, "poisson", "geometric")
+    bounded = tuple(
+        dataclasses.replace(s, mode="bounded", bounds=(0.1, 5.0)) if s.name == "emission.eta" else s
+        for s in spec.param_specs
+    )
+    bad = dataclasses.replace(spec, param_specs=bounded)
+    with pytest.raises(ConfigError, match="bounded"):
+        VBEstimator().fit(
+            bad,
+            em_models.dataset("poisson", 80, 1),
+            EstimationSection(method="vb", restarts=0),
+            0,
+            warm_start=_start(spec, theta0),
+        )

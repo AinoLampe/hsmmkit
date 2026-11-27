@@ -22,7 +22,9 @@ Supported: expanded engine, `initial_state: uniform`, constant step, no covariat
 (Gaussian diagonal / full, Poisson, Bernoulli, Categorical), geometric / negative-binomial durations, jump
 rows (also under a topology without absorbing regimes), `use_priors: true`. Everything else raises a
 `ConfigError` ("VB-EM hybrid available from E13-T05b"). Priors are the weakly informative defaults of
-`docs/guide/estimators.md` (Gaussian priors scaled to the data); the config `prior` entries are not read.
+`docs/math/estimation.md` (Gaussian priors scaled to the data); the config `prior` entries are not read.
+`diagnostics["vb"]["q_params"]` keep the numbering of the run: when `diagnostics["vb"]["relabelled"]` is
+true the fitted `params` were renumbered by ascending scale and `q_params` were not.
 """
 
 from __future__ import annotations
@@ -109,6 +111,13 @@ def check_vb_supported(spec: ModelSpec, pb: PaddedBatch) -> None:
         raise ConfigError(
             f"VB does not support product / mixture emissions ({_HYBRID})", path="model.emission"
         )
+    if int(pb.observations.shape[-1]) > 1 and not getattr(spec.emission, "joint", False):
+        scale_spec = next((s for s in spec.param_specs if s.name == "emission.scale"), None)
+        if scale_spec is not None and len(scale_spec.shape) < 2:
+            raise ConfigError(
+                "VB fits one scale per series; per_series: false is not supported",
+                path="model.emission.per_series",
+            )
     prior = spec.emission.conjugate_prior()
     if prior is None or not hasattr(prior, "kl") or not hasattr(prior, "mean_params"):
         raise ConfigError(
@@ -118,11 +127,14 @@ def check_vb_supported(spec: ModelSpec, pb: PaddedBatch) -> None:
     bad = [
         s.name
         for s in spec.param_specs
-        if s.mode in ("fixed", "tied") or s.tie_group is not None or s.constraint != "none"
+        if s.mode in ("fixed", "tied", "bounded", "prior")
+        or s.tie_group is not None
+        or s.constraint != "none"
     ]
     if bad:
         raise ConfigError(
-            f"VB updates every parameter freely; fixed / tied / ordered parameters are not supported: {bad}",
+            f"VB updates every parameter freely; fixed / bounded / prior / tied / ordered parameters "
+            f"are not supported: {bad}",
             path="model",
         )
 
@@ -150,10 +162,10 @@ class _Context:
         self.prior = _data_prior(spec.emission.conjugate_prior(), pb)
         self.beta_prior = BetaConjugate(1.0, 1.0)
         self.alpha0 = 1.0
+        valid_dt = np.asarray(pb.dt)[np.asarray(pb.valid)]
+        self.dt = float(valid_dt[0]) if valid_dt.size else float(pb.nominal_dt)
         self.layout = space.layout
         self.mask = jnp.asarray(space.layout.target_mask)
-        probe = self.prior.zero_stats if hasattr(self.prior, "zero_stats") else None
-        del probe
         keys = self._q_keys(spec, pb)
         self.spec_vb = dataclasses.replace(spec, emission=VBEmission(spec.emission, keys))  # type: ignore[arg-type]
         self.space_vb = dataclasses.replace(space, transition_fn=self._transition_fn(spec, space))
@@ -163,11 +175,10 @@ class _Context:
     # --- structure -----------------------------------------------------------------------------
 
     def _q_keys(self, spec: ModelSpec, pb: PaddedBatch) -> tuple[str, ...]:
-        n, m = spec.n_states, int(pb.observations.shape[-1])
+        n = spec.n_states
         stats = self._emission_stats(
             pb, SimpleNamespace(gamma_regime=jnp.zeros((*pb.observations.shape[:2], n)))
         )
-        del m
         return tuple(sorted(self.prior.update(stats)))
 
     @staticmethod
@@ -256,7 +267,7 @@ class _Context:
         for name, value in self.prior.mean_params(q["emission"]).items():
             out[name] = jnp.reshape(value, jnp.shape(theta[name]))
         a = q["dur"]["a"] / (q["dur"]["a"] + q["dur"]["b"])
-        for name, value in self.spec.duration.from_advance_prob(a, pb.nominal_dt).items():  # type: ignore[attr-defined]
+        for name, value in self.spec.duration.from_advance_prob(a, self.dt).items():  # type: ignore[attr-defined]
             out[name] = jnp.reshape(value, jnp.shape(theta[name]))
         view = SimpleNamespace(jump=q["jump"])
         return transition_mstep(self.spec, self.space, out, view, False)  # type: ignore[arg-type]
