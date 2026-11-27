@@ -226,6 +226,37 @@ class EMEstimator:
     """Registered estimator `"em"`: EM / ECM with MAP's multi-start and `FitResult` contract."""
 
     name = "em"
+    diagnostics_key = "em"
+
+    def _section(self, cfg: EstimationSection) -> EmCfg:
+        """The option block of this estimator (`estimation.em`)."""
+        return cfg.em if cfg.em is not None else EmCfg()
+
+    def _check(self, spec: ModelSpec, data: PreparedDataset | SequenceBatch) -> None:
+        check_em_supported(spec, data)
+
+    def _space(self, spec: ModelSpec) -> StateSpace:
+        return build_expanded(spec)
+
+    def _engine(self) -> Any:  # noqa: ANN401
+        return ExpandedHMMEngine()
+
+    def _plan(self, spec: ModelSpec, pb: PaddedBatch) -> Plan:
+        return block_plan(spec, pb)
+
+    def _run(
+        self,
+        theta0: Params,
+        spec: ModelSpec,
+        space: StateSpace,
+        pb: PaddedBatch,
+        cfg: EstimationSection,
+        plan: Plan,
+    ) -> tuple[Params, list[float], bool, int]:
+        return run_em(theta0, spec, space, pb, cfg, plan=plan)
+
+    def _final(self, theta: Params, spec: ModelSpec, space: StateSpace, pb: PaddedBatch) -> float:
+        return _final_loglik(theta, spec, space, pb)
 
     def fit(
         self,
@@ -254,9 +285,9 @@ class EMEstimator:
             else:
                 batch = data
                 _check_groups(spec, batch)
-        check_em_supported(spec, batch if batch is not None else data)
+        self._check(spec, batch if batch is not None else data)
         manager = ParamManager(spec.param_specs)
-        space = build_expanded(spec)
+        space = self._space(spec)
         segments: np.ndarray | None = None
         if batch is not None:
             pb = batch.padded()
@@ -267,8 +298,8 @@ class EMEstimator:
             pb = SequenceBatch.of(data).padded()
             init_data = observed_rows(data)
             first = data
-        em_cfg = cfg.em if cfg.em is not None else EmCfg()
-        plan = block_plan(spec, pb)
+        em_cfg = self._section(cfg)
+        plan = self._plan(spec, pb)
         starts: list[tuple[str, Params]] = []
         if em_cfg.warm_start_from == "map":
             optimum = map_fit(spec, data if batch is None else batch, cfg, seed)
@@ -289,8 +320,8 @@ class EMEstimator:
         runs: list[tuple[Params, float]] = []
         for i, (method, theta0) in enumerate(starts):
             started = time.perf_counter()
-            theta, trace, converged, n_iter = run_em(theta0, spec, space, pb, cfg, plan=plan)
-            ll = _final_loglik(theta, spec, space, pb)
+            theta, trace, converged, n_iter = self._run(theta0, spec, space, pb, cfg, plan)
+            ll = self._final(theta, spec, space, pb)
             runs.append((theta, ll))
             rows.append(
                 {
@@ -314,7 +345,7 @@ class EMEstimator:
         theta, relabelled = relabel_states(theta, spec, first)
         u = manager.flatten(theta)
         diagnostics: dict[str, Any] = {
-            "em": {
+            self.diagnostics_key: {
                 **dict(plan),
                 "tempering": em_cfg.tempering.model_dump(),
                 "ecm_inner_iter": em_cfg.ecm.inner_iter,
@@ -322,14 +353,14 @@ class EMEstimator:
             }
         }
         if batch is not None:
-            table = _per_sequence_table(ExpandedHMMEngine(), theta, spec, space, batch)
+            table = _per_sequence_table(self._engine(), theta, spec, space, batch)
             ll = float(sum(r["loglik"] for r in table))
             diagnostics["per_sequence"] = table
             diagnostics["initial_groups"] = [g for g in batch.group_names] if spec.n_groups > 1 else None
         elif relabelled:
-            ll = float(ExpandedHMMEngine().loglik(theta, spec, space, canonical_data(data)))  # type: ignore[arg-type]
+            ll = float(self._engine().loglik(theta, spec, space, canonical_data(data)))  # type: ignore[arg-type]
         return FitResult(
-            estimator="em",
+            estimator=self.name,  # type: ignore[arg-type]
             params=theta,
             uparams=u,
             objective=-ll,

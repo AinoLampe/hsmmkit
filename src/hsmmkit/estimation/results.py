@@ -15,9 +15,9 @@ from hsmmkit.utils.typing import Array
 
 @dataclass(frozen=True)
 class FitResult:
-    """The result of an estimation run (`estimator`: `"map"` or `"em"`)."""
+    """The result of an estimation run (`estimator`: `"map"`, `"em"` or `"gem"`)."""
 
-    estimator: Literal["map", "em"]
+    estimator: Literal["map", "em", "gem"]
     params: Params
     uparams: Array
     objective: float

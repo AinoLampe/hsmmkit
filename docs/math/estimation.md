@@ -178,6 +178,25 @@ L-BFGS; logged as a deviation). Parity of EM with MAP:
 `FitResult(estimator="em")` has the same
 fields as a MAP result and `restarts` gains `loglik_trace`.
 
+## GEM (`estimation.method: gem`, explicit engine)
+
+`GEMEstimator` (registry kind `estimator`) is EM on the explicit-duration engine (Guedon 2003): `explicit_estep`
+gives the segment counts `eta` (complete segments), `eta_censored` (the final segment covering `T`) and `eta_first`
+(the residual-life first segment under `left_censored`), the jump counts `xi` and `rho_post`. M-steps: emissions as
+for EM (closed form, else ECM); jumps `pi_ij ~ xi_ij` (+ Dirichlet pseudo-counts under `use_priors`; also under a
+topology); `initial_state: free` from `rho_post`; geometric durations
+`a = n_done / (n_done + sum (d - 1)(eta + eta_first + eta_censored))`, `rate = -log(1 - a)/dt`.
+
+**Nonparametric pmf with censoring.** With `S(d) = sum_{d' >= d} p(d')`,
+`Q(p) = sum_d c_d log p_d + sum_d w_d log S(d) - n_first log mu(p)`, `c = eta (+ alpha - 1)`,
+`w = eta_censored + eta_first`, `mu = sum d p_d`. Jensen on `log S` and the tangent of the convex `-log mu` give the
+minorizer `p_d = (c_d + p0_d sum_{d' <= d} w_{d'} / S0(d')) / (nu + lambda d)`, `lambda = n_first / mu0`, `nu` from
+`sum p = 1` by bisection; it is iterated to `||dp||_1 < 1e-12` (at most 200 steps) and never decreases `Q`
+(without censoring it is `p ~ eta`). A segment that is both first and last is counted as a plain survival term
+(an approximation, negligible for `T >> D_max`). Parametric durations other than geometric (E13-T03b), duration or
+transition covariates, duration-dependent jumps, tempering and tied / ordered duration or transition parameters are
+refused with a `ConfigError`. `diagnostics["gem"]` names the method per block.
+
 ## E-step accumulators (expanded engine)
 
 `engine.estep.expanded_estep` computes everything EM and VB need that is not a family sufficient statistic from one
@@ -236,4 +255,5 @@ Explicit engine: the last segment `(s, j)` is drawn from `inner + term` (right-c
 | restarts | `FitResult.restarts` (one row per start) |
 | standard errors | `estimation.report.std_errors` |
 | EM | `estimation.em.EMEstimator`, `em_fit`, `estimation.mstep` |
+| GEM | `estimation.gem.GEMEstimator`, `censored_pmf` |
 | E-step counts | `engine.estep.expanded_estep`, `ExpandedEStats` |
