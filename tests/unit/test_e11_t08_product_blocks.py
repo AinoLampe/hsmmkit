@@ -191,7 +191,7 @@ def test_e11_t08_independent_blocks_reproduce_the_per_series_product_bitwise(tmp
 
 
 def test_e11_t08_m_step_partial_has_holes_for_blocks_without_a_closed_form(tmp_path: Path) -> None:
-    """A block without a closed-form M-step (Student-t): `m_step` is `None`, `m_step_partial` keeps the others."""
+    """A block without a closed-form M-step (Student-t): `m_step` is `None`, `m_step_partial` keeps others."""
     diag, pois = StudentTFamily(), PoissonFamily(scale_by_dt=False)
     prod = BlockProductEmission.of((diag, pois), ((0,), (1,)))
     rng = np.random.default_rng(3)
