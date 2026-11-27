@@ -13,7 +13,8 @@ Each is accumulated inside one scan over `s` (or `tau`) into `(N, D_max)` / `(N,
 `(T, N, D_max)` array exists unless `eta_entry` is requested (entry-time duration covariates). The
 segment that covers `T` is right-censored (survival term), so a segment ending exactly at `T` counts as
 censored with `d = T - s <= D_max`. Left-censoring (E12-T04): the closed first segment (`s = 0`,
-residual-life pmf) is `eta_first`, not `eta`; a first segment that is also the last one is `eta_censored`.
+residual-life pmf) is `eta_first`, not `eta` (nor `eta_entry`); a first segment that is also the last one is
+`eta_censored`.
 
 Mass balance: `sum_{j, d} d (eta + eta_censored + eta_first)[j, d] = T_b` per sequence, and
 `sum_j xi[i, j] = sum_d (eta + eta_first)[i, d]`.
@@ -143,7 +144,7 @@ def _estep_one(
         eta = eta + jnp.where(first, 0.0, closed)
         eta_f = eta_f + jnp.where(first, closed, 0.0)
         eta_c = eta_c + cens
-        return (eta, eta_c, eta_f), ((closed, final) if entry else None)
+        return (eta, eta_c, eta_f), ((jnp.where(first, 0.0, closed), final) if entry else None)
 
     zeros = jnp.zeros((n, d_max))
     (eta, eta_c, eta_f), per_start = jax.lax.scan(seg, (zeros, zeros, zeros), jnp.arange(t_len))
@@ -218,8 +219,9 @@ def explicit_estep(
 
     Raises:
         ConfigError: expanded engine, or duration-dependent jumps.
-        NumericalError: `T N D_max > 5e7` with entry-time covariates (`eta_entry` needs the full table), or a
-            non-finite log-likelihood of a non-empty sequence.
+        NumericalError: `B T N D_max > 5e7` when a `(T, N, D_max)` table per sequence is needed (entry-time
+            covariates, left-censoring, supervision), or a non-finite log-likelihood of a non-empty sequence
+            (unlike the batched engines, which raise `ConstraintError`, this is a `NumericalError`).
     """
     del engine
     if spec.engine != "explicit":
@@ -232,12 +234,19 @@ def explicit_estep(
             "(use the expanded (regime, elapsed) chain)",
             path="model.duration.duration_dependent_jumps",
         )
-    t_max = int(pb.observations.shape[1])
+    if space.index.n_expanded != spec.n_states * spec.d_max:
+        raise ConfigError(
+            "state space does not match the explicit engine; build it with build_explicit(spec)",
+            path="model.engine",
+        )
+    b_pad, t_max = int(pb.observations.shape[0]), int(pb.observations.shape[1])
     entry = bool(pb.cov_duration.shape[-1] > 0 and getattr(spec.duration, "cov_idx", ()))
-    if entry and t_max * spec.n_states * spec.d_max > MAX_CELLS:
+    supervised = pb.labels is not None or pb.boundary_code is not None
+    cells = b_pad * t_max * spec.n_states * spec.d_max
+    if cells > MAX_CELLS and (entry or spec.left_censored or supervised):
         raise NumericalError(
-            f"T*N*D_max = {t_max * spec.n_states * spec.d_max:.3g} > {MAX_CELLS:.0e}: "
-            "eta_entry needs the full table",
+            f"B*T*N*D_max = {cells:.3g} > {MAX_CELLS:.0e}: a (T, N, D_max) table per sequence is needed "
+            "(entry-time covariates, left-censoring or supervision); use fewer or shorter sequences",
             path="model.d_max",
         )
     stats: ExplicitEStats = _estep_batch(params, spec, space, pb, entry)

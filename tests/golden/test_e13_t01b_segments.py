@@ -6,7 +6,6 @@ import dataclasses
 from typing import Any
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 import pytest
 from jax.extend.core import jaxprs_in_params
@@ -168,7 +167,6 @@ def test_e13_t01b_no_t_n_d_array_without_entry_covariates() -> None:
     walk(jaxpr.jaxpr)
     assert shapes
     assert not [sh for sh in shapes if int(np.prod(sh)) >= t_max * n * d and t_max in sh and d in sh]
-    assert jnp.asarray(0).dtype is not None
 
 
 def test_e13_t01b_rejects_the_expanded_engine_and_dd_jumps() -> None:
@@ -181,3 +179,23 @@ def test_e13_t01b_rejects_the_expanded_engine_and_dd_jumps() -> None:
         explicit_estep(
             ENGINE, sc.theta, dataclasses.replace(sc.spec, duration_dependent_jumps=True), sc.space, pb
         )
+
+
+def test_e13_t01b_entry_covariates_with_left_censoring_exclude_the_first_segment() -> None:
+    """`eta_entry` follows `eta`: the closed left-censored first segment is in `eta_first` only."""
+    sc = make_explicit_scenario(3, 4, 40, family="negbin", n_cov_d=2, seed=4)
+    sc = dataclasses.replace(sc, spec=dataclasses.replace(sc.spec, left_censored=True))
+    stats = _stats(sc, [sc.data])
+    _close(np.asarray(stats.eta_entry).sum(axis=(0, 1)), stats.eta, 1e-9)
+    assert float(np.asarray(stats.eta_first).sum()) > 0.0
+
+
+def test_e13_t01b_single_step_sequences_and_a_mismatched_space() -> None:
+    """`T = 1`: one censored segment of elapsed 1, no jumps; a space of another model is refused."""
+    sc = make_explicit_scenario(3, 4, 12, family="geometric", seed=3)
+    stats = _stats(sc, [sc.data.window(0, 1), sc.data.window(5, 12)])
+    assert float(np.asarray(stats.eta_censored)[:, 0].sum()) > 0.9  # the T = 1 sequence's single segment
+    assert np.asarray(stats.xi).shape == (3, 3)
+    other = make_explicit_scenario(3, 5, 12, family="geometric", seed=3)
+    with pytest.raises(ConfigError, match="build_explicit"):
+        explicit_estep(ENGINE, sc.theta, sc.spec, other.space, SequenceBatch.of(sc.data).padded())
