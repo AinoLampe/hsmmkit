@@ -3,10 +3,9 @@
 Concept refs: Part II §14.6 (ECM). Components without a closed-form M-step (a family whose `m_step` is `None`,
 covariate links, irregular steps, tied or ordered parameters) are updated one block at a time with the other
 blocks fixed. A block is a name prefix (`emission.`, `duration.`, `transition.`); its unconstrained
-coordinates
-`u_b` (`ParamManager` over the block's specs, so ties and orderings are handled by the layout) are
-moved by a few
-BFGS iterations on `-Q_b(theta(u_b))` (plus `log p + log|J|` when `use_priors`, the MAP convention of
+coordinates `u_b` (`ParamManager` over the block's specs, so ties and orderings are handled by the layout)
+are moved by a few BFGS iterations on `-Q_b(theta(u_b))` (plus `log p + log|J|` when `use_priors`, the
+MAP convention of
 `estimation.objective`), and the step is accepted only if the objective decreased: ECM never decreases the
 log-likelihood.
 

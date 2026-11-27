@@ -102,7 +102,7 @@ def test_e13_t02b_warm_start_from_map_starts_at_the_map_optimum(tmp_path: Path) 
     result = EMEstimator().fit(spec, data, cfg, 3)
     assert list(result.restarts["init_method"]) == ["map"]
     trace = result.restarts["loglik_trace"].iloc[0]
-    assert np.all(np.diff(trace) >= -(1e-9))
+    assert np.all(np.diff(trace) >= -1e-10)
 
 
 def test_e13_t02b_ecm_on_a_multi_sequence_batch_with_covariates() -> None:
@@ -114,7 +114,7 @@ def test_e13_t02b_ecm_on_a_multi_sequence_batch_with_covariates() -> None:
     manager = ParamManager(spec.param_specs)
     result = EMEstimator().fit(spec, batch, cfg, 0, warm_start=manager.flatten(sc.theta))
     trace = np.asarray(result.restarts["loglik_trace"].iloc[0])
-    assert np.all(np.diff(trace) >= -1e-8)
+    assert np.all(np.diff(trace) >= -1e-10)
     assert trace[-1] > trace[0]
     info = result.diagnostics["em"]
     assert info["duration"] == "ecm"

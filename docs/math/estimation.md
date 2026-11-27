@@ -168,7 +168,11 @@ the log-likelihood stays monotone. `FitResult.diagnostics["em"]` names `closed-f
 
 **Tempering.** `estimation.em.tempering: {enabled, beta0, steps}` runs the first `steps` E-steps on `beta * ell`,
 `beta_k = beta0^(1 - k/steps)` (deterministic annealing), then `beta = 1`; monotonicity is checked from `beta = 1` on.
-`estimation.em.warm_start_from: map` runs EM from the MAP optimum (parity suite). Parity of EM with MAP:
+`estimation.em.warm_start_from: map` runs EM from the best MAP start instead of the configured restarts (parity suite).
+With `use_priors`, ECM blocks maximize `Q + log p + log|J|` in unconstrained space while closed-form blocks use the
+Dirichlet pseudo-counts on the jump rows only (emission priors are ignored there); `bounded` closed-form results are
+clipped, which is exact for separable `Q` only. The inner optimizer is `jax.scipy.optimize` BFGS (the ticket says
+L-BFGS; logged as a deviation). Parity of EM with MAP:
 `docs/generated/em_parity.md`.
 
 `FitResult(estimator="em")` has the same

@@ -3,16 +3,15 @@
 Concept refs: Part II §14.6, §15.3. One iteration is one `expanded_estep` (E13-T01a: expected counts without a
 `(T, S, S)` array, padded batches, supervision) followed by the M-steps of `estimation.mstep`; the whole
 iteration is one `jit`-compiled function. Blocks (emission, duration, transition) with a closed
-form are updated
-exactly; blocks without one (a family whose `m_step` is `None`, covariate links, irregular steps, tied or
+form are updated exactly; blocks without one (a family whose `m_step` is `None`, covariate links,
+irregular steps, tied or
 ordered parameters) by ECM (`estimation.ecm`: a few BFGS steps on the block's expected complete-data
 log-likelihood, accepted only if it improves). `FitResult.diagnostics["em"]` records which was used.
 
-Tempering (`estimation.em.tempering`): the E-step runs on `beta * ell` with `beta_k = beta0^(1 - k
-/ steps)` for the
-first `steps` iterations, then `beta = 1`; convergence and the monotonicity check apply from the
-first `beta = 1`
-iteration on. Otherwise stop when the log-likelihood gain is `<= tol_f * max(1, |loglik|)` or after `max_iter`
+Tempering (`estimation.em.tempering`): the E-step runs on `beta * ell` with `beta_k = beta0^(1 - k / steps)`
+for the first `steps` iterations, then `beta = 1`; convergence and the monotonicity check apply from the
+first `beta = 1` iteration on (the `beta < 1` entries stay in `loglik_trace` and need not be monotone).
+Otherwise stop when the log-likelihood gain is `<= tol_f * max(1, |loglik|)` or after `max_iter`
 iterations. Monotonicity is asserted when `HSMMKIT_DEBUG=1` (or `debug=True`): a decrease beyond
 `1e-10` raises
 `NumericalError`. Multi-start follows MAP (`cfg.restarts` starts cycled over `cfg.init`, same keys, best final

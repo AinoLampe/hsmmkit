@@ -50,7 +50,8 @@ def test_e13_t02b_em_parity_with_map(tmp_path: Path, row: tuple[str, str, dict[s
         for k, v in mp.params.items()
         if k in em.params and np.asarray(v).size
     )
-    _RESULTS.append((family, duration, "LTR" if extra else "full", plan["emission"], rel_ll, worst, "ok"))
+    status = "ok" if rel_ll <= 1e-6 and worst <= 1e-4 else "FAILED"
+    _RESULTS.append((family, duration, "LTR" if extra else "full", plan["emission"], rel_ll, worst, status))
     _write()
     assert rel_ll <= 1e-6
     for name, value in mp.params.items():
@@ -72,9 +73,8 @@ def _write() -> None:
     ]
     lines += [
         "",
-        "Not in the table: `msar` and `mixture` (they need own preparer / labelling",
-        "fixtures; their EM = MAP agreement is not in this table (Follow-up), "
-        "covariate-link rows (ECM, see `test_e13_t02b_ecm.py`).",
+        "Not in the table: `msar` and `mixture` rows (they need their own preparer / component-labelling",
+        "fixtures; recorded as a Follow-up) and covariate-link rows (ECM, see `test_e13_t02b_ecm.py`).",
         "",
     ]
     _REPORT.parent.mkdir(parents=True, exist_ok=True)
