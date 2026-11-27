@@ -25,6 +25,7 @@ SCOPE_PACKAGES = (
     "evaluation",
     "persistence",
     "online",
+    "selection",
     "cli",
     "utils",
 )

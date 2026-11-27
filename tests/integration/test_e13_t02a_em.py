@@ -125,7 +125,7 @@ def test_e13_t02a_topology_masks_and_labels(tmp_path: Path) -> None:
 
 
 def test_e13_t02a_the_em_gate_row_is_removed(tmp_path: Path) -> None:
-    """`em` builds; every estimator gate row (`em`, `gem`, `vb`, `mcmc`) is gone; CV and grid stay."""
+    """`em` builds; every estimator gate row (`em`, `gem`, `vb`, `mcmc`) is gone; the grid row stays."""
     from hsmmkit.config import gates
     from hsmmkit.config.schema import parse_project_config
     from tests.helpers.core_config import core_raw
@@ -138,8 +138,8 @@ def test_e13_t02a_the_em_gate_row_is_removed(tmp_path: Path) -> None:
         raw["estimation"]["method"] = method
         gates.check(parse_project_config(raw))
         assert f"estimation.method={method}" not in gates.GATES
-    raw["evaluation"]["cv"] = {"splitter": "sequence_kfold", "folds": 3}
-    with pytest.raises(ConfigError, match="E14-T01"):
+    raw["evaluation"]["grid"] = {"n_states": [2, 3]}
+    with pytest.raises(ConfigError, match="E14-T02"):
         gates.check(parse_project_config(raw))
 
 

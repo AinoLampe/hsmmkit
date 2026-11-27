@@ -81,16 +81,16 @@ def test_e10_t10_validation_is_not_gated(tmp_path: Path) -> None:
         parse_project_config(_case(row))
 
 
-def test_e10_t10_appendix_h_build_raises_the_first_gate_in_deterministic_order() -> None:
-    """Appendix H builds into `evaluation.cv` -> E14-T01 first (the order of `GATES`)."""
-    cfg = parse_project_config(appendix_h())
+def test_e10_t10_appendix_h_has_no_gate_left_but_a_grid_still_raises_its_ticket() -> None:
+    """Appendix H builds once its features have landed; the grid gate remains until E14-T02."""
+    assert gates.used_gates(parse_project_config(appendix_h())) == []
+    cfg = parse_project_config(_case("evaluation.grid"))
     paths = [p for p, _ in gates.used_gates(cfg)]
-    assert paths[0] == "evaluation.cv"
-    assert paths == [p for p in gates.GATES if p in paths]  # GATES order
+    assert paths == ["evaluation.grid"]
     with pytest.raises(ConfigError) as info:
         build_model_spec_from(cfg, INPUTS)
-    assert info.value.path == "evaluation.cv"
-    assert "E14-T01" in str(info.value)
+    assert info.value.path == "evaluation.grid"
+    assert "E14-T02" in str(info.value)
 
 
 def test_e10_t10_removing_a_row_lets_the_key_through(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,7 +102,7 @@ def test_e10_t10_removing_a_row_lets_the_key_through(monkeypatch: pytest.MonkeyP
 
 def test_e10_t10_gates_do_not_mutate_the_config() -> None:
     """`check` only reads."""
-    cfg = parse_project_config(appendix_h())
+    cfg = parse_project_config(_case("evaluation.grid"))
     before = copy.deepcopy(cfg.model_dump())
     with pytest.raises(ConfigError):
         gates.check(cfg)
