@@ -97,6 +97,10 @@ class GeometricDuration:
         a = advance_prob_entry(theta["duration.rate"], nominal_dt, None, None)
         return nominal_dt / a
 
+    def from_advance_prob(self, a: Array, nominal_dt: float) -> Params:
+        """Invert `a = 1 - exp(-rate dt)` (constant step, no covariates): `rate = -log(1 - a) / dt`."""
+        return {"duration.rate": -jnp.log1p(-a) / nominal_dt}
+
     def init_from_mean_sojourn(self, mean_steps: Array, nominal_dt: float) -> Params:
         """`rate_i = 1 / (mean_steps_i * nominal_dt)`."""
         return {"duration.rate": 1.0 / (mean_steps * nominal_dt)}

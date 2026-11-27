@@ -539,7 +539,11 @@ class GaussianFamily(BaseEmission):
         `emission.mean` and the Cholesky factor of `Sigma + 1e-10 mean(diag Sigma) I` (`emission.chol`).
         Anything else: `None`.
         """
-        if not self.joint or not isinstance(stats, dict) or "s1" not in stats:
+        if not isinstance(stats, dict):
+            return None
+        if not self.joint:
+            return self._m_step_diag(stats)
+        if "s1" not in stats:
             return None
         n, w_s, s1, s2 = stats["n"], stats["w_s"], stats["s1"], stats["s2"]
         mu = s1 / w_s[:, None]
@@ -552,6 +556,21 @@ class GaussianFamily(BaseEmission):
         sigma = sigma + jitter[:, None, None] * jnp.eye(mu.shape[-1])
         chol = jnp.linalg.cholesky(sigma)
         return {self.mean_name(): mu, "emission.chol": pack_lower(chol)}
+
+    def _m_step_diag(self, stats: dict[str, Array]) -> dict[str, Array] | None:
+        """Closed-form diagonal-Gaussian maximizer (covariate-free, one series; `None` otherwise).
+
+        With `s = dt` if `scale_by_dt` else `1`: `m = w_y / w_s`,
+        `scale^2 = (w_y2_s - 2 m w_y + m^2 w_s) / w`, and `mean = m + scale^2 / 2` under the Ito correction
+        (`m = mean - scale^2 / 2`).
+        """
+        if self.mean_idx or self.scale_idx or "w" not in stats:
+            return None
+        m = stats["w_y"] / stats["w_dt"]
+        var = (stats["w_y2_dt"] - 2.0 * m * stats["w_y"] + m**2 * stats["w_dt"]) / stats["w"]
+        var = jnp.maximum(var, 1e-300)
+        mean = m + 0.5 * var if self.ito_correction else m
+        return {self.mean_name(): mean, self.scale_name(): jnp.sqrt(var)}
 
     def conjugate_prior(self) -> NormalWishart | None:
         """Normal-Wishart prior of a `full` covariance (`None` for the diagonal family).

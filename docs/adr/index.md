@@ -23,6 +23,7 @@ Part II, or raised during implementation) are added by the tickets that need the
 | [0014](0014-two-repo-split.md) | Two repositories: `hsmmkit` library and `regimekit` application (accepted) |
 | [0015](0015-clock-registry.md) | Clock registry; `trading` in the finance application |
 | [0016](0016-config-extension.md) | Registries and config subclassing instead of the `profile` key |
+| [0018](0018-estimator-peers.md) | EM / GEM / VB / MCMC as peers of MAP behind one `Estimator` interface (accepted) |
 | [0019](0019-supervision-masks.md) | Supervision (labels, boundaries) as engine masks |
 | [0020](0020-hungarian.md) | Vendored Hungarian algorithm instead of scipy at run time |
 | [0021](0021-multi-sequence.md) | Multi-sequence data: `vmap` over single-sequence engines, length buckets |

@@ -147,6 +147,20 @@ group; `FitResult.diagnostics["initial_groups"]` lists the group names (sorted, 
 fallback (and a warning) for a group the fit has not seen. A `B = 1` batch without groups is fitted as the single
 sequence it holds, so its `uparams` equal the single-sequence fit bit for bit.
 
+## EM (`estimation.method: em`)
+
+`EMEstimator` (registry kind `estimator`, ADR-0018) runs Baum-Welch on the expanded engine: one `expanded_estep`
+and the closed-form M-steps per iteration, compiled as one function. M-steps: emissions through the family's
+`sufficient_stats` / `m_step` (Gaussian diagonal and full, Poisson, Bernoulli, Categorical); the phase advance
+`a_k = advance_k / occupancy_k`, `rate = -log(1 - a_k) / dt` (geometric / negative-binomial durations, constant
+step); the jump rows `pi_rj ~ jump[r, j]` (+ the Dirichlet pseudo-counts `alpha - 1` when `use_priors`), also under a
+topology (`transition.a`); `initial_state: free` from `gamma1`. `fixed` entries are kept and `bounded` ones clipped.
+The log-likelihood is non-decreasing (`HSMMKIT_DEBUG=1` raises on a decrease beyond `1e-10`); it stops when the gain
+is `<= tol_f max(1, |loglik|)` or at `max_iter`. Multi-start uses MAP's init strategies and keys, the best final
+log-likelihood wins. Components without a closed form (covariate links, tied parameters, irregular steps, families
+whose `m_step` is `None`) raise a `ConfigError` naming E13-T02b (ECM). `FitResult(estimator="em")` has the same
+fields as a MAP result and `restarts` gains `loglik_trace`.
+
 ## E-step accumulators (expanded engine)
 
 `engine.estep.expanded_estep` computes everything EM and VB need that is not a family sufficient statistic from one
@@ -204,5 +218,5 @@ Explicit engine: the last segment `(s, j)` is drawn from `inner + term` (right-c
 | fit | `hsmmkit.estimation.fit(spec, data, cfg, seed)` |
 | restarts | `FitResult.restarts` (one row per start) |
 | standard errors | `estimation.report.std_errors` |
-| EM | `estimation.em.em_fit`, `GBMFamily.sufficient_stats` |
+| EM | `estimation.em.EMEstimator`, `em_fit`, `estimation.mstep` |
 | E-step counts | `engine.estep.expanded_estep`, `ExpandedEStats` |

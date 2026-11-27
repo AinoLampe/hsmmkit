@@ -112,6 +112,7 @@ nav:
       - "0014 Two-repository split": adr/0014-two-repo-split.md
       - "0015 Clock registry": adr/0015-clock-registry.md
       - "0016 Config extension": adr/0016-config-extension.md
+      - "0018 Estimators as peers": adr/0018-estimator-peers.md
       - "0019 Supervision masks": adr/0019-supervision-masks.md
       - "0020 Vendored Hungarian": adr/0020-hungarian.md
       - "0021 Multi-sequence batches": adr/0021-multi-sequence.md

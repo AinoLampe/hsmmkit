@@ -23,7 +23,7 @@ from hsmmkit.estimation.optimizers import minimize
 from hsmmkit.estimation.results import FitResult
 from hsmmkit.model.lattice import has_identifiability_guard, post_sort_states
 from hsmmkit.model.params.manager import ParamManager
-from hsmmkit.plugins import REGISTRY
+from hsmmkit.plugins import REGISTRY, provenance_of
 from hsmmkit.statespace.builders import build_expanded, build_explicit
 from hsmmkit.utils.errors import ConfigError, NumericalError
 from hsmmkit.utils.jax_setup import setup as jax_setup
@@ -87,6 +87,43 @@ def _check_groups(spec: ModelSpec, batch: SequenceBatch) -> None:
             f"the model has {spec.n_groups} initial-distribution groups but the batch has {len(names)}",
             path="model.initial_groups",
         )
+
+
+def relabel_states(theta: Params, spec: ModelSpec, first: PreparedDataset) -> tuple[Params, bool]:
+    """Fix label switching by ascending scale when the model has no identifiability guard (shared with EM).
+
+    Returns `(theta, changed)`; supervision (`first.labels`) fixes the numbering, so nothing is relabelled.
+    """
+    if not has_identifiability_guard(spec) and first.labels is not None:
+        # regime ids of `data.labels` / boundaries refer to the current numbering: do not relabel (E12-T06)
+        warnings.warn(
+            "no identifiability guard, but data.labels fix the regime numbering: the fitted regimes are not "
+            "relabelled by scale",
+            UserWarning,
+            stacklevel=3,
+        )
+        return theta, False
+    if has_identifiability_guard(spec):
+        return theta, False
+    scale_name = next(
+        (
+            name
+            for name in theta
+            if name in ("emission.scale", "emission.sigma", "emission.s", "emission.chol", "emission.eta")
+        ),
+        "emission.scale",
+    )
+    sort_hook = getattr(spec.emission, "default_sort_name", None)
+    if sort_hook is not None and sort_hook(theta) is not None:
+        scale_name = sort_hook(theta)
+    warnings.warn(
+        f"no identifiability guard (no fixed or ordered emission location/scale spec): "
+        f"relabelling states by ascending {scale_name} to fix label switching",
+        UserWarning,
+        stacklevel=3,
+    )
+    sorted_theta, _ = post_sort_states(theta, spec, by=scale_name)
+    return sorted_theta, True
 
 
 def fit(
@@ -180,33 +217,8 @@ def fit(
     theta = manager.unflatten(best.u)
     u = best.u
     first = data if isinstance(data, PreparedDataset) else data.sequences[0]
-    if not has_identifiability_guard(spec) and first.labels is not None:
-        # regime ids of `data.labels` / boundaries refer to the current numbering: do not relabel (E12-T06)
-        warnings.warn(
-            "no identifiability guard, but data.labels fix the regime numbering: the fitted regimes are not "
-            "relabelled by scale",
-            UserWarning,
-            stacklevel=2,
-        )
-    elif not has_identifiability_guard(spec):
-        scale_name = next(
-            (
-                name
-                for name in theta
-                if name in ("emission.scale", "emission.sigma", "emission.s", "emission.chol", "emission.eta")
-            ),
-            "emission.scale",
-        )
-        sort_hook = getattr(spec.emission, "default_sort_name", None)
-        if sort_hook is not None and sort_hook(theta) is not None:
-            scale_name = sort_hook(theta)
-        warnings.warn(
-            f"no identifiability guard (no fixed or ordered emission location/scale spec): "
-            f"relabelling states by ascending {scale_name} to fix label switching",
-            UserWarning,
-            stacklevel=2,
-        )
-        theta, _ = post_sort_states(theta, spec, by=scale_name)
+    theta, relabelled = relabel_states(theta, spec, first)
+    if relabelled:
         u = manager.flatten(theta)
 
     # canonical data: the engine's own kernel, without a retrace per walk-forward fold
@@ -245,3 +257,23 @@ def fit(
         prep_stats=data.prep_stats,
         config_resolved={},
     )
+
+
+class MapEstimator:
+    """Registered estimator `"map"`: the multi-start L-BFGS / Adam MAP fit (`fit`)."""
+
+    name = "map"
+
+    def fit(
+        self,
+        spec: ModelSpec,
+        data: PreparedDataset | SequenceBatch,
+        cfg: EstimationSection,
+        seed: int,
+        warm_start: Array | None = None,
+    ) -> FitResult:
+        """`fit(spec, data, cfg, seed, warm_start)`."""
+        return fit(spec, data, cfg, seed, warm_start)
+
+
+REGISTRY.register("estimator", MapEstimator.name, MapEstimator(), provenance=provenance_of(__name__))
