@@ -289,6 +289,12 @@ The whole resolved configuration of the domain-neutral core.
 | `chains` | `int` | `4` |
 | `warmup` | `int` | `1000` |
 | `draws` | `int` | `1000` |
+| `target_accept` | `float` | `0.8` |
+| `max_tree_depth` | `int` | `10` |
+| `chain_method` | `'sequential' \| 'vectorized'` | `'sequential'` |
+| `default_priors` | `bool` | `True` |
+| `jitter` | `float` | `0.05` |
+| `log_likelihood` | `bool` | `True` |
 
 ## `forecast.covariate_forecaster`
 

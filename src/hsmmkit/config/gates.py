@@ -19,7 +19,6 @@ Gate = tuple[Callable[[ProjectConfig], bool], str]
 
 
 GATES: dict[str, Gate] = {
-    "estimation.method=mcmc": (lambda c: c.estimation.method == "mcmc", "E13-T06a"),
     "evaluation.cv": (lambda c: c.evaluation.cv is not None, "E14-T01"),
     "evaluation.grid": (lambda c: c.evaluation.grid is not None, "E14-T02"),
 }

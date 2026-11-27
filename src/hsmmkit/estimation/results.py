@@ -15,9 +15,9 @@ from hsmmkit.utils.typing import Array
 
 @dataclass(frozen=True)
 class FitResult:
-    """The result of an estimation run (`estimator`: `"map"`, `"em"` or `"gem"`)."""
+    """The result of an estimation run (`estimator`: `"map"`, `"em"`, `"gem"`, `"vb"` or `"mcmc"`)."""
 
-    estimator: Literal["map", "em", "gem", "vb"]
+    estimator: Literal["map", "em", "gem", "vb", "mcmc"]
     params: Params
     uparams: Array
     objective: float
@@ -30,5 +30,7 @@ class FitResult:
     spec: ModelSpec
     prep_stats: PrepStats
     config_resolved: dict[str, Any]
+    posterior_samples: Any = None
+    """ArviZ posterior draws (`InferenceData` / `DataTree`) of an MCMC fit; not persisted."""
     pruned_states: tuple[int, ...] = ()
     """Regimes with expected occupancy below `estimation.vb.prune_below` (VB; the model keeps them)."""

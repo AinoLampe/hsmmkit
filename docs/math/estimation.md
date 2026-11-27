@@ -240,6 +240,29 @@ and `decode` returns the pruned regimes in `PosteriorResult.pruned_states`. `Fit
 posterior standard deviations of the conjugate blocks on the constrained scale (delta method for `eta`, `scale`
 and `rate`). Agreement with MAP: `docs/generated/vb_parity.md`.
 
+## MCMC (`estimation.method: mcmc`, `bayes` extra)
+
+`MCMCEstimator` samples the marginal posterior of the parameters with NumPyro's NUTS. The states are marginalized
+by the forward algorithm, so the target is `log_joint(u) = sum_b loglik_b(theta(u)) + log p(theta(u)) +
+log|d theta / d u|`, the negated MAP objective (`use_priors: true` is required). Each chain starts from the MAP
+optimum plus Gaussian jitter (`estimation.mcmc.jitter`) with the key `key_for(seed, PURPOSE_MCMC, chain)`; the same
+seed, backend and library versions give identical draws. Options: `chains`, `warmup`, `draws`, `target_accept`,
+`max_tree_depth`, `chain_method: sequential | vectorized`, `log_likelihood`.
+
+**Priors.** A free unbounded parameter without a prior makes the posterior improper. With
+`default_priors: true` (the default) these weakly informative priors are attached: real parameters
+`Normal(0, 10 max(1, |init|))`, positive ones `LogNormal(mean log init, 3)`, `nu > 2` `LogNormal(log 10, 1.5)`, the
+diagonal of packed Cholesky factors `LogNormal(0, 3)`; compact domains (simplex, interval, pmf) are proper already.
+With `default_priors: false` the parameters without a prior are listed in a `ConfigError`.
+
+**Output.** `FitResult.posterior_samples` is an ArviZ object (`DataTree` with ArviZ 1.x, `InferenceData` with 0.x):
+`posterior` (one variable per `ParamSpec` name; dims `(chain, draw, regime, series, ...)`), `sample_stats`
+(`diverging`, `tree_depth`, `energy`, `potential_energy`) and `log_likelihood` (per sequence). `params` are the
+posterior means on the constrained scale, `std_errors` the posterior SDs, `diagnostics["mcmc"]` has `r_hat`,
+`ess_bulk`, `ess_tail` per parameter, `divergences`, the sampler settings and the library versions. Without an
+identifiability guard the posterior can be multimodal (label switching): a warning is issued; relabelling and the
+blocked Gibbs sampler are E13-T06b. See ADR-0024.
+
 ## E-step accumulators (expanded engine)
 
 `engine.estep.expanded_estep` computes everything EM and VB need that is not a family sufficient statistic from one
@@ -298,5 +321,6 @@ Explicit engine: the last segment `(s, j)` is drawn from `inner + term` (right-c
 | restarts | `FitResult.restarts` (one row per start) |
 | standard errors | `estimation.report.std_errors` |
 | EM | `estimation.em.EMEstimator`, `em_fit`, `estimation.mstep` |
+| MCMC | `estimation.mcmc.MCMCEstimator`, `interop.arviz.to_inference_data` |
 | GEM | `estimation.gem.GEMEstimator`, `censored_pmf`, `estimation.newton.newton_minimize` |
 | E-step counts | `engine.estep.expanded_estep`, `ExpandedEStats` |

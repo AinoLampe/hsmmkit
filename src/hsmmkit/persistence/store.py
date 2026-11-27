@@ -337,7 +337,9 @@ class ModelStore:
         restarts = raw_restarts.reindex(columns=_RESTART_COLUMNS)
         std_errors = report["std_errors"]
         return FitResult(
-            estimator=report["estimator"] if report.get("estimator") in ("em", "gem", "vb") else "map",
+            estimator=report["estimator"]
+            if report.get("estimator") in ("em", "gem", "vb", "mcmc")
+            else "map",
             params=theta,
             uparams=u,
             objective=float(report["objective"]),
