@@ -62,6 +62,13 @@ from hsmmkit.persistence.results import (
     write_simulation,
 )
 from hsmmkit.persistence.store import ModelStore
+from hsmmkit.selection.cv import (
+    CVResult,
+    cross_validate,
+    make_splitter,
+    render_cv_section,
+    replace_cv_section,
+)
 from hsmmkit.statespace.builders import build_expanded, build_explicit
 from hsmmkit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from hsmmkit.utils.errors import ConfigError, HsmmkitError, PersistenceError
@@ -786,6 +793,65 @@ class Project:
     ) -> None:
         write_backtest(result, out_dir, meta)
         _write_text(out_dir / "report.md", report, "the report")
+
+    def cross_validate(self, *, write: bool = False) -> CVResult:
+        """Cross-validate the configured model with `evaluation.cv.splitter` (E14-T01).
+
+        `write=True` writes `cv_scores.parquet`, `cv_summary.parquet`, `cv_folds.parquet` and a
+        cross-validation section of `report.md` to the output directory.
+
+        Raises:
+            ConfigError: `evaluation.cv` is absent, or the data do not suit the splitter.
+            PersistenceError: the outputs cannot be written.
+        """
+        cfg = self.config
+        fetched = self.load_inputs(offline=self.offline)
+        splitter = make_splitter(cfg)
+
+        def preparer() -> Preparer:
+            return Preparer(
+                cfg.data,
+                own_lags=required_own_lags(cfg),
+                series_support=required_series_support(cfg),
+                n_regimes=cfg.model.n_states,
+            )
+
+        result = cross_validate(
+            cfg,
+            (fetched.obs, fetched.covs),
+            splitter,
+            cfg.project.seed,
+            preparer,
+            self._hooks_for_cv(splitter),
+        )
+        if write:
+            target = self.out_dir
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                for name, frame in (
+                    ("cv_scores", result.scores),
+                    ("cv_summary", result.summary),
+                    ("cv_folds", result.folds),
+                ):
+                    pq.write_table(
+                        pa.Table.from_pandas(frame, preserve_index=False), target / f"{name}.parquet"
+                    )
+                report = target / "report.md"
+                text = report.read_text(encoding="utf-8") if report.exists() else ""
+                _write_text(
+                    report, replace_cv_section(text, render_cv_section(result, splitter.name)), "the report"
+                )
+            except OSError as exc:
+                raise PersistenceError(
+                    f"cannot write the CV results to {target}: {exc}", path=str(target)
+                ) from exc
+        return result
+
+    def _hooks_for_cv(self, splitter: object) -> list[OriginHook]:
+        """The origin hooks of a walk-forward CV (the backtest's defaults); none for a sequence CV."""
+        if getattr(splitter, "name", "") != "walk_forward":
+            return []
+        return self._hooks(self.load_data())
 
     def backtest(
         self, data: FetchedInputs | None = None, hooks: Sequence[OriginHook] = (), *, write: bool = False

@@ -302,6 +302,13 @@ def build_app(
             data = ctx.load_prepared(project)
             project.simulate(params, model=model, steps=steps, n_paths=n_paths, data=data, write=True)
 
+    @app.command("cv")
+    def cv_cmd(config_path: Path) -> None:
+        """Cross-validation (`evaluation.cv`): `cv_scores`, `cv_summary` and a `report.md` section."""
+        with exit_on_error():
+            configure_logging(ctx.options.log_level or "INFO")
+            ctx.project(config_path).cross_validate(write=True)
+
     @app.command("backtest")
     def backtest_cmd(config_path: Path) -> None:
         """Walk-forward backtest: metrics, folds, the hooks' frames and `report.md` in the output dir."""
