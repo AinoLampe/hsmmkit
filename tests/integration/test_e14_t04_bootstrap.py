@@ -116,23 +116,25 @@ def test_e14_t04_simulated_data_keep_dt_mask_and_covariates(small: tuple[Any, An
 
 @pytest.mark.slow
 def test_e14_t04_bootstrap_se_matches_the_simulation_sd_at_t_5000(tmp_path: Path) -> None:
-    """AC1: bootstrap SE within 20 % of the SD of the estimates over 50 independent datasets (T = 5000)."""
+    """AC1: bootstrap SE within 20 % of the SD of the estimates over independent datasets (T = 5000).
+
+    The reference SD uses 150 datasets (the ticket's 50 carry ~10 % sampling error of their own; measured:
+    0.0229 vs 0.0200 for one scale) and the bootstrap SE is averaged over three datasets, because one dataset's
+    `theta_hat` moves its SE by ~10 %. The 20 % tolerance is the ticket's.
+    """
     spec = _spec(tmp_path, 2)
     truth = _truth(spec, [0.0, 1.5], [0.5, 1.2], 25.0)
     template = make_dataset(np.zeros((5000, 1)), np.ones(5000))
-    estimates = []
-    for k in range(51):
+    fits, datasets = [], []
+    for k in range(150):
         data = _simulate_like(truth, spec, template, key_for(11, PURPOSE_BOOT, 1000 + k))
-        res = _warm_fit(spec, data, truth, k)
-        estimates.append(res)
-    reference = {
-        n: np.std(np.stack([np.asarray(r.params[n]) for r in estimates[1:]]), axis=0, ddof=1)
-        for n in ("emission.mean", "emission.scale", "duration.rate")
-    }
-    data0 = _simulate_like(truth, spec, template, key_for(11, PURPOSE_BOOT, 1000))
-    boot = bootstrap_se(estimates[0], data0, 100, 3, estimation=_EST)
+        datasets.append(data)
+        fits.append(_warm_fit(spec, data, truth, k))
+    names = ("emission.mean", "emission.scale", "duration.rate")
+    reference = {n: np.std(np.stack([np.asarray(f.params[n]) for f in fits]), axis=0, ddof=1) for n in names}
+    boots = [bootstrap_se(fits[k], datasets[k], 100, 3 + k, estimation=_EST, workers=2) for k in range(3)]
     for name, sd in reference.items():
-        ratio = boot.se[name].reshape(-1) / sd.reshape(-1)
+        ratio = np.mean([b.se[name].reshape(-1) for b in boots], axis=0) / sd.reshape(-1)
         assert np.all(np.abs(ratio - 1.0) <= 0.2), (name, ratio)
 
 
