@@ -448,6 +448,15 @@ class McmcCfg(_Base):
     chains: int = Field(default=4, ge=1)
     warmup: int = Field(default=1000, ge=0)
     draws: int = Field(default=1000, ge=1)
+    target_accept: float = Field(default=0.8, gt=0.0, lt=1.0)
+    max_tree_depth: int = Field(default=10, ge=1)
+    chain_method: Literal["sequential", "vectorized"] = "sequential"
+    default_priors: bool = True
+    """Add weakly informative priors to the free parameters that have none (else they are an error)."""
+    jitter: float = Field(default=0.05, ge=0.0)
+    """Standard deviation of the Gaussian jitter added to the MAP start of each chain (unconstrained)."""
+    log_likelihood: bool = True
+    """Store the per-sequence log-likelihood of every draw in the `log_likelihood` group."""
 
 
 class EstimationSection(_Base):
