@@ -10,7 +10,7 @@ import pytest
 
 from hsmmkit.config import gates
 from hsmmkit.config.schema import parse_project_config
-from hsmmkit.model.build import BuildInputs, build_model_spec_from
+from hsmmkit.model.build import BuildInputs
 from hsmmkit.utils.errors import ConfigError
 from tests.helpers.core_config import core_raw
 from tests.unit.test_e10_t10_schema import appendix_h
@@ -63,16 +63,16 @@ def test_e10_t10_part1_config_passes_every_gate(tmp_path: Path) -> None:
     gates.check(cfg)
 
 
-@pytest.mark.parametrize("row", list(gates.GATES))
-def test_e10_t10_each_gate_row_fires_with_its_ticket(row: str) -> None:
-    """Every row of `GATES` rejects its key at build with `not available before <ticket>`, path = the key."""
-    cfg = parse_project_config(_case(row))
-    assert row in dict(gates.used_gates(cfg))
-    first_path, first_ticket = gates.used_gates(cfg)[0]
-    with pytest.raises(ConfigError) as info:
-        gates.check(cfg)
-    assert info.value.path == first_path.partition("=")[0]
-    assert f"not available before {first_ticket}" in str(info.value)
+def test_e10_t10_each_gate_row_fires_with_its_ticket() -> None:
+    """Every remaining row of `GATES` rejects its key at build with `not available before <ticket>`."""
+    for row in gates.GATES:
+        cfg = parse_project_config(_case(row))
+        assert row in dict(gates.used_gates(cfg))
+        first_path, first_ticket = gates.used_gates(cfg)[0]
+        with pytest.raises(ConfigError) as info:
+            gates.check(cfg)
+        assert info.value.path == first_path.partition("=")[0]
+        assert f"not available before {first_ticket}" in str(info.value)
 
 
 def test_e10_t10_validation_is_not_gated(tmp_path: Path) -> None:
@@ -81,16 +81,13 @@ def test_e10_t10_validation_is_not_gated(tmp_path: Path) -> None:
         parse_project_config(_case(row))
 
 
-def test_e10_t10_appendix_h_has_no_gate_left_but_a_grid_still_raises_its_ticket() -> None:
-    """Appendix H builds once its features have landed; the grid gate remains until E14-T02."""
+def test_e10_t10_appendix_h_has_no_gate_left_and_the_grid_builds() -> None:
+    """Every feature has landed: no gate row remains and a grid config passes the gate check."""
+    assert gates.GATES == {}
     assert gates.used_gates(parse_project_config(appendix_h())) == []
     cfg = parse_project_config(_case("evaluation.grid"))
-    paths = [p for p, _ in gates.used_gates(cfg)]
-    assert paths == ["evaluation.grid"]
-    with pytest.raises(ConfigError) as info:
-        build_model_spec_from(cfg, INPUTS)
-    assert info.value.path == "evaluation.grid"
-    assert "E14-T02" in str(info.value)
+    assert gates.used_gates(cfg) == []
+    gates.check(cfg)
 
 
 def test_e10_t10_removing_a_row_lets_the_key_through(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -104,6 +101,5 @@ def test_e10_t10_gates_do_not_mutate_the_config() -> None:
     """`check` only reads."""
     cfg = parse_project_config(_case("evaluation.grid"))
     before = copy.deepcopy(cfg.model_dump())
-    with pytest.raises(ConfigError):
-        gates.check(cfg)
+    gates.check(cfg)
     assert cfg.model_dump() == before

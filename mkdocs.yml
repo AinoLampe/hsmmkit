@@ -57,6 +57,7 @@ nav:
       - Choosing an estimator: guide/estimators.md
       - Backtesting: guide/backtesting.md
       - Cross-validation: guide/cv.md
+      - Model selection (grid): guide/core/model_selection.md
       - Validation: guide/validation.md
       - Python API and CLI: guide/project.md
       - Command line: guide/cli.md

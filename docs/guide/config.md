@@ -344,14 +344,17 @@ The whole resolved configuration of the domain-neutral core.
 
 ## `evaluation.grid`
 
-`evaluation.grid:` — model-selection grid (E14-T02 on).
+`evaluation.grid:` — model-selection grid (E14-T02).
 
 | Field | Type | Default |
 |---|---|---|
 | `n_states` | `list[int]` | `[]` |
 | `r` | `list[list[int]]` | `[]` |
+| `r_same_for_all` | `list[int]` | `[]` |
 | `emission` | `list[str]` | `[]` |
+| `duration` | `list[str]` | `[]` |
 | `estimator` | `list[str]` | `[]` |
+| `parallel` | `ParallelCfg \| None` | `None` |
 
 ## `online.alerts`
 
@@ -458,3 +461,12 @@ A single (possibly per-state) parameter's estimation mode and initialization.
 | Field | Type | Default |
 |---|---|---|
 | `inner_iter` | `int` | `5` |
+
+## `evaluation.grid.parallel`
+
+`evaluation.grid.parallel:` — process-pool execution of the grid cells.
+
+| Field | Type | Default |
+|---|---|---|
+| `backend` | `'process'` | `'process'` |
+| `workers` | `int` | `2` |
