@@ -69,6 +69,7 @@ from hsmmkit.selection.cv import (
     render_cv_section,
     replace_cv_section,
 )
+from hsmmkit.selection.grid import render_grid_markdown, run_grid
 from hsmmkit.statespace.builders import build_expanded, build_explicit
 from hsmmkit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from hsmmkit.utils.errors import ConfigError, HsmmkitError, PersistenceError
@@ -980,6 +981,29 @@ class Project:
                 raise PersistenceError(
                     f"cannot write the comparison to {target}: {exc}", path=str(target)
                 ) from exc
+        return table
+
+    def compare_grid(self, *, write: bool = False, out_dir: Path | str | None = None) -> pd.DataFrame:
+        """Grid model selection over `evaluation.grid` (E14-T02): one fit and score per cell.
+
+        Returns the table (`selection.grid.COLUMNS`); `write=True` writes `grid.parquet` and `grid.md` to
+        `out_dir` (default `runs/compare`).
+
+        Raises:
+            ConfigError: `evaluation.grid` is absent or empty.
+            PersistenceError: the outputs cannot be written.
+        """
+        cfg = self.config
+        fetched = self.load_inputs(offline=self.offline)
+        table = run_grid(cfg, fetched.obs, fetched.covs, cfg.project.seed, Preparer)
+        if write:
+            target = Path(out_dir) if out_dir is not None else Path("runs") / "compare"
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                pq.write_table(pa.Table.from_pandas(table, preserve_index=False), target / "grid.parquet")
+                (target / "grid.md").write_text(render_grid_markdown(table), encoding="utf-8")
+            except OSError as exc:
+                raise PersistenceError(f"cannot write the grid to {target}: {exc}", path=str(target)) from exc
         return table
 
     # --- selftest ----------------------------------------------------------------------------------

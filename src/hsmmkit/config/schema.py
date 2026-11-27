@@ -575,13 +575,28 @@ class CvCfg(_Base):
     seed: int = 0
 
 
+class ParallelCfg(_Base):
+    """`evaluation.grid.parallel:` — process-pool execution of the grid cells."""
+
+    backend: Literal["process"] = "process"
+    workers: int = Field(default=2, ge=1)
+
+
 class GridCfg(_Base):
-    """`evaluation.grid:` — model-selection grid (E14-T02 on)."""
+    """`evaluation.grid:` — model-selection grid (E14-T02).
+
+    Every axis is optional (an absent axis keeps the base configuration's value). `r` lists explicit
+    per-regime phase counts (negative binomial), `r_same_for_all` lists values used for every regime.
+    `duration` and `emission` name families, `estimator` the `estimation.method`.
+    """
 
     n_states: list[int] = Field(default_factory=list)
     r: list[list[int]] = Field(default_factory=list)
+    r_same_for_all: list[int] = Field(default_factory=list)
     emission: list[str] = Field(default_factory=list)
+    duration: list[str] = Field(default_factory=list)
     estimator: list[str] = Field(default_factory=list)
+    parallel: ParallelCfg | None = None
 
     @field_validator("n_states")
     @classmethod

@@ -18,9 +18,7 @@ __all__ = ["GATES", "check", "used_gates"]
 Gate = tuple[Callable[[ProjectConfig], bool], str]
 
 
-GATES: dict[str, Gate] = {
-    "evaluation.grid": (lambda c: c.evaluation.grid is not None, "E14-T02"),
-}
+GATES: dict[str, Gate] = {}
 """Key path (or `key=value`) -> (predicate "the feature is used", ticket that removes the row). Ordered."""
 
 

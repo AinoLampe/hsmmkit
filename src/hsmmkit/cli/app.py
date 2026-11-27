@@ -325,6 +325,9 @@ def build_app(
             "--estimators",
             help="Comma-separated estimators (map,em,gem,vb,mcmc): fit ONE config with each.",
         ),
+        grid: bool = typer.Option(
+            False, "--grid", help="Grid model selection over `evaluation.grid` for ONE config."
+        ),
         allow_mixed: bool = typer.Option(
             False, "--allow-mixed", help="Compare runs on different data snapshots."
         ),
@@ -336,6 +339,13 @@ def build_app(
         """Backtest several configs and tabulate them (`compare.parquet`, `compare.md` in the output dir)."""
         with exit_on_error():
             configure_logging(ctx.options.log_level or "INFO")
+            if grid:
+                if len(configs) != 1 or estimators:
+                    raise ConfigError("--grid takes exactly one configuration file", path="compare")
+                ctx.project(configs[0]).compare_grid(
+                    write=True, out_dir=ctx.options.out or Path("runs") / "compare"
+                )
+                return
             if estimators:
                 if len(configs) != 1:
                     raise ConfigError("--estimators takes exactly one configuration file", path="compare")
