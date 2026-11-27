@@ -11,6 +11,7 @@ import csv
 import json
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
@@ -86,9 +87,15 @@ def run_stream(
     stop = [False]
 
     def request_stop(signum: int, frame: Any) -> None:  # noqa: ANN401
+        # raising (not just flagging) also ends a `readline()` blocked on an idle pipe; the `finally` below
+        # saves the state and the command exits normally
         stop[0] = True
+        raise KeyboardInterrupt
 
-    previous = {s: signal.signal(s, request_stop) for s in (signal.SIGINT, signal.SIGTERM)}
+    previous: dict[int, Any] = {}
+    if threading.current_thread() is threading.main_thread():
+        previous = {s: signal.signal(s, request_stop) for s in (signal.SIGINT, signal.SIGTERM)}
+    pushed = 0
     try:
         lines = _lines(stream, follow, stop)
         header_line = next(lines, None)
@@ -98,7 +105,7 @@ def run_stream(
         missing = [c for c in session.required_columns if c not in header]
         if missing:
             raise DataError(f"missing column {missing[0]!r} in the input header {header}", path=missing[0])
-        pushed = emitted = 0
+        emitted = 0
         for number, line in enumerate(lines, start=2):
             if not line.strip():
                 continue
@@ -123,12 +130,14 @@ def run_stream(
                 out.flush()
             if state_dir is not None and pushed % checkpoint_every == 0:
                 session.save(state_dir)
-        return pushed
+    except KeyboardInterrupt:
+        pass  # SIGINT / SIGTERM: stop reading, flush, save
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
         if state_dir is not None:
             session.save(state_dir)
+    return pushed
 
 
 def add_stream_command(app: CliApp, exit_on_error: Callable[[], AbstractContextManager[None]]) -> None:

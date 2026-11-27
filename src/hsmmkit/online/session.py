@@ -175,6 +175,19 @@ class OnlineSession:
         mapping: Mapping[str, Any] = (
             {str(k): v for k, v in row.items()} if isinstance(row, pd.Series) else row
         )
+        # transactional: a row that fails (or is interrupted) leaves the covariate history and the row counter
+        # as they were, so that the next row is aligned as if it had never been pushed
+        snapshot = None if self._cov is None else self._cov.state_dict()
+        rows_before = self.n_rows
+        try:
+            return self._push(mapping)
+        except BaseException:
+            self.n_rows = rows_before
+            if snapshot is not None and self._cov is not None:
+                self._cov.load_state_dict(snapshot)
+            raise
+
+    def _push(self, mapping: Mapping[str, Any]) -> dict[str, Any]:
         y = np.array([self._number(mapping, c) for c in self.obs_columns])
         if self._obs_mean is not None and self._obs_std is not None:
             y = (y - self._obs_mean) / self._obs_std

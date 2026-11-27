@@ -216,3 +216,60 @@ def test_e15_t04_project_online_is_usable_without_the_cli(plain: dict[str, Any])
     other = project.online(fit)
     other.load(plain["root"] / "sess")
     assert other.push(plain["frame"].iloc[50]) == session.push(plain["frame"].iloc[50])
+
+
+def test_e15_t04_a_failed_row_leaves_the_session_untouched(with_cov: dict[str, Any]) -> None:
+    """Review: a row that raises does not advance the covariate history or the row counter."""
+    from hsmmkit.utils.errors import DataError
+
+    project = Project(
+        parse_project_config(with_cov["raw"]), config_dir=with_cov["root"], out_dir=with_cov["out"]
+    )
+    session = project.online(Project.load(with_cov["model"]))
+    frame = with_cov["frame"]
+    for _, row in frame.iloc[:20].iterrows():
+        session.push(row)
+    bad = frame.iloc[20].copy()
+    bad["z"] = float("nan")
+    failures = 0
+    for _ in range(8):  # more blank prints than `max_staleness` (5): the row eventually has no usable print
+        cov = session._cov
+        assert cov is not None
+        before_cov, before_rows, before_t = cov.state_dict(), session.n_rows, int(session.state.t)
+        try:
+            session.push(bad)
+        except DataError:
+            failures += 1
+            assert cov.state_dict() == before_cov
+            assert session.n_rows == before_rows
+            assert int(session.state.t) == before_t
+    assert failures >= 1
+
+
+def test_e15_t04_an_interrupt_stops_the_loop_and_saves_the_state(
+    plain: dict[str, Any], tmp_path: Path
+) -> None:
+    """Review: SIGINT/SIGTERM (a `KeyboardInterrupt` out of a blocked read) ends the run and checkpoints."""
+    import io
+
+    from hsmmkit.cli.stream import run_stream
+
+    class Interrupted(io.StringIO):
+        """Yields the lines, then behaves like a blocked read that a signal interrupts."""
+
+        def readline(self, *args: Any, **kwargs: Any) -> str:  # noqa: ANN401
+            line = super().readline(*args, **kwargs)
+            if line:
+                return line
+            raise KeyboardInterrupt
+
+    project = Project(parse_project_config(plain["raw"]), config_dir=plain["root"], out_dir=plain["out"])
+    session = project.online(Project.load(plain["model"]))
+    out = io.StringIO()
+    pushed = run_stream(
+        session, Interrupted(_csv(plain["frame"].iloc[:25])), out,
+        emit={"filtered"}, every=1, strict=False, follow=True, state_dir=tmp_path / "st", checkpoint_every=1000,
+    )  # fmt: skip
+    assert pushed == 25
+    assert len(_jsonl(out.getvalue())) == 25
+    assert (tmp_path / "st" / "state.json").exists()
