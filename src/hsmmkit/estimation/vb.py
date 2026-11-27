@@ -13,7 +13,7 @@ chain whose log-weights are the *expected log-parameters* `E_q[log theta]`:
 One iteration is: E-step on `E_q[log theta]` -> `ELBO = log Z~ - sum KL(q || prior)` ->
 `q <- posterior(prior, counts)`.
 The ELBO of the successive `q` is non-decreasing (coordinate ascent). Each run starts from a point estimate of
-an initialization strategy (one E-step at that point gives the first `q`); restarts follow MAP; the run with
+an initialization method (one E-step at that point gives the first `q`); restarts follow MAP; the run with
 the best final ELBO wins. `FitResult.params` are the posterior means (constrained scale), `objective` is
 `-ELBO`, `loglik` the log-likelihood at the posterior means, and `diagnostics["vb"]` holds `elbo_trace`
 and `q_params`.
