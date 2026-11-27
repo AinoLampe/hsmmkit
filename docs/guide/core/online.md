@@ -34,6 +34,7 @@ state = load_state("run/state", fit)  # PersistenceError if it belongs to anothe
   `y_{1:t}` (`data.window(0, t + 1)`) to 1e-12, and the full-data smoother at `t - L` when `t` is the last step; it
   only approximates the full-data smoother for earlier `t`. `hsmmkit.online.buffer.smoothed_series(fit, data, lag)`
   replays a whole dataset (row `t` = `gamma_{t-lag | t}`). The buffer is saved with the state.
+* **Labels and boundaries** are not applied online: a warm-start prefix that carries `labels` / `boundaries` constrains the offline forward pass, but the streaming smoother (`active=False`) does not, so its lagged marginals can differ from the offline prefix smoother in that case.
 * **Limits (0.4.0).** `engine: explicit`, time-step memory (`memory_mode: steps`) and families with a recurrent
   emission carry raise `ConfigError("online filtering requires engine: expanded")`; alerts follow in E15-T03. The filter compiles its step once per instance; a step costs about 0.13 ms at `S = 12`
   on a cloud CPU.
