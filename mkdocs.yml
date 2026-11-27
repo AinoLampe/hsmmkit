@@ -54,6 +54,7 @@ nav:
       - Forecasting: guide/forecasting.md
       - Model bundle: guide/bundle.md
       - Output files: guide/outputs.md
+      - Choosing an estimator: guide/estimators.md
       - Backtesting: guide/backtesting.md
       - Validation: guide/validation.md
       - Python API and CLI: guide/project.md

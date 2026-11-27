@@ -173,7 +173,7 @@ With `use_priors`, ECM blocks maximize `Q + log p + log|J|` in unconstrained spa
 Dirichlet pseudo-counts on the jump rows only (emission priors are ignored there); `bounded` closed-form results are
 clipped, which is exact for separable `Q` only. The inner optimizer is `jax.scipy.optimize` BFGS (the ticket says
 L-BFGS; logged as a deviation). Parity of EM with MAP:
-`docs/generated/em_parity.md`.
+`docs/generated/estimator_parity.md`.
 
 `FitResult(estimator="em")` has the same
 fields as a MAP result and `restarts` gains `loglik_trace`.
@@ -238,7 +238,7 @@ component.
 `diagnostics["vb"]["occupancy"]`, with a warning that suggests a smaller `n_states`; the model keeps its structure
 and `decode` returns the pruned regimes in `PosteriorResult.pruned_states`. `FitResult.std_errors` holds the
 posterior standard deviations of the conjugate blocks on the constrained scale (delta method for `eta`, `scale`
-and `rate`). Agreement with MAP: `docs/generated/vb_parity.md`.
+and `rate`). Agreement with MAP: `docs/generated/estimator_parity.md`.
 
 ## MCMC (`estimation.method: mcmc`, `bayes` extra)
 

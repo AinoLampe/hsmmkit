@@ -99,13 +99,13 @@ def emission_cfg(family: str) -> dict[str, Any]:
     raise ValueError(family)
 
 
-def build(
+def build_with_cfg(
     tmp_path: Path,
     family: str,
     duration: str = "geometric",
     **model: Any,  # noqa: ANN401
-) -> tuple[ModelSpec, dict[str, jnp.ndarray]]:
-    """`(spec, theta0)` of a 2-regime model; `theta0` holds the configured starting values."""
+) -> tuple[Any, ModelSpec, dict[str, jnp.ndarray]]:
+    """`(config, spec, theta0)` of a 2-regime model; `theta0` holds the configured starting values."""
     raw = core_raw(tmp_path)
     raw["model"]["emission"] = emission_cfg(family)
     raw["model"]["duration"] = (
@@ -128,6 +128,17 @@ def build(
     if family == "categorical":  # per-regime starting probabilities (the config takes one shared vector)
         start = np.array([[0.5, 0.3, 0.2], [0.3, 0.3, 0.4]])
         theta["emission.eta"] = jnp.asarray(np.log(start[:, 1:] / start[:, :1]))
+    return cfg, spec, theta
+
+
+def build(
+    tmp_path: Path,
+    family: str,
+    duration: str = "geometric",
+    **model: Any,  # noqa: ANN401
+) -> tuple[ModelSpec, dict[str, jnp.ndarray]]:
+    """`(spec, theta0)` of a 2-regime model; `theta0` holds the configured starting values."""
+    _, spec, theta = build_with_cfg(tmp_path, family, duration, **model)
     return spec, theta
 
 

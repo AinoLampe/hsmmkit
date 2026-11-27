@@ -310,7 +310,14 @@ def build_app(
 
     @app.command("compare")
     def compare_cmd(
-        configs: list[Path] = typer.Argument(..., help="Two or more configuration files."),
+        configs: list[Path] = typer.Argument(
+            ..., help="Two or more configuration files (one file with --estimators)."
+        ),
+        estimators: str = typer.Option(
+            "",
+            "--estimators",
+            help="Comma-separated estimators (map,em,gem,vb,mcmc): fit ONE config with each.",
+        ),
         allow_mixed: bool = typer.Option(
             False, "--allow-mixed", help="Compare runs on different data snapshots."
         ),
@@ -322,6 +329,16 @@ def build_app(
         """Backtest several configs and tabulate them (`compare.parquet`, `compare.md` in the output dir)."""
         with exit_on_error():
             configure_logging(ctx.options.log_level or "INFO")
+            if estimators:
+                if len(configs) != 1:
+                    raise ConfigError("--estimators takes exactly one configuration file", path="compare")
+                project = ctx.project(configs[0])
+                project.compare_estimators(
+                    [e.strip() for e in estimators.split(",") if e.strip()],
+                    write=True,
+                    out_dir=ctx.options.out or Path("runs") / "compare",
+                )
+                return
             project_cls.compare(
                 configs,
                 allow_mixed=allow_mixed,
