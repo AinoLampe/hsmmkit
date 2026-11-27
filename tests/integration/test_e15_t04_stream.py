@@ -268,7 +268,8 @@ def test_e15_t04_an_interrupt_stops_the_loop_and_saves_the_state(
     out = io.StringIO()
     pushed = run_stream(
         session, Interrupted(_csv(plain["frame"].iloc[:25])), out,
-        emit={"filtered"}, every=1, strict=False, follow=True, state_dir=tmp_path / "st", checkpoint_every=1000,
+        emit={"filtered"}, every=1, strict=False, follow=True,
+        state_dir=tmp_path / "st", checkpoint_every=1000,
     )  # fmt: skip
     assert pushed == 25
     assert len(_jsonl(out.getvalue())) == 25
