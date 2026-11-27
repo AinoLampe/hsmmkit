@@ -570,7 +570,13 @@ class Project:
     # --- decode / forecast -------------------------------------------------------------------------
 
     def decode(
-        self, fit: FitResult, data: PreparedDataset, *, write: bool = False, augmented: bool = False
+        self,
+        fit: FitResult,
+        data: PreparedDataset,
+        *,
+        write: bool = False,
+        augmented: bool = False,
+        samples: int = 0,
     ) -> PosteriorResult:
         """Filtered / smoothed posteriors, Viterbi path, segments and IC of `fit` on `data`.
 
@@ -581,7 +587,13 @@ class Project:
             NumericalError: the engine's log-likelihood is non-finite.
             PersistenceError: outputs cannot be written.
         """
-        result = decode_posterior(fit, data, engine=engine_for(self.config, fit.spec.engine))
+        result = decode_posterior(
+            fit,
+            data,
+            engine=engine_for(self.config, fit.spec.engine),
+            samples=samples,
+            seed=self.config.project.seed,
+        )
         if write:
             write_posterior(result, self.out_dir, augmented=augmented)
         get_logger("hsmmkit.decode").info("decode_done", rows=int(data.times.shape[0]), loglik=result.loglik)

@@ -6,7 +6,7 @@ app of the core.
 | Command | |
 |---|---|
 | `validate-config`, `config-schema` | validate a configuration, export its JSON Schema |
-| `fit`, `decode`, `forecast`, `simulate` | data from `data.source` |
+| `fit`, `decode`, `forecast`, `simulate` | data from `data.source` (`decode --samples R` also draws `R` exact posterior regime paths: `path_samples.parquet`, `boundary_prob`) |
 | `backtest`, `compare`, `selftest` | walk-forward evaluation, comparison, smoke test |
 | `stream` | CSV rows from stdin or a (growing) file -> JSONL regime probabilities and alert events (`--model`, `--input`, `--follow`, `--state`, `--emit`, `--every`, `--strict`) |
 

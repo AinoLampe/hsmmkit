@@ -28,6 +28,8 @@ class PosteriorResult:
     aic: float
     bic: float
     icl: float
+    path_samples: np.ndarray | None = None  # (R, T) posterior regime paths (`decode(..., samples=R)`)
+    boundary_prob: np.ndarray | None = None  # (T,) P(a new segment starts at t), from the path samples
 
 
 @dataclass(frozen=True)

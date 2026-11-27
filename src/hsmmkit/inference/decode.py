@@ -16,13 +16,41 @@ from hsmmkit.engine.batch import batched_forward_backward, batched_viterbi
 from hsmmkit.engine.criteria import information_criteria
 from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
 from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
+from hsmmkit.engine.ffbs import ffbs_expanded, ffbs_explicit
 from hsmmkit.engine.viterbi import segments
 from hsmmkit.inference.results import PosteriorResult
 from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.statespace.builders import build_expanded, build_explicit
+from hsmmkit.utils.errors import ConfigError
+from hsmmkit.utils.rng import PURPOSE_FFBS, key_for
 
 
-def _decode_batch(fit: FitResult, batch: SequenceBatch, space: StateSpace) -> list[PosteriorResult]:
+def _regime_samples(
+    fit: FitResult, space: StateSpace, pb: PaddedBatch, samples: int, seed: int
+) -> np.ndarray:
+    """`(R, B, T_max)` posterior regime paths by FFBS (`-1` on padding)."""
+    spec = fit.spec
+    key = key_for(seed, PURPOSE_FFBS)
+    if spec.engine == "explicit":
+        return np.asarray(ffbs_explicit(key, fit.params, spec, space, pb, samples))
+    states = np.asarray(ffbs_expanded(key, fit.params, spec, space, pb, samples))
+    regimes = np.asarray(space.index.regime_of)[np.maximum(states, 0)]
+    return np.where(states >= 0, regimes, -1)
+
+
+def boundary_probability(paths: np.ndarray) -> np.ndarray:
+    """`(T,)` probability that a new segment starts at step `t >= 1`, estimated from `(R, T)` path samples.
+
+    A new segment is a regime change from step `t - 1`; entry 0 is 0 (the first segment starts there).
+    """
+    out = np.zeros(paths.shape[1])
+    out[1:] = (paths[:, 1:] != paths[:, :-1]).mean(axis=0)
+    return out
+
+
+def _decode_batch(
+    fit: FitResult, batch: SequenceBatch, space: StateSpace, samples: int = 0, seed: int = 0
+) -> list[PosteriorResult]:
     """One batched forward-backward and Viterbi pass; per-sequence results cut to their own lengths."""
     spec = fit.spec
     eng = ExplicitDurationEngine() if spec.engine == "explicit" else ExpandedHMMEngine()
@@ -30,6 +58,7 @@ def _decode_batch(fit: FitResult, batch: SequenceBatch, space: StateSpace) -> li
     posterior = batched_forward_backward(eng, fit.params, spec, space, pb, batch.ids)
     paths = np.asarray(batched_viterbi(eng, fit.params, spec, space, pb))
     n_free = ParamManager(spec.param_specs).n_free
+    drawn = _regime_samples(fit, space, pb, samples, seed) if samples > 0 else None
     out: list[PosteriorResult] = []
     for b, (seq, post) in enumerate(zip(batch.sequences, posterior.unpad(), strict=True)):
         regime_path = np.asarray(space.index.regime_of[paths[b, : seq.observations.shape[0]]])
@@ -48,12 +77,17 @@ def _decode_batch(fit: FitResult, batch: SequenceBatch, space: StateSpace) -> li
                 aic=ic.aic,
                 bic=ic.bic,
                 icl=ic.icl,
+                path_samples=None if drawn is None else drawn[:, b, : seq.observations.shape[0]],
+                boundary_prob=None
+                if drawn is None
+                else boundary_probability(drawn[:, b, : seq.observations.shape[0]]),
             )
         )
     return out
 
 
 if TYPE_CHECKING:
+    from hsmmkit.data.batch import PaddedBatch
     from hsmmkit.data.contracts import PreparedDataset
     from hsmmkit.engine.base import InferenceEngine
     from hsmmkit.estimation.results import FitResult
@@ -62,18 +96,33 @@ if TYPE_CHECKING:
 
 @overload
 def decode(
-    fit: FitResult, data: PreparedDataset, engine: InferenceEngine | None = None
+    fit: FitResult,
+    data: PreparedDataset,
+    engine: InferenceEngine | None = None,
+    *,
+    samples: int = 0,
+    seed: int = 0,
 ) -> PosteriorResult: ...
 
 
 @overload
 def decode(
-    fit: FitResult, data: SequenceBatch, engine: InferenceEngine | None = None
+    fit: FitResult,
+    data: SequenceBatch,
+    engine: InferenceEngine | None = None,
+    *,
+    samples: int = 0,
+    seed: int = 0,
 ) -> list[PosteriorResult]: ...
 
 
 def decode(
-    fit: FitResult, data: PreparedDataset | SequenceBatch, engine: InferenceEngine | None = None
+    fit: FitResult,
+    data: PreparedDataset | SequenceBatch,
+    engine: InferenceEngine | None = None,
+    *,
+    samples: int = 0,
+    seed: int = 0,
 ) -> PosteriorResult | list[PosteriorResult]:
     """Decode `data` under `fit.spec`/`fit.params`: filtered/smoothed marginals, Viterbi, IC.
 
@@ -83,14 +132,20 @@ def decode(
     `ExplicitDurationEngine`, default construction); pass one explicitly to reuse a configured
     instance (e.g. a non-default `chunk_size`).
 
+    `samples=R > 0` also draws `R` exact posterior regime paths by forward-filtering backward-sampling
+    (`engine.ffbs`, key `key_for(seed, PURPOSE_FFBS)`): `path_samples (R, T)` and `boundary_prob (T,)`.
+
     Raises:
         NumericalError: the engine's log-likelihood is non-finite (`information_criteria`; CLI
             exit code 4).
+        ConfigError: `samples < 0`, or samples of an explicit model with duration-dependent jumps.
     """
     spec = fit.spec
     space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
+    if samples < 0:
+        raise ConfigError(f"samples must be >= 0, got {samples}", path="--samples")
     if isinstance(data, SequenceBatch):
-        return _decode_batch(fit, data, space)
+        return _decode_batch(fit, data, space, samples, seed)
     eng = (
         engine
         if engine is not None
@@ -107,6 +162,11 @@ def decode(
     smoothed = np.asarray(posterior.smoothed)
     ic = information_criteria(loglik, manager.n_free, smoothed, mask=np.asarray(data.mask))
 
+    drawn = (
+        _regime_samples(fit, space, SequenceBatch.of(data).padded(), samples, seed)[:, 0, :]
+        if samples > 0
+        else None
+    )
     return PosteriorResult(
         times=data.times,
         filtered=posterior.regime_filtered(),
@@ -118,4 +178,6 @@ def decode(
         aic=ic.aic,
         bic=ic.bic,
         icl=ic.icl,
+        path_samples=drawn,
+        boundary_prob=None if drawn is None else boundary_probability(drawn),
     )

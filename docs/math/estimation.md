@@ -186,6 +186,15 @@ Tempered EM (`beta_temper = beta < 1`) runs the pass on `beta * ell`; `loglik` i
 Mass balance: `sum d (eta + eta_censored + eta_first) = T`; `sum_j xi[i, j] = sum_d (eta + eta_first)[i, d]`.
 Duration-dependent jumps are handled by the expanded `(regime, elapsed)` chain (`expanded_estep`).
 
+## Posterior path sampling (FFBS)
+
+`engine.ffbs` draws exact posterior regime paths. Expanded engine: `s_T ~ softmax(alpha_T)`, then backwards
+`P(s_{t-1} = s | s_t) ~ alpha_{t-1}(s) A_t(s, s_t)` (the step matrix is built once and shared by all samples).
+Explicit engine: the last segment `(s, j)` is drawn from `inner + term` (right-censored), then the previous segment
+`(i, d)` of a segment starting at `tau` with probability `~ g[tau - d, i] p(d) exp(C[tau, i]) pi_tau[i, j]`, until
+`tau = 0`. `decode(..., samples=R, seed=s)` returns `path_samples (R, T)` and
+`boundary_prob[t]` = fraction of samples with a regime change between `t - 1` and `t`.
+
 ## Symbols and code names
 
 | Math | Code |
