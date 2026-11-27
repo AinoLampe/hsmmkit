@@ -14,6 +14,7 @@ from scipy import integrate, optimize, stats
 from hsmmkit.config import gates
 from hsmmkit.config.schema import parse_project_config
 from hsmmkit.model.build import BuildInputs, build_model_spec_from
+from hsmmkit.model.conjugate import NormalGamma
 from hsmmkit.model.dists import lkj_logpdf, mvn_logpdf, pack_lower, packed_size, unpack_lower
 from hsmmkit.model.emission.gaussian import GaussianFamily, NormalWishart
 from hsmmkit.model.params import CholeskyDiagPrior, LkjPrior, LogNormalPrior, ParamManager
@@ -150,7 +151,10 @@ def test_e11_t02_normal_wishart_zero_data_returns_the_prior_and_updates() -> Non
     post = prior.update(fam.sufficient_stats(y, jnp.ones(50), gamma))
     assert float(post["kappa"][0]) == pytest.approx(prior.kappa0 + 50)
     assert float(post["nu"][0]) == pytest.approx(5.0 + 50)
-    assert GaussianFamily().conjugate_prior() is None
+    assert isinstance(
+        GaussianFamily().conjugate_prior(), NormalGamma
+    )  # E13-T05a: the diagonal family's prior
+    assert GaussianFamily(scale_by_dt=True).conjugate_prior() is None
 
 
 def test_e11_t02_lkj_is_uniform_at_eta_one_and_matches_numerical_normalization() -> None:

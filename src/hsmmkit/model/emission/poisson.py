@@ -125,6 +125,20 @@ class PoissonFamily(DiscreteBase):
         lam = safe_ratio(stats["wy"], stats["w_s"][:, None])
         return {"emission.eta": jnp.log(jnp.maximum(lam, CLIP))}
 
-    def conjugate_prior(self) -> GammaConjugate:
-        """`Gamma(1, 1)` on the rate per unit exposure."""
-        return GammaConjugate()
+    def conjugate_prior(self) -> GammaConjugate | None:
+        """`Gamma(1, 1)` on the rate per unit exposure (`None` with covariate links)."""
+        return None if self.mean_idx else GammaConjugate()
+
+    def expected_log_prob(self, y: Array, dt: Array, q_theta: object, z: Array | None) -> Array | None:
+        """`E_q[log Poisson(y | lambda s)]`, `(T, N)`, under `Gamma(a, b)` rates (`a`, `b`: `(N, M)`)."""
+        if self.mean_idx or not isinstance(q_theta, dict):
+            return None
+        del z
+        log_rate = jsp.digamma(q_theta["a"]) - jnp.log(q_theta["b"])  # (N, M)
+        rate = q_theta["a"] / q_theta["b"]
+        s = dt[:, None, None] if self.scale_by_dt else 1.0
+        yy = y[:, None, :]
+        out: Array = jnp.sum(
+            yy * (log_rate[None] + jnp.log(s)) - rate[None] * s - jsp.gammaln(yy + 1.0), axis=-1
+        )
+        return out

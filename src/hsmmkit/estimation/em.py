@@ -227,6 +227,8 @@ class EMEstimator:
 
     name = "em"
     diagnostics_key = "em"
+    score_from_trace = False  # VB: the final value of the trace (the ELBO) ranks the runs
+    trace_key = "loglik_trace"
 
     def _section(self, cfg: EstimationSection) -> EmCfg:
         """The option block of this estimator (`estimation.em`)."""
@@ -318,21 +320,27 @@ class EMEstimator:
             starts.append(("warm_start", dict(manager.unflatten(warm_start))))
         rows: list[dict[str, object]] = []
         runs: list[tuple[Params, float]] = []
+        lls: list[float] = []
+        extras: list[Any] = []
         for i, (method, theta0) in enumerate(starts):
             started = time.perf_counter()
-            theta, trace, converged, n_iter = self._run(theta0, spec, space, pb, cfg, plan)
+            out = self._run(theta0, spec, space, pb, cfg, plan)
+            theta, trace, converged, n_iter = out[:4]
+            extras.append(out[4] if len(out) > 4 else None)
             ll = self._final(theta, spec, space, pb)
-            runs.append((theta, ll))
+            score = trace[-1] if self.score_from_trace else ll
+            runs.append((theta, score))
+            lls.append(ll)
             rows.append(
                 {
                     "restart": i,
                     "init_method": method,
-                    "objective": -ll,
+                    "objective": -score,
                     "loglik": ll,
                     "n_iter": n_iter,
                     "converged": converged,
                     "wall_s": time.perf_counter() - started,
-                    "loglik_trace": [*trace, ll],
+                    self.trace_key: trace if self.score_from_trace else [*trace, ll],
                 }
             )
         finite = [i for i, (_, ll) in enumerate(runs) if np.isfinite(ll)]
@@ -341,7 +349,8 @@ class EMEstimator:
                 f"every one of {len(runs)} restarts gave a non-finite log-likelihood", path="restarts"
             )
         best = max(finite, key=lambda i: runs[i][1])
-        theta, ll = runs[best]
+        theta, score = runs[best]
+        ll = lls[best]
         theta, relabelled = relabel_states(theta, spec, first)
         u = manager.flatten(theta)
         diagnostics: dict[str, Any] = {
@@ -350,6 +359,8 @@ class EMEstimator:
                 "tempering": em_cfg.tempering.model_dump(),
                 "ecm_inner_iter": em_cfg.ecm.inner_iter,
                 "warm_start_from": em_cfg.warm_start_from,
+                **(extras[best] or {}),
+                **({"relabelled": relabelled} if extras[best] else {}),
             }
         }
         if batch is not None:
@@ -363,7 +374,7 @@ class EMEstimator:
             estimator=self.name,  # type: ignore[arg-type]
             params=theta,
             uparams=u,
-            objective=-ll,
+            objective=-score if self.score_from_trace else -ll,
             loglik=ll,
             restarts=pd.DataFrame(rows),
             converged=bool(rows[best]["converged"]),

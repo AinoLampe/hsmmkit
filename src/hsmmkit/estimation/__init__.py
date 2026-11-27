@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from hsmmkit.estimation import em as _em  # noqa: F401  (registers the `em` estimator)
 from hsmmkit.estimation import gem as _gem  # noqa: F401  (registers the `gem` estimator)
+from hsmmkit.estimation import vb as _vb  # noqa: F401  (registers the `vb` estimator)
 from hsmmkit.estimation.map import fit as fit_map
 from hsmmkit.plugins import REGISTRY
 
