@@ -30,3 +30,4 @@ Part II, or raised during implementation) are added by the tickets that need the
 | [0022](0022-in-scan-emissions.md) | Recurrent emissions (carry) and the annualization exception |
 | [0023](0023-endogenous-covariates.md) | Endogenous covariates as emission channels (accepted) |
 | [0024](0024-arviz-numpyro.md) | ArviZ as the Bayesian output format; NumPyro the only sampler backend in 0.x (accepted) |
+| [0027](0027-hdp-hsmm.md) | HDP-HSMM (weak limit): design spike, no-go before 0.5.0, go afterwards (accepted) |

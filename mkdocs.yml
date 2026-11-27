@@ -120,3 +120,4 @@ nav:
       - "0022 Recurrent emissions and the annualization exception": adr/0022-in-scan-emissions.md
       - "0023 Endogenous covariates as emission channels": adr/0023-endogenous-covariates.md
       - "0024 ArviZ and NumPyro": adr/0024-arviz-numpyro.md
+      - "0027 HDP-HSMM spike": adr/0027-hdp-hsmm.md
