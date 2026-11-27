@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pandas as pd
 
-from hsmmkit.data.sources.base import parse_times
 from hsmmkit.online.covariates import OnlineCovariatePreparer
 from hsmmkit.online.filter import ExpandedOnlineFilter
 from hsmmkit.online.state import load_state, save_state
@@ -36,6 +35,17 @@ if TYPE_CHECKING:
     from hsmmkit.online.alerts import AlertEvent
 
 SESSION_FILE = "session.json"
+
+
+def _parse_time(value: Any, column: str) -> np.datetime64:  # noqa: ANN401
+    """A timestamp as naive-UTC `datetime64[ns]` (as the tabular sources parse the time column)."""
+    try:
+        stamp = pd.to_datetime(value, utc=True)
+    except (ValueError, TypeError) as exc:
+        raise DataError(f"cannot parse the time {value!r}: {exc}", path=column) from exc
+    if pd.isna(stamp):
+        raise DataError("the time column holds a missing value", path=column)
+    return np.datetime64(stamp.tz_localize(None).to_datetime64(), "ns")
 
 
 def _time_json(value: Any) -> Any:  # noqa: ANN401
@@ -194,7 +204,7 @@ class OnlineSession:
         if self.time_column is not None:
             if self.time_column not in mapping:
                 raise DataError(f"missing column {self.time_column!r}", path=self.time_column)
-            time: Any = parse_times([mapping[self.time_column]])[0]
+            time: Any = _parse_time(mapping[self.time_column], self.time_column)
         else:
             time = self.n_rows
         z: dict[str, np.ndarray] | None = None
