@@ -419,10 +419,19 @@ class TemperingCfg(_Base):
     steps: int = Field(default=10, ge=1)
 
 
+class EcmCfg(_Base):
+    """`estimation.em.ecm:` — conditional maximization of blocks without a closed form."""
+
+    inner_iter: int = Field(default=5, ge=1)
+
+
 class EmCfg(_Base):
     """`estimation.em:` / `estimation.gem:` — EM options."""
 
     tempering: TemperingCfg = Field(default_factory=TemperingCfg)
+    ecm: EcmCfg = Field(default_factory=EcmCfg)
+    warm_start_from: Literal["map", "none"] = "none"
+    """`map`: run EM from the MAP optimum (the parity suite); `none`: the configured initializations."""
 
 
 class VbCfg(_Base):

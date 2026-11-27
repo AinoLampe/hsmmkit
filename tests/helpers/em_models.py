@@ -41,6 +41,9 @@ def observations(family: str, t_len: int, seed: int) -> np.ndarray:
         for t in range(t_len):
             out[t] = rng.multivariate_normal(mean[t], cov[z[t]])
         return out
+    if family == "student_t":
+        scale = np.where(z == 0, 0.5, 1.2)
+        return (np.where(z == 0, 0.0, 1.5) + scale * rng.standard_t(5.0, size=t_len))[:, None]
     if family == "poisson":
         return rng.poisson(np.where(z == 0, 2.0, 9.0)).astype(float)[:, None]
     if family == "categorical":
@@ -70,6 +73,16 @@ def emission_cfg(family: str) -> dict[str, Any]:
             "params": {
                 "mean": {"mode": "free", "init": [0.2, 1.0]},
                 "chol": {"mode": "free", "init": [0.8, 0.0, 0.8]},
+            },
+        }
+    if family == "student_t":
+        return {
+            "family": "student_t",
+            "scale_by_dt": False,
+            "params": {
+                "m": {"mode": "free", "init": [0.3, 1.0]},
+                "s": {"mode": "free", "init": [0.7, 1.0]},
+                "nu": {"mode": "free", "init": [6.0, 6.0]},
             },
         }
     if family == "poisson":

@@ -33,7 +33,22 @@ if TYPE_CHECKING:
     from hsmmkit.model.spec import ModelSpec
     from hsmmkit.statespace.index import StateSpace
 
-__all__ = ["apply_modes", "em_update", "emission_mstep", "initial_mstep", "phase_mstep", "transition_mstep"]
+__all__ = [
+    "NoClosedFormError",
+    "apply_modes",
+    "block_plan",
+    "em_update",
+    "emission_mstep",
+    "initial_mstep",
+    "needs_per_t",
+    "phase_mstep",
+    "transition_mstep",
+]
+
+
+class NoClosedFormError(ConfigError):
+    """A component has no closed-form M-step (the caller falls back to ECM, or refuses)."""
+
 
 _TINY = 1e-300
 _A_MIN, _A_MAX = 1e-12, 1.0 - 1e-12
@@ -55,7 +70,7 @@ def emission_mstep(spec: ModelSpec, theta: Params, pb: PaddedBatch, stats: Expan
     suff = spec.emission.sufficient_stats(y, dt, gamma, z)
     update = None if suff is None else spec.emission.m_step(suff)
     if update is None:
-        raise ConfigError(
+        raise NoClosedFormError(
             f"component {type(spec.emission).__name__} has no closed-form M-step; "
             "available from E13-T02b (ECM)",
             path="model.emission",
@@ -73,7 +88,7 @@ def phase_mstep(spec: ModelSpec, theta: Params, stats: ExpandedEStats, nominal_d
     inverse = getattr(family, "from_advance_prob", None)
     has_cov = bool(getattr(family, "cov_idx", None))
     if inverse is None or has_cov:
-        raise ConfigError(
+        raise NoClosedFormError(
             f"component {type(family).__name__} has no closed-form M-step"
             + (" with duration covariates" if has_cov else "")
             + "; available from E13-T02b (ECM)",
@@ -96,7 +111,7 @@ def transition_mstep(
     """New jump probabilities from `jump[r, j]` (+ the Dirichlet pseudo-counts `alpha - 1` under MAP-EM)."""
     transition = spec.transition
     if getattr(transition, "cov_idx", ()) or "transition.b" in theta:
-        raise ConfigError(
+        raise NoClosedFormError(
             "transition covariates have no closed-form M-step; available from E13-T02b (ECM)",
             path="model.transition.covariates",
         )
@@ -184,6 +199,62 @@ def apply_modes(new: Params, old: Params, specs: tuple[ParamSpec, ...]) -> Param
     return out
 
 
+def _block_specs(spec: ModelSpec, prefix: str) -> tuple[ParamSpec, ...]:
+    return tuple(p for p in spec.param_specs if p.name.startswith(prefix))
+
+
+def _plain(specs: tuple[ParamSpec, ...]) -> bool:
+    """No tie group and no state-axis ordering: the closed form can update every entry independently."""
+    return all(p.tie_group is None and p.constraint == "none" and p.mode != "tied" for p in specs)
+
+
+def block_plan(spec: ModelSpec, pb: PaddedBatch) -> tuple[tuple[str, str], ...]:
+    """`(component, "closed-form" | "ecm" | "fixed")` per block (emission, duration, transition, initial).
+
+    A block is closed-form when its family offers the update (`m_step` answers, `from_advance_prob`
+    exists), no covariate link or irregular step is involved and its parameters are untied and
+    unordered; otherwise ECM.
+    """
+    import numpy as np
+
+    m = int(pb.observations.shape[-1])
+    k_e = int(pb.cov_emission.shape[-1])
+    probe_gamma = jnp.full((4, spec.n_states), 1.0 / spec.n_states)
+    probe_z = jnp.zeros((4, k_e)) if k_e > 0 else None
+    suff = spec.emission.sufficient_stats(jnp.ones((4, m)), jnp.ones(4), probe_gamma, probe_z)
+    emission = (
+        "closed-form"
+        if suff is not None
+        and spec.emission.m_step(suff) is not None
+        and _plain(_block_specs(spec, "emission."))
+        else "ecm"
+    )
+    dt = np.asarray(pb.dt)[np.asarray(pb.valid)]
+    regular = bool(dt.size == 0 or np.allclose(dt, dt[0], rtol=1e-9, atol=0.0))
+    duration = (
+        "closed-form"
+        if hasattr(spec.duration, "from_advance_prob")
+        and not getattr(spec.duration, "cov_idx", ())
+        and regular
+        and _plain(_block_specs(spec, "duration."))
+        else "ecm"
+    )
+    transition = (
+        "closed-form"
+        if not getattr(spec.transition, "cov_idx", ())
+        and not any(p.name == "transition.b" for p in spec.param_specs)
+        and _plain(_block_specs(spec, "transition."))
+        else "ecm"
+    )
+    initial = "closed-form" if spec.initial == "free" else "fixed"
+    return (("emission", emission), ("duration", duration), ("transition", transition), ("initial", initial))
+
+
+def needs_per_t(plan: tuple[tuple[str, str], ...]) -> bool:
+    """Whether an ECM block of `plan` needs the per-step counts of the E-step."""
+    return any(kind == "ecm" and name in ("duration", "transition") for name, kind in plan)
+
+
 def em_update(
     theta: Params,
     spec: ModelSpec,
@@ -192,10 +263,40 @@ def em_update(
     stats: ExpandedEStats,
     *,
     use_priors: bool,
+    plan: tuple[tuple[str, str], ...] | None = None,
+    inner_iter: int = 5,
 ) -> Params:
-    """One full M-step: emission, duration, transition, initial; then the parameter modes."""
-    new = emission_mstep(spec, theta, pb, stats)
-    new = phase_mstep(spec, new, stats, pb.nominal_dt)
-    new = transition_mstep(spec, space, new, stats, use_priors)
+    """One full M-step: emission, duration, transition, initial (closed form or ECM per `plan`)."""
+    from functools import partial
+
+    from hsmmkit.estimation import ecm
+
+    kinds = (
+        dict(plan)
+        if plan is not None
+        else dict.fromkeys(("emission", "duration", "transition"), "closed-form")
+    )
+    new = dict(theta)
+    if kinds["emission"] == "ecm":
+        q = partial(ecm.q_emission, spec=spec, pb=pb, stats=stats)
+        new = ecm.ecm_block(
+            new, spec, "emission.", lambda th: q(th), use_priors=use_priors, inner_iter=inner_iter
+        )
+    else:
+        new = emission_mstep(spec, new, pb, stats)
+    if kinds["duration"] == "ecm":
+        qd = partial(ecm.q_duration, spec=spec, pb=pb, stats=stats)
+        new = ecm.ecm_block(
+            new, spec, "duration.", lambda th: qd(th), use_priors=use_priors, inner_iter=inner_iter
+        )
+    else:
+        new = phase_mstep(spec, new, stats, pb.nominal_dt)
+    if kinds["transition"] == "ecm":
+        qt = partial(ecm.q_transition, spec=spec, space=space, pb=pb, stats=stats)
+        new = ecm.ecm_block(
+            new, spec, "transition.", lambda th: qt(th), use_priors=use_priors, inner_iter=inner_iter
+        )
+    else:
+        new = transition_mstep(spec, space, new, stats, use_priors)
     new = initial_mstep(spec, space, new, stats)
     return apply_modes(new, theta, spec.param_specs)

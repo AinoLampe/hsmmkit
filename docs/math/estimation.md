@@ -157,8 +157,25 @@ step); the jump rows `pi_rj ~ jump[r, j]` (+ the Dirichlet pseudo-counts `alpha 
 topology (`transition.a`); `initial_state: free` from `gamma1`. `fixed` entries are kept and `bounded` ones clipped.
 The log-likelihood is non-decreasing (`HSMMKIT_DEBUG=1` raises on a decrease beyond `1e-10`); it stops when the gain
 is `<= tol_f max(1, |loglik|)` or at `max_iter`. Multi-start uses MAP's init strategies and keys, the best final
-log-likelihood wins. Components without a closed form (covariate links, tied parameters, irregular steps, families
-whose `m_step` is `None`) raise a `ConfigError` naming E13-T02b (ECM). `FitResult(estimator="em")` has the same
+log-likelihood wins.
+
+**ECM.** A block without a closed form (covariate links, irregular steps, families whose `m_step` is `None` such as
+Student-t, tied or ordered parameters) is updated by maximizing its expected complete-data log-likelihood with the
+other blocks fixed: `Q_e = sum gamma log f`, `Q_d = sum (stay log(1-a) + advance log a)`, `Q_pi = sum jump log pi`
+(per-step counts from `expanded_estep(..., keep_per_t=True)`), plus `log p(theta)` with priors. Each block takes
+`estimation.em.ecm.inner_iter` (default 5) BFGS steps on its slice of `u`; a step is accepted only if `Q` increases, so
+the log-likelihood stays monotone. `FitResult.diagnostics["em"]` names `closed-form` / `ecm` / `fixed` per block.
+
+**Tempering.** `estimation.em.tempering: {enabled, beta0, steps}` runs the first `steps` E-steps on `beta * ell`,
+`beta_k = beta0^(1 - k/steps)` (deterministic annealing), then `beta = 1`; monotonicity is checked from `beta = 1` on.
+`estimation.em.warm_start_from: map` runs EM from the best MAP start instead of the configured restarts (parity suite).
+With `use_priors`, ECM blocks maximize `Q + log p + log|J|` in unconstrained space while closed-form blocks use the
+Dirichlet pseudo-counts on the jump rows only (emission priors are ignored there); `bounded` closed-form results are
+clipped, which is exact for separable `Q` only. The inner optimizer is `jax.scipy.optimize` BFGS (the ticket says
+L-BFGS; logged as a deviation). Parity of EM with MAP:
+`docs/generated/em_parity.md`.
+
+`FitResult(estimator="em")` has the same
 fields as a MAP result and `restarts` gains `loglik_trace`.
 
 ## E-step accumulators (expanded engine)
