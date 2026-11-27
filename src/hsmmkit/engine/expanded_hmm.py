@@ -168,6 +168,25 @@ def forward_step(
     return ell_t + _safe_logsumexp(alpha_prev[:, None] + log_a, axis=0)
 
 
+def backward_step(
+    space: StateSpace,
+    theta: Params,
+    active: bool,
+    beta_next: Array,
+    ell_next: Array,
+    z_pi_next: Array,
+    z_d_next: Array,
+    dt_next: Array,
+    code_next: Array,
+) -> Array:
+    """One backward step `log beta_t = logsumexp_j(log A_{t+1}[i, j] + ell_{t+1}[j] + log beta_{t+1}[j])`.
+
+    The body of the offline reverse scan and of the fixed-lag smoother of `online.buffer` (E15-T02).
+    """
+    log_a = _log_a(space, theta, z_pi_next, z_d_next, dt_next, code_next, active)
+    return _safe_logsumexp(log_a + (ell_next + beta_next)[None, :], axis=1)
+
+
 def _forward_impl(
     theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
 ) -> tuple[Array, Array, _Xs]:
@@ -205,9 +224,7 @@ def _forward_backward_core(
     active = data.boundaries is not None
 
     def step(beta_next: Array, xs_next: _Xs) -> tuple[Array, Array]:
-        ell_next, z_pi_next, z_d_next, dt_next, code_next = xs_next
-        log_a = _log_a(space, theta, z_pi_next, z_d_next, dt_next, code_next, active)
-        beta_t = _safe_logsumexp(log_a + (ell_next + beta_next)[None, :], axis=1)
+        beta_t = backward_step(space, theta, active, beta_next, *xs_next)
         return beta_t, beta_t
 
     beta_last = jnp.zeros((s,))
