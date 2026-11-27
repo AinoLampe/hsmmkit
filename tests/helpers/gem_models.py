@@ -9,7 +9,6 @@ import numpy as np
 
 from hsmmkit.config.schema import parse_project_config
 from hsmmkit.model.build import BuildInputs, build_model_spec_from
-from hsmmkit.model.spec import ModelSpec
 from tests.helpers.core_config import core_raw
 from tests.helpers.engine_fixtures import make_dataset
 
@@ -42,8 +41,9 @@ def build(
     scales: list[float] | None = None,
     duration_cfg: dict[str, Any] | None = None,
     cov_names: dict[str, tuple[str, ...]] | None = None,
+    return_cfg: bool = False,
     **model: Any,  # noqa: ANN401
-) -> ModelSpec:
+) -> Any:  # noqa: ANN401
     """An `n`-regime explicit-engine model with Gaussian emissions."""
     raw = core_raw(tmp_path)
     m = raw["model"]
@@ -69,9 +69,10 @@ def build(
         m["duration"]["r"] = [2] * n
     m.update(model)
     cfg = parse_project_config(raw)
-    return build_model_spec_from(
+    spec = build_model_spec_from(
         cfg, BuildInputs(n_series=1, cov_names=cov_names or {}, clock="steps", nominal_dt=1.0)
     )
+    return (cfg, spec) if return_cfg else spec
 
 
 def dataset(y: np.ndarray):  # noqa: ANN201

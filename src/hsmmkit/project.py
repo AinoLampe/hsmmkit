@@ -36,6 +36,7 @@ from hsmmkit.engine.batch import batched_loglik
 from hsmmkit.engine.expanded_hmm import ExpandedHMMEngine
 from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
 from hsmmkit.estimation import fit as fit_model
+from hsmmkit.estimation.compare import compare_estimators, render_estimator_table
 from hsmmkit.estimation.report import diagnose
 from hsmmkit.estimation.results import FitResult
 from hsmmkit.estimation.selftest import SelftestResult, run_selftest
@@ -881,6 +882,42 @@ class Project:
                 target.mkdir(parents=True, exist_ok=True)
                 pq.write_table(pa.Table.from_pandas(table, preserve_index=False), target / "compare.parquet")
                 (target / "compare.md").write_text(render_markdown(table, snapshots), encoding="utf-8")
+            except OSError as exc:
+                raise PersistenceError(
+                    f"cannot write the comparison to {target}: {exc}", path=str(target)
+                ) from exc
+        return table
+
+    def compare_estimators(
+        self,
+        estimators: Sequence[str],
+        data: PreparedDataset | SequenceBatch | None = None,
+        *,
+        write: bool = False,
+        out_dir: Path | str | None = None,
+    ) -> pd.DataFrame:
+        """Fit the configured model with each estimator of `estimators` (same data, seed); tabulate the fits.
+
+        See `estimation.compare.compare_estimators` for the columns. `write=True` writes `compare.parquet` and
+        `compare.md` to `out_dir` (default `runs/compare`).
+
+        Raises:
+            ConfigError: unknown estimator names, or an estimator that cannot fit the model.
+            PersistenceError: the outputs cannot be written.
+        """
+        dataset = data
+        if dataset is None:
+            dataset = self.load_batch() if self.is_multi_sequence() else self.load_data()
+        spec = build_model_spec(self.config, dataset)
+        table, _ = compare_estimators(
+            spec, dataset, self.config.estimation, self.config.project.seed, estimators
+        )
+        if write:
+            target = Path(out_dir) if out_dir is not None else Path("runs") / "compare"
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                pq.write_table(pa.Table.from_pandas(table, preserve_index=False), target / "compare.parquet")
+                (target / "compare.md").write_text(render_estimator_table(table), encoding="utf-8")
             except OSError as exc:
                 raise PersistenceError(
                     f"cannot write the comparison to {target}: {exc}", path=str(target)

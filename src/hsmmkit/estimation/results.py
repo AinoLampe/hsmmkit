@@ -34,3 +34,8 @@ class FitResult:
     """ArviZ posterior draws (`InferenceData` / `DataTree`) of an MCMC fit; not persisted."""
     pruned_states: tuple[int, ...] = ()
     """Regimes with expected occupancy below `estimation.vb.prune_below` (VB; the model keeps them)."""
+
+    @property
+    def elbo(self) -> float | None:
+        """The final ELBO of a variational fit (`-objective`), `None` for every other estimator."""
+        return -self.objective if self.estimator == "vb" else None
