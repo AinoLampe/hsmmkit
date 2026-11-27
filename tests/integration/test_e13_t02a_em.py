@@ -136,3 +136,39 @@ def test_e13_t02a_the_em_gate_row_is_removed(tmp_path: Path) -> None:
     raw["estimation"]["method"] = "gem"
     with pytest.raises(ConfigError, match="E13-T03a"):
         gates.check(parse_project_config(raw))
+
+
+def test_e13_t02a_stationary_initial_law_is_refused(tmp_path: Path) -> None:
+    """Review: `initial_state: stationary` has no EM update (monotonicity would not hold): refused."""
+    spec, _ = em_models.build(tmp_path, "poisson", initial_state="stationary")
+    with pytest.raises(ConfigError, match="stationary"):
+        EMEstimator().fit(
+            spec, em_models.dataset("poisson", 60, 0), EstimationSection(restarts=1, init=["random"]), 0
+        )
+
+
+def test_e13_t02a_dirichlet_pseudo_counts_reach_the_default_jump_rows(tmp_path: Path) -> None:
+    """Review: a Dirichlet prior on `transition.pi_rows` adds `alpha - 1` to the counts under MAP-EM."""
+    from hsmmkit.estimation.mstep import transition_mstep
+    from hsmmkit.model.params.priors import DirichletPrior
+
+    _, _, spec = _model(tmp_path)
+    specs = tuple(
+        dataclasses.replace(s, mode="prior", prior=DirichletPrior(alpha=3.0))
+        if s.name == "transition.pi_rows"
+        else s
+        for s in spec.param_specs
+    )
+    spec = dataclasses.replace(spec, param_specs=specs)
+    space = build_expanded(spec)
+    theta = dict(ParamManager(spec.param_specs).unflatten(ParamManager(spec.param_specs).init_u()))
+    jump = np.zeros((3, 3))
+    jump[0, 1], jump[0, 2] = 8.0, 2.0
+    jump[1, 0], jump[1, 2] = 5.0, 5.0
+    jump[2, 0], jump[2, 1] = 1.0, 9.0
+    stats = type("S", (), {"jump": jnp.asarray(jump)})()
+    ml = np.asarray(transition_mstep(spec, space, theta, stats, False)["transition.pi_rows"])  # type: ignore[arg-type]
+    map_ = np.asarray(transition_mstep(spec, space, theta, stats, True)["transition.pi_rows"])  # type: ignore[arg-type]
+    np.testing.assert_allclose(ml[0], [0.8, 0.2])
+    np.testing.assert_allclose(map_[0], [10.0 / 14.0, 4.0 / 14.0])  # counts + (alpha - 1) = + 2
+    np.testing.assert_allclose(map_.sum(axis=1), 1.0)

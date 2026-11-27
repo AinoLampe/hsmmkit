@@ -103,12 +103,20 @@ def transition_mstep(
     layout = space.layout
     n = spec.n_states
     alpha = getattr(transition, "dirichlet_alpha", None)
+    if alpha is None:  # the default `pi_rows` carries its Dirichlet prior on the ParamSpec
+        for s in spec.param_specs:
+            if (
+                s.name == "transition.pi_rows"
+                and s.mode == "prior"
+                and getattr(s.prior, "alpha", None) is not None
+            ):
+                alpha = float(s.prior.alpha)  # type: ignore[union-attr]
     extra = (alpha - 1.0) if (use_priors and alpha is not None) else 0.0
     counts = stats.jump
     out = dict(theta)
     if "transition.pi_rows" in theta:
         target_idx = jnp.asarray(_target_order(layout.current_of, n))
-        picked = jnp.take_along_axis(counts, target_idx, axis=1) + extra  # (R, N-1)
+        picked = jnp.maximum(jnp.take_along_axis(counts, target_idx, axis=1) + extra, 0.0)  # (R, N-1)
         total = jnp.sum(picked, axis=1, keepdims=True)
         probs = jnp.where(
             total > _TINY, picked / jnp.where(total > _TINY, total, 1.0), theta["transition.pi_rows"]
@@ -117,7 +125,7 @@ def transition_mstep(
     elif "transition.a" in theta:
         free_row, free_col = _flat_structure(layout)
         ref = np.array([np.flatnonzero(layout.target_mask[r])[0] for r in range(layout.target_mask.shape[0])])
-        c = counts + jnp.where(jnp.asarray(layout.target_mask), extra, 0.0)
+        c = jnp.maximum(counts + jnp.where(jnp.asarray(layout.target_mask), extra, 0.0), 0.0)
         num = c[free_row, free_col]
         den = c[free_row, ref[free_row]]
         ok = (num > _TINY) & (den > _TINY)

@@ -96,6 +96,12 @@ def check_em_supported(spec: ModelSpec, data: PreparedDataset | SequenceBatch | 
         raise ConfigError("EM needs segment memory (not memory_mode: steps)", path="model")
     if spec.duration_conditioning != "current":
         raise ConfigError("EM supports duration_conditioning 'current' only", path="model.transition")
+    if spec.initial == "stationary":
+        raise ConfigError(
+            "initial_state: stationary depends on the jump and duration parameters and has no closed-form EM "
+            "update (use uniform or free; ECM: E13-T02b)",
+            path="model.initial_state",
+        )
     if spec.duration_dependent_jumps or spec.left_censored:
         raise ConfigError("EM does not support duration-dependent jumps or left-censoring", path="model")
     if not hasattr(spec.duration, "from_advance_prob"):
