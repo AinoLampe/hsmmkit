@@ -8,8 +8,8 @@ jump counts
 * **emissions**: the family's closed form on the regime marginals, else an ECM block (`estimation.ecm`);
 * **jumps**: `pi_ij ~ xi[i, j]` (+ Dirichlet pseudo-counts under `use_priors`), also under a topology;
 * **durations**: nonparametric pmfs by the censored maximizer (below); geometric durations in closed form
-  `a = n / (n + sum (d - 1) (eta + eta_first + eta_censored))`, `rate = -log(1 - a) / dt`; parametric
-  families are refused until E13-T03b;
+  `a = n / (n + sum (d - 1) (eta + eta_first + eta_censored))`, `rate = -log(1 - a) / dt`; every other
+  family (and each member of a per-state mix) by weighted maximum likelihood with damped Newton steps;
 * **initial distribution**: `free` -> `rho ~ rho_post`.
 
 **Censored nonparametric pmf.** With `S(d) = sum_{d' >= d} p(d')` the expected complete-data objective is
@@ -189,7 +189,8 @@ def _q_member(
     assert stats.eta_entry_censored is not None
     b, t = stats.eta_entry.shape[:2]
     z = pb.cov_duration.reshape(b * t, -1)
-    lp = family.log_pmf(th, d_max, pb.nominal_dt, z).reshape(b, t, -1, d_max)[:, :, rows]
+    own = slice(None) if rows != slice(None) else rows  # a per-state member's pmf has its own regime only
+    lp = family.log_pmf(th, d_max, pb.nominal_dt, z).reshape(b, t, -1, d_max)[:, :, own]
     surv = jax.lax.cumlogsumexp(lp, axis=lp.ndim - 1, reverse=True)
     m = mask[rows]
     eta = jnp.where(m[None, None, :, None], stats.eta_entry[:, :, rows], 0.0)
@@ -245,9 +246,6 @@ def duration_mstep(
     dt = pb.nominal_dt
     for family, prefix, rows in _members(spec):
         th = _view(out, prefix)
-        n_rows = len(range(*rows.indices(spec.n_states)))
-        sub = stats if rows == slice(None) else None
-        del sub, n_rows
         if isinstance(family, NonparametricDuration) and not entry:
             key = f"{prefix}logits"
             extra = _dirichlet_extra(spec, key, use_priors)
@@ -333,6 +331,7 @@ def _gem_step(
         use_priors=use_priors,
         emission_kind=emission_kind,
         inner_iter=inner_iter,
+        entry=entry,
     )
     return new, jnp.sum(stats.loglik)
 
@@ -360,7 +359,10 @@ def check_gem_supported(spec: ModelSpec) -> None:
         raise ConfigError(
             "entry-time duration covariates with left-censoring are not supported by GEM", path="model"
         )
-    if dur_cov and isinstance(family, NonparametricDuration):
+    if dur_cov and (
+        isinstance(family, NonparametricDuration)
+        or any(isinstance(f, NonparametricDuration) for f in getattr(family, "families", ()))
+    ):
         raise ConfigError("nonparametric durations have no covariate link", path="model.duration")
     if spec.duration_dependent_jumps:
         raise ConfigError("GEM does not support duration-dependent jumps", path="model.duration")
@@ -402,9 +404,11 @@ class GEMEstimator(EMEstimator):
         emission = dict(block_plan(spec, pb))["emission"]
         name = type(spec.duration).__name__
         kind = {"NonparametricDuration": "censored-pmf", "GeometricDuration": "geometric"}.get(name, "newton")
+        if name == "PerStateDuration":
+            kind = "per-state mix"
         return (
             ("emission", emission),
-            ("duration", f"closed-form ({kind})"),
+            ("duration", kind),
             ("transition", "closed-form"),
             ("initial", "closed-form" if spec.initial == "free" else "fixed"),
         )

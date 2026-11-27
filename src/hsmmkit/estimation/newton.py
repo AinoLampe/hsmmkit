@@ -91,8 +91,9 @@ def newton_minimize(
     """`(u, fun(u), used_fallback)`: damped Newton from `u0`, BFGS if it stalls (never worse than `u0`)."""
     f0 = fun(u0)
     u_n, f_n = _newton(fun, u0, max_iter, lm)
-    gnorm = jnp.max(jnp.abs(jnp.where(jnp.isfinite(jax.grad(fun)(u0)), jax.grad(fun)(u0), 0.0)))
-    stalled = ~(f_n < f0) & (gnorm > 1e-6)
+    g0 = jax.grad(fun)(u0)
+    gnorm = jnp.max(jnp.abs(jnp.where(jnp.isfinite(g0), g0, 0.0)))
+    stalled = ~(f_n < f0) & (gnorm > 1e-8 * (1.0 + jnp.abs(f0)))
 
     def run_bfgs(_: None) -> tuple[Array, Array]:
         res = jopt.minimize(fun, u0, method="BFGS", options={"maxiter": fallback_iter})

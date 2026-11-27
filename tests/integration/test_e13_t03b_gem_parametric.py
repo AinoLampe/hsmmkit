@@ -71,7 +71,7 @@ def test_e13_t03b_parametric_gem_is_monotone(tmp_path: Path, name: str, monkeypa
     trace = np.asarray(res.restarts["loglik_trace"].iloc[0])
     assert trace[-1] > trace[0]
     assert np.all(np.diff(trace[:-1]) >= -(1e-10 + 1e-13 * np.abs(trace[:-2])))
-    assert res.diagnostics["gem"]["duration"].endswith("(newton)")
+    assert res.diagnostics["gem"]["duration"] == "newton"
 
 
 def test_e13_t03b_entry_time_covariates_are_monotone(tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
@@ -96,9 +96,14 @@ def test_e13_t03b_entry_time_covariates_are_monotone(tmp_path: Path, monkeypatch
     specs = (*spec.param_specs, coef_spec("duration.c", 2, 1))
     spec = dataclasses.replace(spec, duration=gamma, param_specs=specs)
     cfg = EstimationSection(method="gem", restarts=0, max_iter=15, tol_f=1e-14, use_priors=False)
-    res = GEMEstimator().fit(spec, data, cfg, 0, warm_start=ParamManager(spec.param_specs).init_u())
+    manager = ParamManager(spec.param_specs)
+    start = dict(manager.unflatten(manager.init_u()))
+    start["duration.c"] = jnp.asarray([[0.3], [-0.3]])  # a nonzero link: the pmf must use the covariate
+    res = GEMEstimator().fit(spec, data, cfg, 0, warm_start=manager.flatten(start))
     trace = np.asarray(res.restarts["loglik_trace"].iloc[0])
-    assert "duration.c" in res.params
+    assert (
+        np.max(np.abs(np.asarray(res.params["duration.c"]) - np.array([[0.3], [-0.3]]))) > 1e-3
+    )  # `c` moved
     assert trace[-1] > trace[0]
     assert np.all(np.diff(trace[:-1]) >= -(1e-10 + 1e-13 * np.abs(trace[:-2])))
 
