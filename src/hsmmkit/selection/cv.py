@@ -3,7 +3,8 @@
 **Sequence CV** (`SequenceKFold`): per fold the model is fitted on the training sequences (the preparer fitted
 on them only) and every test sequence is scored out of sample with the training estimate `theta_hat`:
 
-* `log_score`: `loglik_b(theta_hat) / T_b` (the per-step log predictive density of the whole sequence);
+* `log_score`: `loglik_b(theta_hat)` per observed step (the per-step log predictive density of the sequence);
+  the labels and boundaries of the test data never enter the scoring (they only serve the label metrics);
 * `crps`: the continuous ranked probability score of the one-step-ahead predictive distribution
   `sum_i P(regime_t = i | y_{1:t-1}) f_i`, estimated from `estimation.n_sim` draws (`crps_from_samples`),
   averaged over the observed steps and series (expanded engine; `NaN` for the explicit engine);
@@ -18,6 +19,7 @@ Imports from `hsmmkit.data` are limited to `contracts` and `batch`; the preparer
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -201,13 +203,20 @@ def cross_validate(
         fit_time = time.perf_counter() - started
         if on_fold is not None:
             on_fold(split.fold, fit)
-        for b, (sid, seq) in enumerate(zip(split.test.ids, split.test.sequences, strict=True)):
+        if fit.spec.n_groups > 1:
+            raise ConfigError(
+                "cross-validation does not support per-group initial distributions yet",
+                path="model.initial_groups",
+            )
+        for b, (sid, seq_full) in enumerate(zip(split.test.ids, split.test.sequences, strict=True)):
+            # the labels / boundaries of the test data are for the metrics only: never constrain the scoring
+            seq = dataclasses.replace(seq_full, labels=None, boundaries=None)
             post = decode(fit, seq)
-            n_obs = max(int(np.asarray(seq.mask).all(axis=-1).sum()), 1)
+            n_obs = max(int(np.asarray(seq.mask).any(axis=-1).sum()), 1)
             score_rows.append((split.fold, sid, 1, "log_score", float(post.loglik) / n_obs))
             key = key_for(derive_seed(seed, PURPOSE_CV_SCORE, split.fold), b)
             score_rows.append((split.fold, sid, 1, "crps", _sample_crps(fit, seq, post, n_sim, key)))
-            for name, value in _posterior_metrics(cfg, fit, seq, post).items():
+            for name, value in _posterior_metrics(cfg, fit, seq_full, post).items():
                 score_rows.append((split.fold, sid, 0, name, value))
         fold_rows.append(
             {

@@ -5,7 +5,7 @@
 
 ```yaml
 evaluation:
-  metrics: [log_score, bic]
+  metrics: [bic, icl]
   cv:
     splitter: sequence_kfold   # or walk_forward
     folds: 5
@@ -30,7 +30,7 @@ Per test sequence, with the parameters fitted on the training sequences:
 
 | metric | meaning |
 |---|---|
-| `log_score` | `loglik / T_b`: the out-of-sample per-step log-likelihood of the whole sequence (higher is better) |
+| `log_score` | the out-of-sample log-likelihood of the sequence per observed step (higher is better); labels and boundaries of the test data never enter it |
 | `crps` | sample CRPS of the one-step-ahead predictive distribution (a mixture over the predictive regime probabilities), `forecast.n_sim` draws, averaged over the observed steps (lower is better; `NaN` for the explicit engine) |
 | posterior metrics | every configured metric that needs only a decoded posterior (`aic`, `bic`, `icl`, `regime_*`), and the segmentation metrics when the test sequences carry single-regime labels (stored with `horizon = 0`) |
 

@@ -816,14 +816,12 @@ class Project:
                 n_regimes=cfg.model.n_states,
             )
 
-        result = cross_validate(
-            cfg,
-            (fetched.obs, fetched.covs),
-            splitter,
-            cfg.project.seed,
-            preparer,
-            self._hooks_for_cv(splitter),
-        )
+        if splitter.name == "walk_forward":  # the backtest itself: same grid, hooks and results
+            bt, _, _ = self._run_backtest(fetched, cfg.project.name)
+            scores = bt.metrics.assign(sequence="0")[["fold", "sequence", "horizon", "metric", "value"]]
+            result = CVResult(bt.folds, scores, bt.summary, bt.extras)
+        else:
+            result = cross_validate(cfg, (fetched.obs, fetched.covs), splitter, cfg.project.seed, preparer)
         if write:
             target = self.out_dir
             try:
@@ -846,12 +844,6 @@ class Project:
                     f"cannot write the CV results to {target}: {exc}", path=str(target)
                 ) from exc
         return result
-
-    def _hooks_for_cv(self, splitter: object) -> list[OriginHook]:
-        """The origin hooks of a walk-forward CV (the backtest's defaults); none for a sequence CV."""
-        if getattr(splitter, "name", "") != "walk_forward":
-            return []
-        return self._hooks(self.load_data())
 
     def backtest(
         self, data: FetchedInputs | None = None, hooks: Sequence[OriginHook] = (), *, write: bool = False

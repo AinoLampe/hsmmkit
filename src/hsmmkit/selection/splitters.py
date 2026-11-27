@@ -97,7 +97,7 @@ def subset_rows(
 
 
 def _end(obs: ObservationSet) -> Any:  # noqa: ANN401
-    return obs.values.shape[0] - 1 if obs.times is None else obs.require_times()[-1]
+    return obs.values.shape[0] - 1 if obs.times is None else np.max(obs.require_times())
 
 
 @dataclass(frozen=True)

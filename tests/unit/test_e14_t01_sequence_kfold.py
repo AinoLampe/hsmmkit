@@ -80,3 +80,17 @@ def test_e14_t01_the_splitters_are_registered_and_built_from_the_cv_section() ->
     kfold = REGISTRY.get("splitter", "sequence_kfold").from_config(cv, "g")
     assert kfold == SequenceKFold(4, 9, "g")
     assert isinstance(REGISTRY.get("splitter", "walk_forward").from_config(cv), WalkForward)
+
+
+def test_e14_t01_the_training_end_is_the_latest_time_of_any_sequence() -> None:
+    """Sequences may run over different periods: `_end` must not be the time of the last row."""
+    from hsmmkit.selection.splitters import _end
+
+    times = np.concatenate(
+        [
+            np.arange("2021-01-01", "2021-01-06", dtype="datetime64[D]"),
+            np.arange("2019-01-01", "2019-01-04", dtype="datetime64[D]"),
+        ]
+    ).astype("datetime64[ns]")
+    obs = ObservationSet(("x",), times, np.zeros((8, 1)), "memory", "s", {}, np.array(["a"] * 5 + ["b"] * 3))
+    assert _end(obs) == np.datetime64("2021-01-05", "ns")
