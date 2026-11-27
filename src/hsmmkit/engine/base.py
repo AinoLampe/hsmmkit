@@ -54,8 +54,14 @@ class Posterior:
     engine: Literal["expanded", "explicit"] = "expanded"  # static tag (E4-T04; explicit set by E4-T06a)
 
     def regime_filtered(self) -> Array:
-        """`softmax(log_alpha) @ C`, shape `(T, N)`."""
-        return jax.nn.softmax(self.log_alpha, axis=-1) @ self.index.collapse
+        """`softmax(log_alpha) @ C`, shape `(T, N)`, computed row by row (`filtered_row`).
+
+        The row-wise `lax.map` makes the compiled arithmetic independent of `T`, so the online filter
+        (E15-T01), which evaluates one row per observation, reproduces it bitwise.
+        """
+        collapse = self.index.collapse
+        out: Array = jax.lax.map(lambda row: filtered_row(row, collapse), self.log_alpha)
+        return out
 
     def regime_smoothed(self) -> Array:
         """`smoothed @ C`, shape `(T, N)`."""
@@ -71,6 +77,12 @@ class Posterior:
         from hsmmkit.engine.augmented import phase_marginals
 
         return phase_marginals(self)
+
+
+def filtered_row(log_alpha_row: Array, collapse: Array) -> Array:
+    """Filtered regime probabilities `softmax(log_alpha) @ C` of one step: `(S,)` -> `(N,)`."""
+    out: Array = jax.nn.softmax(log_alpha_row, axis=-1) @ collapse
+    return out
 
 
 def _flatten_posterior(posterior: Posterior) -> tuple[tuple[Array, ...], tuple[_StaticRef, str]]:

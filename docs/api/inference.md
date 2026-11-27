@@ -24,3 +24,20 @@
     options:
       show_root_heading: true
       heading_level: 3
+
+## Online
+
+::: hsmmkit.online.filter
+    options:
+      show_root_heading: true
+      heading_level: 3
+
+::: hsmmkit.online.state
+    options:
+      show_root_heading: true
+      heading_level: 3
+
+::: hsmmkit.online.covariates
+    options:
+      show_root_heading: true
+      heading_level: 3

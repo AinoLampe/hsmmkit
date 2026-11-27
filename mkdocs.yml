@@ -60,6 +60,7 @@ nav:
       - Command line: guide/cli.md
       - Presets and gates: guide/presets.md
       - Supervision (labels): guide/core/supervision.md
+      - Online filtering: guide/core/online.md
       - Extending:
           - Overview: guide/extending/index.md
           - Emission families: guide/extending/families.md

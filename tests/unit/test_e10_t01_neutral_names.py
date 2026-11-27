@@ -24,6 +24,7 @@ SCOPE_PACKAGES = (
     "inference",
     "evaluation",
     "persistence",
+    "online",
     "cli",
     "utils",
 )
