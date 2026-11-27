@@ -37,8 +37,8 @@ delta method for the transformed parameters) and `diagnostics["vb"]["treatment"]
 `"conjugate"` or `"point"`.
 Priors are the weakly informative defaults of
 `docs/math/estimation.md` (Gaussian priors scaled to the data); the config `prior` entries are not read.
-`diagnostics["vb"]["q_params"]` keep the numbering of the run: when `diagnostics["vb"]["relabelled"]` is
-true the fitted `params` were renumbered by ascending scale and `q_params` were not.
+When `params` are renumbered by ascending scale (no identifiability guard), `occupancy`, `pruned_states`,
+`std_errors` and `q_params` are renumbered with them (`q_params["jump"]` is dropped for order > 1).
 """
 
 from __future__ import annotations

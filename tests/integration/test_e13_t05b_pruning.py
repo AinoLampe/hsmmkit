@@ -9,10 +9,12 @@ import numpy as np
 import pytest
 
 from hsmmkit.config.schema import EstimationSection, parse_project_config
+from hsmmkit.data.batch import SequenceBatch
 from hsmmkit.estimation.vb import VBEstimator
 from hsmmkit.inference.decode import decode
 from hsmmkit.model.build import BuildInputs, build_model_spec_from
 from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.persistence.store import ModelStore
 from tests.helpers.core_config import core_raw
 from tests.helpers.engine_fixtures import make_dataset
 
@@ -29,7 +31,7 @@ def _data(seed: int, t_len: int = 5000):  # noqa: ANN202
     return make_dataset(rng.normal(np.array([-2.0, 0.0, 2.0])[z], 0.5)[:, None], np.ones(t_len))
 
 
-def _spec(tmp_path: Path, n_states: int, means: list[float]):  # noqa: ANN202
+def _raw(tmp_path: Path, n_states: int, means: list[float]) -> dict:  # type: ignore[type-arg]
     raw = core_raw(tmp_path)
     m = raw["model"]
     m["n_states"] = n_states
@@ -43,8 +45,13 @@ def _spec(tmp_path: Path, n_states: int, means: list[float]):  # noqa: ANN202
         },
     }
     m["duration"]["params"]["rate"]["init_mean_sojourn_steps"] = [20.0] * n_states
+    return raw
+
+
+def _spec(tmp_path: Path, n_states: int, means: list[float]):  # noqa: ANN202
     return build_model_spec_from(
-        parse_project_config(raw), BuildInputs(n_series=1, cov_names={}, clock="steps", nominal_dt=1.0)
+        parse_project_config(_raw(tmp_path, n_states, means)),
+        BuildInputs(n_series=1, cov_names={}, clock="steps", nominal_dt=1.0),
     )
 
 
@@ -75,6 +82,21 @@ def test_e13_t05b_a_four_state_fit_of_three_regime_data_prunes_one_state(tmp_pat
     assert np.all(np.isfinite(np.asarray(res.std_errors["emission.mean"])))
     post = decode(res, data)
     assert post.pruned_states == res.pruned_states
+    # the pruned regime is the unused one in `params` (spurious wide scale, weakest posterior mean)
+    (pruned,) = res.pruned_states
+    assert int(np.argmax(np.asarray(res.params["emission.scale"]).ravel())) == pruned
+    assert int(np.argmax(np.asarray(res.std_errors["emission.mean"]).ravel())) == pruned
+    batch_post = decode(res, SequenceBatch((data, data), (8192,)))
+    assert all(p.pruned_states == res.pruned_states for p in batch_post)
+    bundle = tmp_path / "vb.hsmm"
+    cfg = parse_project_config(_raw(tmp_path, 4, [-2.5, -0.5, 0.5, 2.5]))
+    ModelStore.save(res, bundle, cfg, data)
+    again = ModelStore.load(bundle)
+    assert again.pruned_states == res.pruned_states
+    assert again.estimator == "vb"
+    np.testing.assert_allclose(
+        np.asarray(again.std_errors["emission.mean"]), np.asarray(res.std_errors["emission.mean"])
+    )
 
 
 def test_e13_t05b_prune_threshold_comes_from_the_config(tmp_path: Path) -> None:

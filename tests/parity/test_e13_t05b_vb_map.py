@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -46,7 +47,8 @@ def test_e13_t05b_vb_posterior_means_match_map(tmp_path: Path, family: str, dura
         a, b = np.asarray(vb.params[name]), np.asarray(value)
         worst = max(worst, float(np.max(np.abs(a - b) / np.maximum(np.abs(b), 0.05))))
     _RESULTS.append((family, duration, worst, "ok" if worst <= 0.02 else "FAILED"))
-    _write()
+    if os.environ.get("HSMMKIT_WRITE_PARITY") == "1":
+        _write()
     assert worst <= 0.02, worst
 
 

@@ -94,17 +94,25 @@ def relabel_states(theta: Params, spec: ModelSpec, first: PreparedDataset) -> tu
 
     Returns `(theta, changed)`; supervision (`first.labels`) fixes the numbering, so nothing is relabelled.
     """
+    sorted_theta, perm = relabel_states_perm(theta, spec, first)
+    return sorted_theta, perm is not None
+
+
+def relabel_states_perm(
+    theta: Params, spec: ModelSpec, first: PreparedDataset
+) -> tuple[Params, np.ndarray | None]:
+    """`relabel_states` that also returns the permutation (`perm[new] = old`, `None` when unchanged)."""
     if not has_identifiability_guard(spec) and first.labels is not None:
         # regime ids of `data.labels` / boundaries refer to the current numbering: do not relabel (E12-T06)
         warnings.warn(
             "no identifiability guard, but data.labels fix the regime numbering: the fitted regimes are not "
             "relabelled by scale",
             UserWarning,
-            stacklevel=3,
+            stacklevel=4,
         )
-        return theta, False
+        return theta, None
     if has_identifiability_guard(spec):
-        return theta, False
+        return theta, None
     scale_name = next(
         (
             name
@@ -120,10 +128,10 @@ def relabel_states(theta: Params, spec: ModelSpec, first: PreparedDataset) -> tu
         f"no identifiability guard (no fixed or ordered emission location/scale spec): "
         f"relabelling states by ascending {scale_name} to fix label switching",
         UserWarning,
-        stacklevel=3,
+        stacklevel=4,
     )
-    sorted_theta, _ = post_sort_states(theta, spec, by=scale_name)
-    return sorted_theta, True
+    sorted_theta, perm = post_sort_states(theta, spec, by=scale_name)
+    return sorted_theta, perm
 
 
 def fit(

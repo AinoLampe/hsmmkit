@@ -43,7 +43,7 @@ from hsmmkit.estimation.map import (
     _init_theta,
     _per_sequence_table,
     _restart_plan,
-    relabel_states,
+    relabel_states_perm,
 )
 from hsmmkit.estimation.map import fit as map_fit
 from hsmmkit.estimation.mstep import block_plan, em_update, needs_per_t
@@ -351,9 +351,10 @@ class EMEstimator:
         best = max(finite, key=lambda i: runs[i][1])
         theta, score = runs[best]
         ll = lls[best]
-        theta, relabelled = relabel_states(theta, spec, first)
+        theta, perm = relabel_states_perm(theta, spec, first)
+        relabelled = perm is not None
         u = manager.flatten(theta)
-        best_extras = dict(extras[best] or {})
+        best_extras = _permute_extras(dict(extras[best] or {}), perm, spec)
         std_errors = best_extras.pop("std_errors", None) or None
         pruned_states = tuple(best_extras.get("pruned_states", ()))
         diagnostics: dict[str, Any] = {
@@ -389,6 +390,35 @@ class EMEstimator:
             config_resolved={},
             pruned_states=pruned_states,
         )
+
+
+def _permute_extras(extras: dict[str, Any], perm: np.ndarray | None, spec: ModelSpec) -> dict[str, Any]:
+    """Renumber the per-regime entries of an estimator's extras like `params` (`perm[new] = old`)."""
+    if perm is None or not extras:
+        return extras
+    n = spec.n_states
+    out = dict(extras)
+    if "occupancy" in out:
+        out["occupancy"] = np.asarray(out["occupancy"])[perm]
+    if "pruned_states" in out:
+        old = set(out["pruned_states"])
+        out["pruned_states"] = tuple(int(i) for i, o in enumerate(perm) if int(o) in old)
+    if out.get("std_errors"):
+        out["std_errors"] = {
+            k: (np.asarray(v)[perm] if np.ndim(v) >= 1 and np.shape(v)[0] == n else v)
+            for k, v in out["std_errors"].items()
+        }
+    q = out.get("q_params")
+    if isinstance(q, dict):
+        new_q: dict[str, Any] = {}
+        for block, value in q.items():
+            if block == "jump":
+                if spec.order == 1:  # rows are the regimes, columns the targets
+                    new_q[block] = np.asarray(value)[perm][:, perm]
+                continue  # memory-tuple rows of higher orders are not renumbered: dropped
+            new_q[block] = {k: np.asarray(v)[perm] for k, v in value.items()}
+        out["q_params"] = new_q
+    return out
 
 
 def em_fit(

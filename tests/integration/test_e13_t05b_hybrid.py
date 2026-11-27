@@ -63,3 +63,19 @@ def test_e13_t05b_a_fixed_conjugate_parameter_turns_its_block_into_a_point_block
     np.testing.assert_allclose(
         np.sort(np.asarray(res.params["duration.rate"])), np.sort(np.asarray(base.init))
     )
+
+
+def test_e13_t05b_a_point_duration_with_a_conjugate_transition_is_monotone(monkeypatch) -> None:  # noqa: ANN001
+    """Irregular steps make the duration a point block (ECM on per-step counts); jumps stay conjugate."""
+    monkeypatch.setenv("HSMMKIT_DEBUG", "1")
+    sc = make_scenario(3, [2, 1, 2], 1, 300, seed=6, irregular=True)
+    spec = dataclasses.replace(sc.spec, param_specs=_specs_of(sc))
+    rng = np.random.default_rng(6)
+    data = dataclasses.replace(sc.data, observations=np.asarray(rng.normal(0.0, 0.01, (300, 1))))
+    cfg = EstimationSection(method="vb", restarts=0, max_iter=25, tol_f=1e-12)
+    res = VBEstimator().fit(spec, data, cfg, 0, warm_start=ParamManager(spec.param_specs).init_u())
+    assert res.diagnostics["vb"]["treatment"]["duration"] == "point"
+    assert res.diagnostics["vb"]["treatment"]["transition"] == "conjugate"
+    trace = np.asarray(res.restarts["elbo_trace"].iloc[0])
+    assert np.all(np.diff(trace) >= -1e-8)
+    assert trace[-1] > trace[0]
