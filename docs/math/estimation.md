@@ -256,8 +256,8 @@ diagonal of packed Cholesky factors `LogNormal(0, 3)`; compact domains (simplex,
 With `default_priors: false` the parameters without a prior are listed in a `ConfigError`.
 
 **Output.** `FitResult.posterior_samples` is an ArviZ object (`DataTree` with ArviZ 1.x, `InferenceData` with 0.x):
-`posterior` (one variable per `ParamSpec` name; dims `(chain, draw, regime, series, ...)`), `sample_stats`
-(`diverging`, `tree_depth`, `energy`, `potential_energy`) and `log_likelihood` (per sequence). `params` are the
+`posterior` (one variable per `ParamSpec` name; dims `(chain, draw, regime, series, ...)`; jump parameters `(memory_row, target)`, duration covariate coefficients `(regime, covariate)`), `sample_stats`
+(`diverging`, `tree_depth` (approximate: `round(log2(num_steps + 1))`), `energy`, `potential_energy`) and `log_likelihood` (per sequence). `params` are the
 posterior means on the constrained scale, `std_errors` the posterior SDs, `diagnostics["mcmc"]` has `r_hat`,
 `ess_bulk`, `ess_tail` per parameter, `divergences`, the sampler settings and the library versions. Without an
 identifiability guard the posterior can be multimodal (label switching): a warning is issued; relabelling and the

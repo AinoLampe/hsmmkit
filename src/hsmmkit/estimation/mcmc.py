@@ -95,7 +95,11 @@ def with_default_priors(spec: ModelSpec) -> ModelSpec:
         if s.domain in _IMPROPER and "free" in modes and "prior" not in modes and s.tie_group is None:
             prior = _default_prior(s)
             if prior is not None:
-                prior_modes: Any = tuple("prior" if m == "free" else m for m in modes)
+                prior_modes: Any = (
+                    "prior"
+                    if (s.constraint != "none" or all(m == "free" for m in modes))
+                    else tuple("prior" if m == "free" else m for m in modes)
+                )
                 new.append(dataclasses.replace(s, mode=prior_modes, prior=prior))
                 continue
         new.append(s)
@@ -133,7 +137,7 @@ class MCMCEstimator:
                 `default_priors`.
             NumericalError: a non-finite potential at the start.
         """
-        numpyro = optional_import("numpyro", extra="bayes")
+        optional_import("numpyro", extra="bayes")
         optional_import("arviz", extra="bayes")
         infer = optional_import("numpyro.infer", extra="bayes")
         m_cfg = cfg.mcmc if cfg.mcmc is not None else McmcCfg()
@@ -146,11 +150,12 @@ class MCMCEstimator:
         jax_setup(cfg.device)
         if m_cfg.default_priors:
             spec = with_default_priors(spec)
-        bad = improper_parameters(spec) if not m_cfg.default_priors else []
+        bad = improper_parameters(spec)
         if bad:
             raise ConfigError(
                 f"free parameters without a prior make the posterior improper: {bad}; "
-                "set estimation.mcmc.default_priors: true or give them priors",
+                "set estimation.mcmc.default_priors: true or give them priors "
+                "(a spec that mixes free and prior entries keeps its own prior)",
                 path="estimation.mcmc.default_priors",
             )
         batch = data if isinstance(data, SequenceBatch) else SequenceBatch.of(data)
@@ -263,7 +268,8 @@ class MCMCEstimator:
         u_mean = manager.flatten(mean_theta)
         loglik = float(objective.loglik(u_mean))
         sd = {k: jnp.asarray(v.reshape(-1, *v.shape[2:]).std(axis=0)) for k, v in posterior.items()}
-        max_r_hat = max(r_hat.values()) if r_hat else float("nan")
+        finite_r_hat = [v for v in r_hat.values() if np.isfinite(v)]
+        max_r_hat = max(finite_r_hat) if finite_r_hat else float("nan")  # one chain: R-hat is undefined
         diagnostics: dict[str, Any] = {
             "mcmc": {
                 "r_hat": r_hat,
@@ -271,7 +277,7 @@ class MCMCEstimator:
                 "ess_tail": ess_tail,
                 "divergences": divergences,
                 "max_r_hat": max_r_hat,
-                "min_ess_bulk": min(ess_bulk.values()) if ess_bulk else float("nan"),
+                "min_ess_bulk": float(np.nanmin(list(ess_bulk.values()))) if ess_bulk else float("nan"),
                 "sampler": "nuts",
                 "chains": chains,
                 "warmup": m_cfg.warmup,
@@ -288,7 +294,6 @@ class MCMCEstimator:
         }
         if divergences:
             warnings.warn(f"MCMC: {divergences} divergent transitions", UserWarning, stacklevel=2)
-        del numpyro
         return FitResult(
             estimator="mcmc",
             params=mean_theta,

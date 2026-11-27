@@ -16,6 +16,7 @@ pytest.importorskip("arviz")
 from hsmmkit.config.schema import EstimationSection
 from hsmmkit.estimation import fit as dispatch_fit
 from hsmmkit.estimation.mcmc import MCMCEstimator, improper_parameters, with_default_priors
+from hsmmkit.model.params.manager import ParamManager
 from tests.helpers import em_models
 
 pytestmark = pytest.mark.bayes
@@ -97,6 +98,40 @@ def test_e13_t06a_vectorized_chains_run(tmp_path: Path) -> None:
     spec, data = _model(tmp_path, 200)
     res = MCMCEstimator().fit(spec, data, _cfg(chain_method="vectorized"), 2)
     assert res.posterior_samples["posterior"]["duration.rate"].shape[:2] == (2, 60)
+
+
+def test_e13_t06a_ordered_parameters_get_a_plain_prior_mode(tmp_path: Path) -> None:
+    """An `increasing` constraint (an identifiability guard) takes the default prior as a plain mode."""
+    import dataclasses
+
+    spec, data = _model(tmp_path, 200)
+    ordered = tuple(
+        dataclasses.replace(s, constraint="increasing", init=np.array([0.02, 0.05]))
+        if s.name == "duration.rate"
+        else s
+        for s in spec.param_specs
+    )
+    spec = dataclasses.replace(spec, param_specs=ordered)
+    start = ParamManager(spec.param_specs).init_u()
+    cfg = _cfg(chains=1, warmup=40, draws=40).model_copy(update={"restarts": 0})
+    res = MCMCEstimator().fit(spec, data, cfg, 0, start)
+    rate = np.asarray(res.posterior_samples["posterior"]["duration.rate"])
+    assert np.all(np.diff(rate, axis=-1) > 0)  # ordered in every draw
+    assert res.diagnostics["mcmc"]["max_r_hat"] != res.diagnostics["mcmc"]["max_r_hat"]  # one chain: NaN
+
+
+def test_e13_t06a_a_batch_gives_one_loglik_column_per_sequence(tmp_path: Path) -> None:
+    """`log_likelihood` has a `sequence` dimension named after the batch ids; the values are finite."""
+    from hsmmkit.data.batch import SequenceBatch
+
+    spec, _ = _model(tmp_path)
+    a, b = em_models.dataset("gaussian", 200, 1), em_models.dataset("gaussian", 150, 2)
+    batch = SequenceBatch((a, b), (256,))
+    res = MCMCEstimator().fit(spec, batch, _cfg(warmup=30, draws=30), 0)
+    ll = res.posterior_samples["log_likelihood"]["loglik"]
+    assert ll.shape == (2, 30, 2)
+    assert list(ll["sequence"].values) == list(batch.ids)
+    assert np.all(np.isfinite(np.asarray(ll)))
 
 
 @pytest.mark.slow

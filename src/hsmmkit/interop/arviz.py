@@ -19,13 +19,28 @@ if TYPE_CHECKING:
 
 __all__ = ["axis_names", "summary_table", "to_inference_data"]
 
-_AXES = ("regime", "series")
+
+_KNOWN = {
+    "emission": ("regime", "series"),
+    "duration": ("regime", "covariate"),
+    "transition.pi_rows": ("memory_row", "target"),
+    "transition.a": ("memory_row", "target"),
+    "transition.b": ("memory_row", "target", "covariate"),
+    "initial.logits": ("group", "state"),
+}
 
 
 def axis_names(name: str, shape: tuple[int, ...]) -> list[str]:
-    """Dimension names of the parameter `name`: `regime`, `series`, then `<name>_axis<i>`."""
+    """Dimension names of the parameter `name` (`regime`, `series`, `memory_row`, `target`, ...).
+
+    Emission parameters are `(regime, series, ...)`, duration parameters `(regime, covariate)`, jump
+    parameters `(memory_row, target[, covariate])`; any other axis is called `<name>_axis<i>`.
+    """
     dotted = name.replace(".", "_")
-    return [_AXES[i] if i < len(_AXES) else f"{dotted}_axis{i}" for i in range(len(shape))]
+    known = _KNOWN.get(name) or _KNOWN.get(name.split(".")[0]) or ()
+    if name == "initial.logits" and len(shape) == 1:
+        known = ("state",)
+    return [known[i] if i < len(known) else f"{dotted}_axis{i}" for i in range(len(shape))]
 
 
 def _dims_and_coords(
