@@ -254,12 +254,15 @@ def build_app(
         config_path: Path,
         model: Path = typer.Option(..., "--model", help="Model bundle directory."),
         augmented: bool = typer.Option(False, "--augmented", help="Also write augmented.parquet."),
+        samples: int = typer.Option(
+            0, "--samples", min=0, help="Posterior path samples (FFBS): path_samples.parquet, boundary_prob."
+        ),
     ) -> None:
         """Decode a fitted model against `config_path`'s data: filtered/smoothed/Viterbi/segments/IC."""
         with exit_on_error():
             project = ctx.project(config_path)
             data = ctx.load_prepared(project)
-            project.decode(project_cls.load(model), data, write=True, augmented=augmented)
+            project.decode(project_cls.load(model), data, write=True, augmented=augmented, samples=samples)
 
     @app.command("forecast")
     def forecast_cmd(

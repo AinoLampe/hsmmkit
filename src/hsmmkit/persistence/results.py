@@ -155,8 +155,9 @@ def write_posterior(result: PosteriorResult, out_dir: Path | str, *, augmented: 
     """Write `decode`'s `PosteriorResult` (E6-T02): `posterior.parquet`, `segments.json`, `criteria.json`.
 
     `posterior.parquet` has `T` rows and `2N+2` columns: `time`, `filtered_0..N-1`, `smoothed_0..N-1`,
-    `viterbi` (the regime path). `augmented=True` also writes `augmented.parquet` (`time` x `S` smoothed
-    expanded-state posterior, `state_0..S-1`).
+    `viterbi` (the regime path), plus `boundary_prob` after a decode with samples; then
+    `path_samples.parquet` (long: `sample`, `t`, `regime`) is written too. `augmented=True` also writes
+    `augmented.parquet` (`time` x `S` smoothed expanded-state posterior, `state_0..S-1`).
 
     Raises:
         PersistenceError: the output directory cannot be written.
@@ -174,7 +175,22 @@ def write_posterior(result: PosteriorResult, out_dir: Path | str, *, augmented: 
         for i in range(n):
             columns[f"smoothed_{i}"] = pa.array(smoothed[:, i])
         columns["viterbi"] = pa.array(np.asarray(result.viterbi))
+        if result.boundary_prob is not None:
+            columns["boundary_prob"] = pa.array(np.asarray(result.boundary_prob))
         pq.write_table(pa.table(columns), out / "posterior.parquet")
+        if result.path_samples is not None:
+            paths = np.asarray(result.path_samples)
+            n_draw, t_len = paths.shape
+            pq.write_table(
+                pa.table(
+                    {
+                        "sample": pa.array(np.repeat(np.arange(n_draw, dtype=np.int32), t_len)),
+                        "t": pa.array(np.tile(np.arange(t_len, dtype=np.int32), n_draw)),
+                        "regime": pa.array(paths.reshape(-1).astype(np.int32)),
+                    }
+                ),
+                out / "path_samples.parquet",
+            )
 
         if augmented:
             aug_smoothed = np.asarray(result.augmented.smoothed)
