@@ -27,12 +27,16 @@ censoring this is `p ~ eta`. A segment that is both first and last is counted as
 
 Left-censoring needs `initial_state: free` (else the engine ties the first-segment law to the jump matrix).
 Geometric durations ignore the truncation at `d_max` (a warning when more than 1e-6 of the mass is beyond it).
-Not supported (`ConfigError`): the expanded engine, parametric durations, per-state duration families,
-duration or transition covariates, duration-dependent jumps, tempering, tied parameters across blocks.
+Other families (gamma, Weibull, lognormal, Poisson, negative binomial, every member of a per-state mix) are
+updated by weighted maximum likelihood on the same objective with damped Newton steps (`estimation.newton`,
+BFGS fallback), also with entry-time duration covariates (`eta_entry`).
+Not supported (`ConfigError`): the expanded engine, transition covariates, left-censoring with duration
+covariates, duration-dependent jumps, tempering, tied parameters across blocks.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import warnings
 from functools import partial
@@ -55,7 +59,10 @@ from hsmmkit.estimation.mstep import (
     emission_mstep,
     transition_mstep,
 )
+from hsmmkit.estimation.newton import newton_minimize
 from hsmmkit.model.duration.nonparametric import NonparametricDuration
+from hsmmkit.model.duration.per_state import PerStateDuration
+from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.plugins import REGISTRY, provenance_of
 from hsmmkit.statespace.builders import build_explicit
 from hsmmkit.utils.errors import ConfigError, NumericalError
@@ -135,37 +142,142 @@ def _dirichlet_extra(spec: ModelSpec, name: str, use_priors: bool) -> float:
     return 0.0
 
 
-def duration_mstep(
-    spec: ModelSpec, theta: Params, stats: ExplicitEStats, use_priors: bool, dt: float
-) -> Params:
-    """New duration parameters (nonparametric pmf or geometric rate) from the segment counts."""
+def _members(spec: ModelSpec) -> list[tuple[Any, str, slice]]:
+    """`(family, parameter prefix, rows of the (N, .) statistics)` of each duration member."""
     family = spec.duration
+    if isinstance(family, PerStateDuration):
+        return [(f, f"duration.s{i}.", slice(i, i + 1)) for i, f in enumerate(family.families)]
+    return [(family, "duration.", slice(None))]
+
+
+def _view(theta: Params, prefix: str) -> Params:
+    """The member's `duration.<name>` view of the (possibly prefixed) parameters."""
+    if prefix == "duration.":
+        return theta
+    return {f"duration.{k[len(prefix) :]}": v for k, v in theta.items() if k.startswith(prefix)}
+
+
+def _member_specs(spec: ModelSpec, prefix: str) -> tuple[Any, ...]:
+    """The member's `ParamSpec`s renamed to the `duration.<name>` view."""
+    own = [s for s in spec.param_specs if s.name.startswith(prefix)]
+    if prefix == "duration.":
+        return tuple(own)
+    return tuple(dataclasses.replace(s, name=f"duration.{s.name[len(prefix) :]}") for s in own)
+
+
+def _q_member(
+    family: Any,  # noqa: ANN401
+    th: Params,
+    stats: ExplicitEStats,
+    rows: slice,
+    mask: Array,
+    pb: PaddedBatch,
+    entry: bool,
+) -> Array:
+    """Expected complete-data objective of one duration member (complete + censored + residual segments)."""
+    d_max = int(stats.eta.shape[-1])
+    if not entry:
+        lp = family.log_pmf(th, d_max, pb.nominal_dt, None)
+        surv = jax.lax.cumlogsumexp(lp, axis=lp.ndim - 1, reverse=True)  # log S(d) = log P(D >= d)
+        eta = jnp.where(mask[rows, None], stats.eta[rows], 0.0)
+        w = jnp.where(mask[rows, None], stats.eta_censored[rows] + stats.eta_first[rows], 0.0)
+        n_first = jnp.where(mask[rows], jnp.sum(stats.eta_first[rows], axis=-1), 0.0)
+        log_mu = jax.scipy.special.logsumexp(surv, axis=-1)
+        q = jnp.sum(jnp.where(eta > 0, eta * lp, 0.0)) + jnp.sum(jnp.where(w > 0, w * surv, 0.0))
+        return q - jnp.sum(jnp.where(n_first > 0, n_first * log_mu, 0.0))
+    assert stats.eta_entry is not None
+    assert stats.eta_entry_censored is not None
+    b, t = stats.eta_entry.shape[:2]
+    z = pb.cov_duration.reshape(b * t, -1)
+    lp = family.log_pmf(th, d_max, pb.nominal_dt, z).reshape(b, t, -1, d_max)[:, :, rows]
+    surv = jax.lax.cumlogsumexp(lp, axis=lp.ndim - 1, reverse=True)
+    m = mask[rows]
+    eta = jnp.where(m[None, None, :, None], stats.eta_entry[:, :, rows], 0.0)
+    q = jnp.sum(jnp.where(eta > 0, eta * lp, 0.0))
+    elapsed = jnp.clip(pb.lengths[:, None] - jnp.arange(t)[None, :] - 1, 0, d_max - 1)  # (B, T): d - 1
+    s_at = jnp.take_along_axis(surv, elapsed[:, :, None, None], axis=-1)[..., 0]  # (B, T, n)
+    ec = jnp.where(m[None, None, :], stats.eta_entry_censored[:, :, rows], 0.0)
+    return q + jnp.sum(jnp.where(ec > 0, ec * s_at, 0.0))
+
+
+def _neg_member(
+    family: Any,  # noqa: ANN401
+    th: Params,
+    manager: Any,  # noqa: ANN401
+    rows: slice,
+    stats: ExplicitEStats,
+    keep_rows: Array,
+    pb: PaddedBatch,
+    entry: bool,
+    use_priors: bool,
+    u: Array,
+) -> Array:
+    """`-(Q + log p + log|J|)` of one duration member at the free coordinates `u`."""
+    cand = {**th, **manager.unflatten(u)}
+    value = _q_member(family, cand, stats, rows, keep_rows, pb, entry)
+    if use_priors:
+        value = value + manager.log_prior(cand) + manager.log_det_jac(u)
+    return -value
+
+
+def duration_mstep(
+    spec: ModelSpec,
+    theta: Params,
+    stats: ExplicitEStats,
+    use_priors: bool,
+    pb: PaddedBatch,
+    entry: bool = False,
+) -> Params:
+    """New duration parameters: nonparametric pmf (censored maximizer), geometric closed form, else Newton.
+
+    Every member (all regimes share one family, or one family per regime) is updated on its own rows of the
+    segment counts; the weighted-MLE objective of the Newton path is `_q_member` (+ prior and log-Jacobian
+    under `use_priors`).
+    """
     out = dict(theta)
-    if isinstance(family, NonparametricDuration):
-        extra = _dirichlet_extra(spec, "duration.logits", use_priors)
-        c = jnp.maximum(stats.eta + extra, 0.0)
-        w = stats.eta_censored + stats.eta_first
-        n_first = jnp.sum(stats.eta_first, axis=-1)
-        total = jnp.sum(c, axis=-1) + jnp.sum(w, axis=-1)
-        p0 = theta["duration.logits"]
-        new = jax.vmap(censored_pmf)(p0, c, w, n_first)
-        topology = getattr(spec.transition, "topology", None)
-        absorbing = np.isin(np.arange(spec.n_states), topology.absorbing) if topology is not None else None
-        keep = total > 0
-        if (
-            absorbing is not None and absorbing.any()
-        ):  # the engine replaces their pmf by a point mass at D_max
-            keep = keep & ~jnp.asarray(absorbing)
-        out["duration.logits"] = jnp.where(keep[:, None], new, p0)
-        return out
-    d = jnp.arange(1, stats.eta.shape[-1] + 1)
-    n_done = jnp.sum(stats.eta + stats.eta_first, axis=-1)
-    waiting = jnp.sum((d - 1) * (stats.eta + stats.eta_first + stats.eta_censored), axis=-1)
-    denom = n_done + waiting
-    a = jnp.where(denom > 0, n_done / jnp.where(denom > 0, denom, 1.0), 0.5)
-    a = jnp.clip(a, 1e-9, 1.0 - 1e-9)
-    new_rate = family.from_advance_prob(a, dt)["duration.rate"]  # type: ignore[attr-defined]
-    out["duration.rate"] = jnp.where(denom > 0, new_rate, theta["duration.rate"])
+    topology = getattr(spec.transition, "topology", None)
+    absorbing = (
+        np.isin(np.arange(spec.n_states), topology.absorbing)
+        if topology is not None
+        else np.zeros(spec.n_states, bool)
+    )
+    keep_rows = jnp.asarray(~absorbing)  # the engine replaces an absorbing pmf by a point mass at D_max
+    dt = pb.nominal_dt
+    for family, prefix, rows in _members(spec):
+        th = _view(out, prefix)
+        n_rows = len(range(*rows.indices(spec.n_states)))
+        sub = stats if rows == slice(None) else None
+        del sub, n_rows
+        if isinstance(family, NonparametricDuration) and not entry:
+            key = f"{prefix}logits"
+            extra = _dirichlet_extra(spec, key, use_priors)
+            c = jnp.maximum(stats.eta[rows] + extra, 0.0)
+            w = stats.eta_censored[rows] + stats.eta_first[rows]
+            n_first = jnp.sum(stats.eta_first[rows], axis=-1)
+            total = jnp.sum(c, axis=-1) + jnp.sum(w, axis=-1)
+            p0 = out[key]
+            new = jax.vmap(censored_pmf)(p0, c, w, n_first)
+            out[key] = jnp.where(((total > 0) & keep_rows[rows])[:, None], new, p0)
+        elif type(family).__name__ == "GeometricDuration" and not entry:
+            eta, cens, first = stats.eta[rows], stats.eta_censored[rows], stats.eta_first[rows]
+            d = jnp.arange(1, eta.shape[-1] + 1)
+            n_done = jnp.sum(eta + first, axis=-1)
+            denom = n_done + jnp.sum((d - 1) * (eta + first + cens), axis=-1)
+            a = jnp.clip(jnp.where(denom > 0, n_done / jnp.where(denom > 0, denom, 1.0), 0.5), 1e-9, 1 - 1e-9)
+            new_rate = family.from_advance_prob(a, dt)["duration.rate"]
+            key = f"{prefix}rate"
+            out[key] = jnp.where((denom > 0) & keep_rows[rows], new_rate, out[key])
+        else:
+            specs = _member_specs(spec, prefix)
+            manager = ParamManager(specs)
+            if manager.n_free == 0:
+                continue
+            u0 = manager.flatten(th)
+
+            neg = partial(_neg_member, family, th, manager, rows, stats, keep_rows, pb, entry, use_priors)
+            u, _, _ = newton_minimize(neg, u0)
+            for k, v in manager.unflatten(u).items():
+                out[k if prefix == "duration." else f"{prefix}{k.removeprefix('duration.')}"] = v
     return out
 
 
@@ -179,6 +291,7 @@ def gem_update(
     use_priors: bool,
     emission_kind: str,
     inner_iter: int = 5,
+    entry: bool = False,
 ) -> Params:
     """One full generalized M-step (emission, duration, jumps, initial law, then parameter modes)."""
     view = SimpleNamespace(gamma_regime=stats.gamma_regime, jump=stats.xi)
@@ -189,7 +302,7 @@ def gem_update(
         )
     else:
         new = emission_mstep(spec, dict(theta), pb, view)  # type: ignore[arg-type]
-    new = duration_mstep(spec, new, stats, use_priors, pb.nominal_dt)
+    new = duration_mstep(spec, new, stats, use_priors, pb, entry)
     new = transition_mstep(spec, space, new, view, use_priors)  # type: ignore[arg-type]
     if spec.initial == "free":
         rho = stats.rho_post
@@ -199,7 +312,7 @@ def gem_update(
     return apply_modes(new, theta, spec.param_specs)
 
 
-@partial(jax.jit, static_argnames=("spec", "use_priors", "emission_kind", "inner_iter"))
+@partial(jax.jit, static_argnames=("spec", "use_priors", "emission_kind", "inner_iter", "entry"))
 def _gem_step(
     theta: Params,
     spec: ModelSpec,
@@ -208,8 +321,9 @@ def _gem_step(
     use_priors: bool,
     emission_kind: str,
     inner_iter: int,
+    entry: bool,
 ) -> tuple[Params, Array]:
-    stats = _explicit_estep_batch(theta, spec, space, pb, False)
+    stats = _explicit_estep_batch(theta, spec, space, pb, entry)
     new = gem_update(
         theta,
         spec,
@@ -223,32 +337,31 @@ def _gem_step(
     return new, jnp.sum(stats.loglik)
 
 
+def _entry(spec: ModelSpec, pb: PaddedBatch) -> bool:
+    """Whether the E-step keeps the per-start segment counts (entry-time duration covariates)."""
+    return bool(pb.cov_duration.shape[-1] > 0 and getattr(spec.duration, "cov_idx", ()))
+
+
 def check_gem_supported(spec: ModelSpec) -> None:
     """Raise `ConfigError` for the structures GEM does not handle in this ticket."""
     if spec.engine != "explicit":
         raise ConfigError("GEM needs engine: explicit (the expanded engine: method em)", path="model.engine")
     family = spec.duration
-    if type(family).__name__ == "PerStateDuration":
-        raise ConfigError(
-            "per-state duration families are not supported by GEM yet (Follow-up in STATUS)",
-            path="model.duration.per_state",
-        )
     if spec.left_censored and spec.initial != "free":
         raise ConfigError(
             "left-censoring under GEM needs initial_state: free (otherwise the engine ties the first-segment "
             "law to the jump matrix, which the M-steps do not model)",
             path="model.initial_state",
         )
-    if not isinstance(family, NonparametricDuration) and not (
-        hasattr(family, "from_advance_prob") and type(family).__name__ == "GeometricDuration"
-    ):
+    dur_cov = bool(getattr(family, "cov_idx", ()))
+    if getattr(spec.transition, "cov_idx", ()):
+        raise ConfigError("GEM does not support transition covariates yet", path="model.transition")
+    if dur_cov and spec.left_censored:
         raise ConfigError(
-            "parametric durations under GEM available from E13-T03b "
-            f"(got {type(family).__name__}; supported now: nonparametric, geometric)",
-            path="model.duration.family",
+            "entry-time duration covariates with left-censoring are not supported by GEM", path="model"
         )
-    if getattr(family, "cov_idx", ()) or getattr(spec.transition, "cov_idx", ()):
-        raise ConfigError("GEM does not support duration or transition covariates yet", path="model")
+    if dur_cov and isinstance(family, NonparametricDuration):
+        raise ConfigError("nonparametric durations have no covariate link", path="model.duration")
     if spec.duration_dependent_jumps:
         raise ConfigError("GEM does not support duration-dependent jumps", path="model.duration")
     if spec.initial == "stationary":
@@ -260,8 +373,8 @@ def check_gem_supported(spec: ModelSpec) -> None:
     crossing = sorted(g for g, parts in blocks.items() if len(parts) > 1)
     if crossing:
         raise ConfigError(f"tie groups {crossing} link different blocks", path="model")
-    if not _plain(tuple(s for s in spec.param_specs if s.name.startswith(("duration.", "transition.")))):
-        raise ConfigError("GEM does not support tied or ordered duration/transition parameters", path="model")
+    if not _plain(tuple(s for s in spec.param_specs if s.name.startswith("transition."))):
+        raise ConfigError("GEM does not support tied or ordered transition parameters", path="model")
 
 
 class GEMEstimator(EMEstimator):
@@ -287,7 +400,8 @@ class GEMEstimator(EMEstimator):
 
     def _plan(self, spec: ModelSpec, pb: PaddedBatch) -> Plan:
         emission = dict(block_plan(spec, pb))["emission"]
-        kind = "geometric" if not isinstance(spec.duration, NonparametricDuration) else "censored-pmf"
+        name = type(spec.duration).__name__
+        kind = {"NonparametricDuration": "censored-pmf", "GeometricDuration": "geometric"}.get(name, "newton")
         return (
             ("emission", emission),
             ("duration", f"closed-form ({kind})"),
@@ -309,13 +423,14 @@ class GEMEstimator(EMEstimator):
             raise ConfigError("tempering is not available for GEM", path="estimation.gem.tempering")
         check = os.environ.get("HSMMKIT_DEBUG") == "1"
         emission_kind = "ecm" if dict(plan)["emission"] == "ecm" else "closed-form"
+        entry = _entry(spec, pb)
         theta = dict(theta0)
         trace: list[float] = []
         converged = False
         n_iter = 0
         for n_iter in range(1, cfg.max_iter + 1):
             new, ll_array = _gem_step(
-                theta, spec, space, pb, cfg.use_priors, emission_kind, section.ecm.inner_iter
+                theta, spec, space, pb, cfg.use_priors, emission_kind, section.ecm.inner_iter, entry
             )
             ll = float(ll_array)
             if not np.isfinite(ll):
@@ -341,7 +456,7 @@ class GEMEstimator(EMEstimator):
         return theta, trace, converged, n_iter
 
     def _final(self, theta: Params, spec: ModelSpec, space: StateSpace, pb: PaddedBatch) -> float:
-        stats = _explicit_estep_batch(theta, spec, space, pb, False)
+        stats = _explicit_estep_batch(theta, spec, space, pb, _entry(spec, pb))
         return float(jnp.sum(stats.loglik))
 
 
