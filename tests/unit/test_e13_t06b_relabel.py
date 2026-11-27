@@ -59,7 +59,7 @@ def test_e13_t06b_random_permutations_are_undone(tmp_path: Path) -> None:
     fixed, fraction = relabel_draws(shuffled, spec, pivot)
     same = np.array(
         [
-            all(np.allclose(fixed[k][c, d], clean[k][c, d], atol=1e-12) for k in clean)
+            all(np.allclose(fixed[k][c, d], clean[k][c, d], rtol=0.0, atol=1e-12) for k in clean)
             for c in range(2)
             for d in range(150)
         ]
@@ -93,6 +93,5 @@ def test_e13_t06b_the_permutation_minimizes_the_standardized_distance() -> None:
     draw = pivot[[2, 0, 1]] + 0.1  # new state i is old state perm[i]; relabelling must undo it
     perm = relabel_permutation(draw, pivot, np.ones(2))
     np.testing.assert_array_equal(draw[perm], pivot + 0.1)
-    assert location_features(
-        {"emission.mean": np.zeros((3, 1)), "emission.scale": np.ones((3, 1))}, 3
-    ).shape == (3, 1)
+    feats = location_features({"emission.mean": np.zeros((3, 1)), "emission.scale": np.ones((3, 1))}, 3)
+    assert feats.shape == (3, 2)  # location and log scale

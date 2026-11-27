@@ -268,7 +268,9 @@ sweep draws the state paths by FFBS (`engine.ffbs`, one draw per sequence), form
 paths (one-hot regime weights; stay / advance / exit counts per rate and jump row) and draws every block from its
 conjugate posterior (Normal-Gamma / Normal-Wishart, Gamma, Beta, Dirichlet; `sample_params` of the conjugate
 classes). The chains are `vmap`ped in one `lax.scan`; the key of chain `c`, sweep `k` is
-`fold_in(fold_in(key_for(seed, PURPOSE_MCMC, c), 2), k)`. The priors are those of VB. `keep_paths_every: k` adds a
+`fold_in(fold_in(key_for(seed, PURPOSE_MCMC, c), 2), k)`. The priors are those of VB (the sampler targets the posterior under the VB default priors, not under the
+`default_priors` of NUTS; a block with ordered / fixed / user-prior parameters is not conjugate and is refused). The
+chains start at the MAP optimum with the same jitter as NUTS. `keep_paths_every: k` adds a
 `path_samples` group with the regime paths of every k-th draw. Non-conjugate components give a `ConfigError`
 listing them and suggesting `nuts`.
 

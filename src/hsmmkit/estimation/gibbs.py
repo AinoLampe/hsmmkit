@@ -79,7 +79,7 @@ def _path_stats(paths: Array, space: StateSpace, n_regimes: int) -> SimpleNamesp
 
 
 def run_gibbs(
-    theta0: Params,
+    theta_starts: Params,
     spec: ModelSpec,
     space: StateSpace,
     pb: PaddedBatch,
@@ -122,7 +122,7 @@ def run_gibbs(
     sweep_keys = jax.vmap(lambda b: jax.vmap(lambda k: jax.random.fold_in(b, k))(jnp.arange(warmup + draws)))(
         bases
     )  # (chain, sweep)
-    theta_chains = jax.tree_util.tree_map(lambda x: jnp.broadcast_to(x, (chains, *jnp.shape(x))), theta0)
+    theta_chains = theta_starts  # `(chain, *shape)` per parameter
 
     def step(theta: Params, keys: Array) -> tuple[Params, tuple[Params, Array | None]]:
         new, regimes = vsweep(theta, keys)

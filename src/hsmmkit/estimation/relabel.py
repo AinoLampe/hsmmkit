@@ -28,16 +28,19 @@ if TYPE_CHECKING:
 __all__ = ["location_features", "relabel_draws", "relabel_permutation"]
 
 _LOCATION_NAMES = ("emission.mean", "emission.m", "emission.mu", "emission.eta")
+_SCALE_NAMES = ("emission.scale", "emission.s", "emission.sigma")
 
 
 def location_features(theta: Mapping[str, np.ndarray], n_states: int) -> np.ndarray:
-    """`(N, K)` state features: the emission location parameters (all emission parameters as a fallback)."""
-    names = [n for n in _LOCATION_NAMES if n in theta]
+    """`(N, K)` state features: emission locations and log scales (all emission parameters as a fallback)."""
+    names = [n for n in (*_LOCATION_NAMES, *_SCALE_NAMES) if n in theta]
     if not names:
         names = [n for n in theta if n.startswith("emission.")]
     cols = []
     for name in names:
         arr = np.asarray(theta[name], dtype=np.float64)
+        if name in _SCALE_NAMES:
+            arr = np.log(np.maximum(arr, 1e-300))  # regimes that differ by volatility only
         if arr.ndim >= 1 and arr.shape[0] == n_states:
             cols.append(arr.reshape(n_states, -1))
     if not cols:

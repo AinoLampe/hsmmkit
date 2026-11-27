@@ -11,7 +11,8 @@ Free parameters without a prior make the posterior improper: with `estimation.mc
 weakly informative defaults of `docs/math/estimation.md` are attached (real: `Normal(0, 10 max(1, |init|))`,
 positive: `LogNormal(mean log init, 3)`, `nu > 2`: `LogNormal(log 10, 1.5)`, packed Cholesky:
 `LogNormal` on the diagonal); otherwise they are a `ConfigError`. Without an identifiability guard the
-posterior can be multimodal (label switching): a warning is issued; relabelling is E13-T06b. Same seed,
+posterior can be multimodal (label switching): the draws are relabelled towards the MAP pivot afterwards
+(`estimation.relabel`). Same seed,
 backend and library versions give
 identical draws; the versions are recorded in `diagnostics["mcmc"]["versions"]`.
 """
@@ -137,7 +138,8 @@ class MCMCEstimator:
 
         Raises:
             ImportError: the `bayes` extra (NumPyro, ArviZ) is not installed.
-            ConfigError: `use_priors: false`, the Gibbs sampler (E13-T06b) or improper parameters without
+            ConfigError: `use_priors: false`, components that are not conjugate with `sampler: gibbs`, or
+                improper parameters without
                 `default_priors`.
             NumericalError: a non-finite potential at the start.
         """
@@ -187,8 +189,15 @@ class MCMCEstimator:
         if nuts:
             theta_draws, sample_stats = self._nuts(spec, space, engine, manager, pb, u_map, m_cfg, seed)
         else:
+            keys0 = [key_for(seed, PURPOSE_MCMC, c) for c in range(chains)]
+            starts = jnp.stack(
+                [
+                    u_map + m_cfg.jitter * jax.random.normal(jax.random.fold_in(k, 1), (int(u_map.shape[0]),))
+                    for k in keys0
+                ]
+            )
             theta_draws, paths = run_gibbs(
-                manager.unflatten(u_map),
+                jax.vmap(manager.unflatten)(starts),
                 spec,
                 space,
                 pb,
