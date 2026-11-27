@@ -18,7 +18,10 @@ state = load_state("run/state", fit)  # PersistenceError if it belongs to anothe
 * **Bitwise equality (NFR-15).** The step is `engine.expanded_hmm.forward_step`, the single body of the offline
   scan, and the emission row of one observation comes from the same code with `T = 1`. `log_alpha`, the filtered
   probabilities (`Posterior.regime_filtered`, evaluated row by row) and `log_norm` equal the offline results
-  bitwise on the same backend. `log_norm` is the running log-likelihood `log p(y_1:t)`.
+  bitwise on the same backend when the emission's floating-point kernels round independently of the array
+  shape (the tested Gaussian / NB scenarios do); a family whose log-density applies a vectorized transcendental
+  (`exp`, `log`) to `(T, N, M)` arrays offline but to `(1, N, M)` online can differ in the last bits (about
+  `1e-14`), as the fitted Gaussian of the stream tests does. `log_norm` is the running log-likelihood `log p(y_1:t)`.
 * **Covariates.** `z` is a mapping `{"transition": (K,), "duration": (K,), "emission": (K,)}` of rows that are
   already lagged and standardized. `OnlineCovariatePreparer(fit.prep_stats, entry_points=...)` applies the stored
   transforms (`log`, `diff`, `pct`), the lag (`>= 1`), the stale limit and the standardization to raw prints:
@@ -52,3 +55,20 @@ state = load_state("run/state", fit)  # PersistenceError if it belongs to anothe
 * **Limits (0.4.0).** `engine: explicit`, time-step memory (`memory_mode: steps`) and families with a recurrent
   emission carry raise `ConfigError("online filtering requires engine: expanded")`; the stream CLI follows in E15-T04. The filter compiles its step once per instance; a step costs about 0.13 ms at `S = 12`
   on a cloud CPU.
+
+## Command line and Python facade
+
+`hsmmkit stream CONFIG --model PATH [--input - | FILE] [--follow] [--state DIR] [--emit filtered,smoothed,events]
+[--every k] [--strict]` reads CSV rows (a header with the observation columns, the optional time column and the
+raw covariate columns of the configuration) and writes one JSON line per processed row:
+`{"t", "time", "filtered", "smoothed_lag", "events"}`. `--every k` thins the output (lines with events are always
+written); `--state DIR` resumes from, and checkpoints into, a state directory (every `online.checkpoint_every`
+rows, default 1000, and on exit or SIGINT / SIGTERM); `--follow` tails a growing file (poll 0.5 s). A missing
+model exits with 2, a missing column with 3 (naming it); a malformed row is skipped with a message on stderr, or
+exits with 3 under `--strict`.
+
+`Project.online(fit, initial=None, lag=None)` returns an `OnlineSession` with `push(row)`, `push_many(df)`,
+`events`, `save(dir)` / `load(dir)` and `forecast(horizon)`; the command uses the same session, so their outputs
+are identical. Covariates are dated by row (print `t + 1 - lag`), leading rows without a covariate print are
+skipped as the offline `Preparer` trims them. The identity observation transform and emissions without own lags
+are supported. Against the offline filter the stream agrees to about `1e-14` (see above).

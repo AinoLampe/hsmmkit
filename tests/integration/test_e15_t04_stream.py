@@ -98,7 +98,7 @@ def _offline_filtered(world: dict[str, Any]) -> np.ndarray:
 
 
 def test_e15_t04_piped_csv_equals_push_many_and_the_offline_filter_bitwise(plain: dict[str, Any]) -> None:
-    """AC1: JSONL filtered probabilities == `Project.online().push_many()` == offline `decode` filtered."""
+    """AC1: JSONL == `Project.online().push_many()` bitwise, and the offline `decode` filtered to 1e-12."""
     result = _stream(plain, _csv(plain["frame"]))
     assert result.exit_code == 0, result.output
     rows = _jsonl(result.stdout)
@@ -117,7 +117,9 @@ def test_e15_t04_piped_csv_equals_push_many_and_the_offline_filter_bitwise(plain
     table = session.push_many(plain["frame"])
     pushed = table[[c for c in table.columns if c.startswith("filtered_")]].to_numpy()
     np.testing.assert_array_equal(streamed, pushed)
-    np.testing.assert_array_equal(streamed, _offline_filtered(plain))
+    # versus the offline pass: ~1e-14 (owner decision, option 1). The emission table of a (T, N, M) block and
+    # of a single row round differently in XLA's vectorized `exp` (`GaussianFamily._mean_sd`), see STATUS.
+    np.testing.assert_allclose(streamed, _offline_filtered(plain), rtol=0, atol=1e-12)
     # the events of the stream are the events of the session
     assert [e for r in rows for e in r["events"]] == [e.to_dict() for e in session.events]
 

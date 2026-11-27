@@ -152,7 +152,7 @@ def add_stream_command(app: CliApp, exit_on_error: Callable[[], AbstractContextM
         every: int = typer.Option(1, "--every", min=1, help="Emit every k-th row (events always)."),
         strict: bool = typer.Option(False, "--strict", help="A malformed row is an error (exit 3)."),
     ) -> None:
-        """Stream rows through the online filter: JSONL of filtered / smoothed probabilities and alert events."""
+        """Stream rows through the online filter: JSONL of filtered / smoothed probabilities and events."""
         with exit_on_error():
             fields = _parse_emit(emit)
             if not model.exists():

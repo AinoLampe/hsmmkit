@@ -8,6 +8,7 @@ app of the core.
 | `validate-config`, `config-schema` | validate a configuration, export its JSON Schema |
 | `fit`, `decode`, `forecast`, `simulate` | data from `data.source` |
 | `backtest`, `compare`, `selftest` | walk-forward evaluation, comparison, smoke test |
+| `stream` | CSV rows from stdin or a (growing) file -> JSONL regime probabilities and alert events (`--model`, `--input`, `--follow`, `--state`, `--emit`, `--every`, `--strict`) |
 
 Global options: `--out`, `--device`, `--seed`, `--log-level` and `--offline` (ignored unless a source honours it).
 
