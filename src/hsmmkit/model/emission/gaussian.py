@@ -566,8 +566,11 @@ class GaussianFamily(BaseEmission):
         """
         if self.mean_idx or self.scale_idx or "w" not in stats:
             return None
-        m = stats["w_y"] / stats["w_dt"]
-        var = (stats["w_y2_dt"] - 2.0 * m * stats["w_y"] + m**2 * stats["w_dt"]) / stats["w"]
+        w, w_dt = stats["w"], stats["w_dt"]
+        if stats["w_y"].ndim == 2:  # `(N, M)` sums of several series
+            w, w_dt = w[:, None], w_dt[:, None]
+        m = stats["w_y"] / w_dt
+        var = (stats["w_y2_dt"] - 2.0 * m * stats["w_y"] + m**2 * w_dt) / w
         var = jnp.maximum(var, 1e-300)
         mean = m + 0.5 * var if self.ito_correction else m
         return {self.mean_name(): mean, self.scale_name(): jnp.sqrt(var)}
@@ -604,8 +607,15 @@ class GaussianFamily(BaseEmission):
                 "s1": gamma.T @ y,  # (N, M)
                 "s2": jnp.einsum("tn,tj,tk->njk", gamma / s[:, None], y, y),  # (N, M, M)
             }
-        y1 = y[:, 0] if y.ndim == 2 else y
         s = dt if self.scale_by_dt else jnp.ones_like(dt)
+        if y.ndim == 2 and y.shape[1] > 1:  # several independent series: `(N, M)` sums
+            return {
+                "w": jnp.sum(gamma, axis=0),
+                "w_dt": jnp.sum(gamma * s[:, None], axis=0),
+                "w_y": gamma.T @ y,
+                "w_y2_dt": (gamma / s[:, None]).T @ (y**2),
+            }
+        y1 = y[:, 0] if y.ndim == 2 else y
         return {
             "w": jnp.sum(gamma, axis=0),
             "w_dt": jnp.sum(gamma * s[:, None], axis=0),
