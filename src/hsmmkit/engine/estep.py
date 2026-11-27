@@ -52,7 +52,18 @@ __all__ = ["ExpandedEStats", "expanded_estep"]
 
 @partial(
     jax.tree_util.register_dataclass,
-    data_fields=["loglik", "gamma_regime", "gamma1", "stay", "advance", "occupancy", "jump"],
+    data_fields=[
+        "loglik",
+        "gamma_regime",
+        "gamma1",
+        "stay",
+        "advance",
+        "occupancy",
+        "jump",
+        "stay_t",
+        "advance_t",
+        "jump_t",
+    ],
     meta_fields=[],
 )
 @dataclass(frozen=True)
@@ -67,6 +78,9 @@ class ExpandedEStats:
         advance: `(R_rate,)` expected phase advances plus exits per duration-rate row.
         occupancy: `(R_rate,)` expected steps spent in the states of each rate row before a transition.
         jump: `(R, N)` expected exits from jump-matrix row `r` into regime `j`.
+        stay_t, advance_t: `(B, T_max, R_rate)` the per-step terms of `stay` / `advance` (only with
+            `keep_per_t`; row `t` is the transition into step `t`, row 0 is 0).
+        jump_t: `(B, T_max, R, N)` the per-step terms of `jump` (only with `keep_per_t`).
     """
 
     loglik: Array
@@ -76,6 +90,9 @@ class ExpandedEStats:
     advance: Array
     occupancy: Array
     jump: Array
+    stay_t: Array | None = None
+    advance_t: Array | None = None
+    jump_t: Array | None = None
 
 
 def _regime_emissions(theta: Params, spec: ModelSpec, data: Any, valid: Array) -> Array:  # noqa: ANN401
@@ -99,8 +116,9 @@ def _estep_one(
     *,
     active: bool,
     tempered: bool,
+    keep_per_t: bool,
 ) -> tuple[Array, ...]:
-    """One sequence: `(loglik, gamma_regime, gamma_0, stay, advance, occupancy, jump)`."""
+    """One sequence: `(loglik, gamma_regime, gamma_0, stay, advance, occupancy, jump, per-t buffers)`."""
     idx = space.index
     n_state = space.n_expanded
     n_rate = space.n_rates
@@ -171,7 +189,7 @@ def _estep_one(
         return jnp.where(finite, jnp.exp(jnp.where(finite, log_gamma - ll_use, 0.0)), 0.0)
 
     def back(carry: tuple[Any, ...], t: Array) -> tuple[tuple[Any, ...], None]:
-        beta_t, stay, adv, occ, jmp, gbuf = carry
+        beta_t, stay, adv, occ, jmp, gbuf, st_t, ad_t, jt_t = carry
         alpha_prev, alpha_t, v = log_alpha[t - 1], log_alpha[t], valid[t]
         log_a = log_a_at(t)
         ell_s = row_of(ell_reg, t, True)
@@ -184,19 +202,25 @@ def _estep_one(
         gamma_prev = norm(alpha_prev + beta_prev)
         occ = occ + jnp.zeros(n_rate).at[space.rate_index_of].add(jnp.where(v, gamma_prev, 0.0))
         gbuf = gbuf.at[t].set(jnp.where(v, gamma_t, 0.0) @ idx.collapse)
-        return (beta_prev, stay + d_stay, adv + d_adv, occ, jmp + d_jmp, gbuf), None
+        if keep_per_t:
+            st_t, ad_t, jt_t = st_t.at[t].set(d_stay), ad_t.at[t].set(d_adv), jt_t.at[t].set(d_jmp)
+        return (beta_prev, stay + d_stay, adv + d_adv, occ, jmp + d_jmp, gbuf, st_t, ad_t, jt_t), None
 
     zeros = jnp.zeros(n_rate)
+    n_t = t_len if keep_per_t else 0
     init: Any = (
-        jnp.zeros(n_state), zeros, zeros, zeros, jnp.zeros((n_row, n_reg)), jnp.zeros((t_len, n_reg))
+        jnp.zeros(n_state), zeros, zeros, zeros, jnp.zeros((n_row, n_reg)), jnp.zeros((t_len, n_reg)),
+        jnp.zeros((n_t, n_rate)), jnp.zeros((n_t, n_rate)), jnp.zeros((n_t, n_row, n_reg)),
     )  # fmt: skip
-    (beta_0, stay, adv, occ, jmp, gamma_reg), _ = jax.lax.scan(back, init, steps, reverse=True)
+    (beta_0, stay, adv, occ, jmp, gamma_reg, st_t, ad_t, jt_t), _ = jax.lax.scan(
+        back, init, steps, reverse=True
+    )
     gamma_0 = norm(log_alpha[0] + beta_0)
     gamma_reg = gamma_reg.at[0].set(jnp.where(valid[0], gamma_0 @ idx.collapse, 0.0))
-    return ll, gamma_reg, gamma_0, stay, adv, occ, jmp
+    return ll, gamma_reg, gamma_0, stay, adv, occ, jmp, st_t, ad_t, jt_t
 
 
-@partial(jax.jit, static_argnames=("spec", "tempered"))
+@partial(jax.jit, static_argnames=("spec", "tempered", "keep_per_t"))
 def _estep_batch(
     theta: Params,
     spec: ModelSpec,
@@ -204,6 +228,7 @@ def _estep_batch(
     pb: PaddedBatch,
     beta: Array,
     tempered: bool,
+    keep_per_t: bool = False,
 ) -> ExpandedEStats:
     data = _dataset_view(pb)
     grouped = "initial.logits" in theta and theta["initial.logits"].ndim == 2
@@ -212,9 +237,13 @@ def _estep_batch(
 
     def one(d: Any, v: Array, g: Array, c: Array) -> tuple[Array, ...]:  # noqa: ANN401
         th = {**theta, "initial.logits": theta["initial.logits"][g]} if grouped else theta
-        return _estep_one(th, spec, space, d, v, c, beta, active=active, tempered=tempered)
+        return _estep_one(
+            th, spec, space, d, v, c, beta, active=active, tempered=tempered, keep_per_t=keep_per_t
+        )
 
-    ll, gamma_reg, gamma_0, stay, adv, occ, jmp = jax.vmap(one)(data, pb.valid, pb.group_index, codes)
+    ll, gamma_reg, gamma_0, stay, adv, occ, jmp, st_t, ad_t, jt_t = jax.vmap(one)(
+        data, pb.valid, pb.group_index, codes
+    )
     nonempty = pb.lengths > 0
     n_groups = spec.n_groups
     keep = nonempty.astype(gamma_0.dtype)
@@ -231,6 +260,9 @@ def _estep_batch(
         advance=total(adv),
         occupancy=total(occ),
         jump=total(jmp),
+        stay_t=(st_t * keep[:, None, None]) if keep_per_t else None,
+        advance_t=(ad_t * keep[:, None, None]) if keep_per_t else None,
+        jump_t=(jt_t * keep[:, None, None, None]) if keep_per_t else None,
     )
 
 
@@ -242,6 +274,7 @@ def expanded_estep(
     pb: PaddedBatch,
     *,
     beta_temper: float = 1.0,
+    keep_per_t: bool = False,
 ) -> ExpandedEStats:
     """The expected counts of `pb` under `params` (one forward pass, one fused backward / accumulation scan).
 
@@ -252,6 +285,8 @@ def expanded_estep(
         space: `build_expanded(spec)`.
         pb: the padded batch (`SequenceBatch.padded()`; a single dataset is a `B = 1` batch).
         beta_temper: `beta in (0, 1]`; the E-step runs on `beta * ell` (tempered EM); `loglik` stays raw.
+        keep_per_t: also return the per-step counts `stay_t`, `advance_t`, `jump_t` (memory
+            `O(B T (R_rate + R N))`; ECM of covariate / irregular-step blocks needs them).
 
     Raises:
         ConfigError: explicit engine, time-step memory, or `beta_temper` outside `(0, 1]`.
@@ -265,7 +300,7 @@ def expanded_estep(
     if not 0.0 < beta_temper <= 1.0:
         raise ConfigError(f"beta_temper must be in (0, 1], got {beta_temper}", path="estimation.em.tempering")
     stats: ExpandedEStats = _estep_batch(
-        params, spec, space, pb, jnp.asarray(beta_temper), beta_temper != 1.0
+        params, spec, space, pb, jnp.asarray(beta_temper), beta_temper != 1.0, keep_per_t
     )
     live = np.asarray(pb.lengths) > 0
     ll = np.asarray(stats.loglik)[live]

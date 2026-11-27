@@ -267,6 +267,8 @@ The whole resolved configuration of the domain-neutral core.
 | Field | Type | Default |
 |---|---|---|
 | `tempering` | `TemperingCfg` | section defaults |
+| `ecm` | `EcmCfg` | section defaults |
+| `warm_start_from` | `'map' \| 'none'` | `'none'` |
 
 ## `estimation.vb`
 
@@ -441,3 +443,11 @@ A single (possibly per-state) parameter's estimation mode and initialization.
 | `enabled` | `bool` | `False` |
 | `beta0` | `float` | `0.3` |
 | `steps` | `int` | `10` |
+
+## `estimation.em.ecm`
+
+`estimation.em.ecm:` — conditional maximization of blocks without a closed form.
+
+| Field | Type | Default |
+|---|---|---|
+| `inner_iter` | `int` | `5` |

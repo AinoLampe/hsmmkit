@@ -1,16 +1,23 @@
-"""`EMEstimator`: Baum-Welch EM on the expanded engine, a peer of MAP (E13-T02a, ADR-0018; supersedes E5-T06).
+"""`EMEstimator`: Baum-Welch EM / ECM on the expanded engine, a peer of MAP (E13-T02a/b, ADR-0018).
 
 Concept refs: Part II §14.6, §15.3. One iteration is one `expanded_estep` (E13-T01a: expected counts without a
-`(T, S, S)` array, padded batches, supervision) followed by the closed-form M-steps of `estimation.mstep`; the
-whole iteration is one `jit`-compiled function. Components without a closed form (covariate links, families
-whose `m_step` answers `None`, non-constant steps) raise `ConfigError` naming `E13-T02b` (ECM).
+`(T, S, S)` array, padded batches, supervision) followed by the M-steps of `estimation.mstep`; the whole
+iteration is one `jit`-compiled function. Blocks (emission, duration, transition) with a closed
+form are updated
+exactly; blocks without one (a family whose `m_step` is `None`, covariate links, irregular steps, tied or
+ordered parameters) by ECM (`estimation.ecm`: a few BFGS steps on the block's expected complete-data
+log-likelihood, accepted only if it improves). `FitResult.diagnostics["em"]` records which was used.
 
-Convergence: stop when the log-likelihood gain is `<= tol_f * max(1, |loglik|)` or after `max_iter`
-iterations.
-Monotonicity is asserted when `HSMMKIT_DEBUG=1` (or `debug=True`): a decrease beyond `1e-10` raises
-`NumericalError`. Multi-start follows MAP: `cfg.restarts` starts cycled over `cfg.init` with the same keys;
-the best final log-likelihood wins. `use_priors` adds the Dirichlet pseudo-counts of the jump rows
-(MAP-EM); the other priors are not used (emission M-steps are maximum likelihood).
+Tempering (`estimation.em.tempering`): the E-step runs on `beta * ell` with `beta_k = beta0^(1 - k
+/ steps)` for the
+first `steps` iterations, then `beta = 1`; convergence and the monotonicity check apply from the
+first `beta = 1`
+iteration on. Otherwise stop when the log-likelihood gain is `<= tol_f * max(1, |loglik|)` or after `max_iter`
+iterations. Monotonicity is asserted when `HSMMKIT_DEBUG=1` (or `debug=True`): a decrease beyond
+`1e-10` raises
+`NumericalError`. Multi-start follows MAP (`cfg.restarts` starts cycled over `cfg.init`, same keys, best final
+log-likelihood wins); `estimation.em.warm_start_from: map` runs EM from the MAP optimum instead. `use_priors`
+adds the Dirichlet pseudo-counts of the jump rows (closed form) or `log p + log|J|` (ECM blocks).
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
+from hsmmkit.config.schema import EmCfg
 from hsmmkit.data.batch import SequenceBatch
 from hsmmkit.data.contracts import PreparedDataset
 from hsmmkit.engine.estep import _estep_batch
@@ -38,13 +46,13 @@ from hsmmkit.estimation.map import (
     _restart_plan,
     relabel_states,
 )
-from hsmmkit.estimation.mstep import em_update
+from hsmmkit.estimation.map import fit as map_fit
+from hsmmkit.estimation.mstep import block_plan, em_update, needs_per_t
 from hsmmkit.estimation.objective import canonical_data
 from hsmmkit.estimation.results import FitResult
 from hsmmkit.model.params.manager import ParamManager
 from hsmmkit.plugins import REGISTRY, provenance_of
 from hsmmkit.statespace.builders import build_expanded
-from hsmmkit.utils.clock import is_irregular
 from hsmmkit.utils.errors import ConfigError, NumericalError
 from hsmmkit.utils.jax_setup import setup as jax_setup
 from hsmmkit.utils.logging import get_logger
@@ -60,6 +68,8 @@ if TYPE_CHECKING:
 
 _LOG = get_logger("hsmmkit.estimation.em")
 MONOTONE_SLACK = 1e-10  # absolute decrease tolerated before debug mode raises (plus 1e-13 relative)
+
+Plan = tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -84,10 +94,8 @@ class EMResult:
 
 
 def check_em_supported(spec: ModelSpec, data: PreparedDataset | SequenceBatch | None = None) -> None:
-    """Raise `ConfigError` unless every component of `spec` has a closed-form EM update.
-
-    The component checks that need the statistics (`m_step` answering `None`) happen at the first iteration.
-    """
+    """Raise `ConfigError` for structures EM / ECM do not handle (the explicit engine: GEM, E13-T03)."""
+    del data
     if spec.engine != "expanded":
         raise ConfigError(
             "EM supports the expanded engine only (explicit engine: E13-T03a/b)", path="model.engine"
@@ -98,60 +106,51 @@ def check_em_supported(spec: ModelSpec, data: PreparedDataset | SequenceBatch | 
         raise ConfigError("EM supports duration_conditioning 'current' only", path="model.transition")
     if spec.initial == "stationary":
         raise ConfigError(
-            "initial_state: stationary depends on the jump and duration parameters and has no closed-form EM "
-            "update (use uniform or free; ECM: E13-T02b)",
+            "initial_state: stationary depends on the jump and duration parameters and has no EM update "
+            "(use uniform or free)",
             path="model.initial_state",
         )
     if spec.duration_dependent_jumps or spec.left_censored:
         raise ConfigError("EM does not support duration-dependent jumps or left-censoring", path="model")
-    if not hasattr(spec.duration, "from_advance_prob"):
-        raise ConfigError(
-            f"component {type(spec.duration).__name__} has no closed-form M-step; "
-            "available from E13-T02b (ECM)",
-            path="model.duration",
-        )
-    if getattr(spec.duration, "cov_idx", ()):
-        raise ConfigError(
-            "duration covariates have no closed-form M-step; available from E13-T02b", path="model.duration"
-        )
-    if getattr(spec.transition, "cov_idx", ()) or any(s.name == "transition.b" for s in spec.param_specs):
-        raise ConfigError(
-            "transition covariates have no closed-form M-step; available from E13-T02b",
-            path="model.transition",
-        )
+    groups: dict[str, set[str]] = {}
     for s in spec.param_specs:
-        if s.constraint == "increasing":
-            raise ConfigError(
-                f"EM does not keep an 'increasing' ordering ({s.name}); use a free parameter",
-                path=s.name,
-            )
-        if s.tie_group is not None or (not isinstance(s.mode, str) and "tied" in s.mode) or s.mode == "tied":
-            raise ConfigError(
-                f"tied parameters ({s.name}) have no EM update yet; available from E13-T02b", path=s.name
-            )
-    if data is not None:
-        seqs = data.sequences if isinstance(data, SequenceBatch) else (data,)
-        for seq in seqs:
-            dt = np.asarray(seq.dt)
-            if is_irregular(dt) or not np.allclose(dt, dt[0], rtol=1e-9, atol=0.0):
-                raise ConfigError(
-                    "EM needs a constant time step (closed-form advance-probability update); "
-                    "irregular steps: E13-T02b",
-                    path="data",
-                )
+        if s.tie_group is not None:
+            groups.setdefault(s.tie_group, set()).add(s.name.split(".")[0])
+    crossing = sorted(g for g, parts in groups.items() if len(parts) > 1)
+    if crossing:
+        raise ConfigError(
+            f"tie groups {crossing} link parameters of different blocks (emission / duration / transition): "
+            "ECM updates one block at a time",
+            path="model",
+        )
 
 
-@partial(jax.jit, static_argnames=("spec", "use_priors"))
+def tempering_schedule(cfg: EmCfg | None, max_iter: int) -> list[float]:
+    """`beta_k = beta0^(1 - k / steps)` for `k = 0 .. steps - 1` (empty when tempering is off)."""
+    if cfg is None or not cfg.tempering.enabled:
+        return []
+    t = cfg.tempering
+    return [float(t.beta0 ** (1.0 - k / t.steps)) for k in range(min(t.steps, max_iter))]
+
+
+@partial(jax.jit, static_argnames=("spec", "use_priors", "plan", "inner_iter", "tempered"))
 def _em_step(
     theta: Params,
     spec: ModelSpec,
     space: StateSpace,
     pb: PaddedBatch,
     use_priors: bool,
+    plan: Plan | None = None,
+    inner_iter: int = 5,
+    tempered: bool = False,
+    beta: Array | None = None,
 ) -> tuple[Params, Array]:
-    """`(theta', loglik(theta))`: one E-step and the closed-form M-step."""
-    stats = _estep_batch(theta, spec, space, pb, jnp.asarray(1.0), False)
-    return em_update(theta, spec, space, pb, stats, use_priors=use_priors), jnp.sum(stats.loglik)
+    """`(theta', loglik(theta))`: one (tempered) E-step and the closed-form / ECM M-step."""
+    keep = plan is not None and needs_per_t(plan)
+    b = jnp.asarray(1.0) if beta is None else beta
+    stats = _estep_batch(theta, spec, space, pb, b, tempered, keep)
+    new = em_update(theta, spec, space, pb, stats, use_priors=use_priors, plan=plan, inner_iter=inner_iter)
+    return new, jnp.sum(stats.loglik)
 
 
 def _debug_on(debug: bool | None) -> bool:
@@ -166,27 +165,53 @@ def run_em(
     cfg: EstimationSection,
     *,
     debug: bool | None = None,
+    plan: Plan | None = None,
 ) -> tuple[Params, list[float], bool, int]:
     """EM from `theta0` on the padded batch `pb`: `(theta, loglik trace, converged, n_iter)`.
 
-    The trace holds the log-likelihood at the start of every iteration, then the final one.
+    The trace holds the log-likelihood at the start of every iteration, then the final one. During the
+    tempering schedule neither convergence nor monotonicity is checked.
     """
     check = _debug_on(debug)
+    em_cfg = cfg.em
+    schedule = tempering_schedule(em_cfg, cfg.max_iter)
+    inner = em_cfg.ecm.inner_iter if em_cfg is not None else 5
+    plan = plan if plan is not None else block_plan(spec, pb)
     theta = dict(theta0)
     trace: list[float] = []
     converged = False
     n_iter = 0
     for n_iter in range(1, cfg.max_iter + 1):
-        new, ll_array = _em_step(theta, spec, space, pb, cfg.use_priors)
+        k = n_iter - 1
+        warm = k < len(schedule)
+        new, ll_array = _em_step(
+            theta,
+            spec,
+            space,
+            pb,
+            cfg.use_priors,
+            plan,
+            inner,
+            warm,
+            jnp.asarray(schedule[k]) if warm else None,
+        )
         ll = float(ll_array)
         if not np.isfinite(ll):
             raise NumericalError("non-finite log-likelihood during EM", path="loglik")
-        if check and trace and ll < trace[-1] - (MONOTONE_SLACK + 1e-13 * abs(trace[-1])):
+        if warm:
+            trace.append(ll)
+            theta = dict(new)
+            continue
+        if (
+            check
+            and len(trace) > len(schedule)
+            and ll < trace[-1] - (MONOTONE_SLACK + 1e-13 * abs(trace[-1]))
+        ):
             raise NumericalError(
                 f"EM log-likelihood decreased: {trace[-1]!r} -> {ll!r} at iteration {n_iter}", path="loglik"
             )
         trace.append(ll)
-        if len(trace) > 1 and abs(ll - trace[-2]) <= cfg.tol_f * max(abs(ll), 1.0):
+        if len(trace) > len(schedule) + 1 and abs(ll - trace[-2]) <= cfg.tol_f * max(abs(ll), 1.0):
             converged = True
             break
         theta = dict(new)
@@ -199,7 +224,7 @@ def _final_loglik(theta: Params, spec: ModelSpec, space: StateSpace, pb: PaddedB
 
 
 class EMEstimator:
-    """Registered estimator `"em"`: closed-form Baum-Welch with MAP's multi-start and `FitResult` contract."""
+    """Registered estimator `"em"`: EM / ECM with MAP's multi-start and `FitResult` contract."""
 
     name = "em"
 
@@ -215,10 +240,10 @@ class EMEstimator:
 
         `data` may be a `SequenceBatch` (the counts are pooled over the sequences). `FitResult.objective` is
         `-loglik` (EM's objective is the likelihood; no prior term); `restarts` has one row per start,
-        with its `loglik_trace`.
+        with its `loglik_trace`; `diagnostics["em"]` names the method of every block and the tempering used.
 
         Raises:
-            ConfigError: a component without a closed-form M-step (see `check_em_supported`).
+            ConfigError: an unsupported structure (see `check_em_supported`).
             NumericalError: a non-finite log-likelihood in every restart, or a decrease in debug mode
                 (`HSMMKIT_DEBUG=1`).
         """
@@ -243,24 +268,29 @@ class EMEstimator:
             pb = SequenceBatch.of(data).padded()
             init_data = observed_rows(data)
             first = data
-        plan = _restart_plan(list(cfg.init), cfg.restarts)
+        em_cfg = cfg.em if cfg.em is not None else EmCfg()
+        plan = block_plan(spec, pb)
+        starts: list[tuple[str, Params]] = []
+        if em_cfg.warm_start_from == "map":
+            optimum = map_fit(spec, data if batch is None else batch, cfg, seed)
+            starts.append(("map", dict(optimum.params)))
+        else:
+            for i, method in enumerate(_restart_plan(list(cfg.init), cfg.restarts)):
+                starts.append(
+                    (method, dict(_init_theta(method, init_data, spec, key_for(seed, i), segments)))
+                )
         if warm_start is not None:
             if tuple(warm_start.shape) != (manager.n_free,):
                 raise ConfigError(
                     f"warm_start has shape {tuple(warm_start.shape)}, expected ({manager.n_free},)",
                     path="estimation.warm_start",
                 )
-            plan.append("warm_start")
+            starts.append(("warm_start", dict(manager.unflatten(warm_start))))
         rows: list[dict[str, object]] = []
         runs: list[tuple[Params, float]] = []
-        for i, method in enumerate(plan):
+        for i, (method, theta0) in enumerate(starts):
             started = time.perf_counter()
-            if method == "warm_start":
-                assert warm_start is not None
-                theta0 = dict(manager.unflatten(warm_start))
-            else:
-                theta0 = dict(_init_theta(method, init_data, spec, key_for(seed, i), segments))
-            theta, trace, converged, n_iter = run_em(theta0, spec, space, pb, cfg)
+            theta, trace, converged, n_iter = run_em(theta0, spec, space, pb, cfg, plan=plan)
             ll = _final_loglik(theta, spec, space, pb)
             runs.append((theta, ll))
             rows.append(
@@ -284,7 +314,14 @@ class EMEstimator:
         theta, ll = runs[best]
         theta, relabelled = relabel_states(theta, spec, first)
         u = manager.flatten(theta)
-        diagnostics: dict[str, Any] = {}
+        diagnostics: dict[str, Any] = {
+            "em": {
+                **dict(plan),
+                "tempering": em_cfg.tempering.model_dump(),
+                "ecm_inner_iter": em_cfg.ecm.inner_iter,
+                "warm_start_from": em_cfg.warm_start_from,
+            }
+        }
         if batch is not None:
             table = _per_sequence_table(ExpandedHMMEngine(), theta, spec, space, batch)
             ll = float(sum(r["loglik"] for r in table))
@@ -321,7 +358,7 @@ def em_fit(
     """One EM run from `theta0` (default: the `rolling_kmeans` start for `seed`); the Part I entry point.
 
     Raises:
-        ConfigError: unsupported model (see `check_em_supported`).
+        ConfigError: unsupported structure (see `check_em_supported`).
         NumericalError: a non-finite log-likelihood, or a decrease under `debug`.
     """
     check_em_supported(spec, data)

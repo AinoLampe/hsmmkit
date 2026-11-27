@@ -65,9 +65,9 @@ def test_e5_t06_masked_steps_keep_em_monotone() -> None:
     assert np.all(np.diff(ll) >= -1e-8 * np.abs(ll[:-1]))
 
 
-def test_e5_t06_pair_conditioning_and_increasing_sigma_are_refused() -> None:
-    """Unsupported structure raises `ConfigError` instead of a shape error or a mis-ordered fit."""
-    case = make_case("gbm", "negbin", 1, t_len=60)
+def test_e5_t06_pair_conditioning_is_refused_and_increasing_sigma_runs_by_ecm() -> None:
+    """Pair conditioning has no EM update; an `increasing` scale ordering is kept by ECM (E13-T02b)."""
+    case = make_case("gbm", "negbin", 1, t_len=200)
     pair = dataclasses.replace(case.spec, duration_conditioning="pair")
     with pytest.raises(ConfigError, match="conditioning"):
         em_fit(pair, case.data, _cfg(), 0)
@@ -77,8 +77,12 @@ def test_e5_t06_pair_conditioning_and_increasing_sigma_are_refused() -> None:
         else s
         for s in case.spec.param_specs
     )
-    with pytest.raises(ConfigError, match="increasing"):
-        em_fit(dataclasses.replace(case.spec, param_specs=ordered), case.data, _cfg(), 0)
+    res = em_fit(
+        dataclasses.replace(case.spec, param_specs=ordered), case.data, _cfg(max_iter=10), 0, debug=True
+    )
+    scale = np.asarray(res.params["emission.scale"]).ravel()
+    assert np.all(np.diff(scale) > 0)
+    assert np.all(np.diff(np.asarray(res.logliks)) >= -1e-8)
 
 
 def test_e5_t06_debug_mode_raises_when_the_loglik_decreases(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -137,26 +141,27 @@ def test_e5_t06_sufficient_stats_give_the_gaussian_mle() -> None:
         assert var[i] == pytest.approx(var_ref, rel=1e-10)
 
 
-def test_e5_t06_unsupported_models_raise_config_error() -> None:
-    """Components without a closed form, the explicit engine and irregular grids are refused."""
-    for kwargs, pattern in (
-        ({"cov_em": True}, "closed-form"),
-        ({"cov_du": True}, "covariates"),
-        ({"cov_tr": True}, "covariates"),
-    ):
-        case = make_case("gbm", "negbin", 1, t_len=60, **kwargs)  # type: ignore[arg-type]
-        with pytest.raises(ConfigError, match=pattern):
-            em_fit(case.spec, case.data, _cfg(), 0)
-    student = make_case("student_t", "negbin", 1, t_len=60)
-    with pytest.raises(ConfigError, match="closed-form"):
-        em_fit(student.spec, student.data, _cfg(), 0)
+@pytest.mark.parametrize("kwargs", [{"cov_em": True}, {"cov_du": True}, {"cov_tr": True}])
+def test_e5_t06_covariate_models_run_by_ecm_and_stay_monotone(kwargs: dict[str, bool]) -> None:
+    """Covariate links have no closed form: ECM updates them and the log-likelihood does not decrease."""
+    case = make_case("gbm", "negbin", 1, t_len=150, **kwargs)  # type: ignore[arg-type]
+    ll = np.asarray(em_fit(case.spec, case.data, _cfg(max_iter=8), 0, debug=True).logliks)
+    assert np.all(np.diff(ll) >= -1e-8 * np.abs(ll[:-1]))
+    assert ll[-1] > ll[0]
+
+
+def test_e5_t06_student_t_irregular_steps_and_the_explicit_engine() -> None:
+    """Student-t (no closed form) and irregular steps run by ECM; the explicit engine is refused."""
+    student = make_case("student_t", "negbin", 1, t_len=150)
+    ll = np.asarray(em_fit(student.spec, student.data, _cfg(max_iter=6), 0, debug=True).logliks)
+    assert np.all(np.diff(ll) >= -1e-8 * np.abs(ll[:-1]))
+    base = make_case("gbm", "negbin", 1, t_len=150)
+    irregular = dataclasses.replace(base.data, dt=base.data.dt * jnp.asarray([1.0, 3.0] * 75))
+    ll_irr = np.asarray(em_fit(base.spec, irregular, _cfg(max_iter=6), 0, debug=True).logliks)
+    assert np.all(np.diff(ll_irr) >= -1e-8 * np.abs(ll_irr[:-1]))
     explicit = make_case("gbm", "gamma", 1, t_len=60)
     with pytest.raises(ConfigError, match="expanded engine"):
         em_fit(explicit.spec, explicit.data, _cfg(), 0)
-    base = make_case("gbm", "negbin", 1, t_len=60)
-    irregular = dataclasses.replace(base.data, dt=base.data.dt * jnp.asarray([1.0, 3.0] * 30))
-    with pytest.raises(ConfigError, match="constant time step"):
-        em_fit(base.spec, irregular, _cfg(), 0)
 
 
 def test_e5_t06_order_two_memory_is_supported_and_monotone() -> None:

@@ -65,13 +65,14 @@ def test_e13_t02a_the_method_key_selects_the_estimator(tmp_path: Path) -> None:
     assert result.uparams.shape == (ParamManager(spec.param_specs).n_free,)
 
 
-def test_e13_t02a_unsupported_components_name_the_ecm_ticket(tmp_path: Path) -> None:
-    """A component without a closed form is refused with a message naming E13-T02b."""
+def test_e13_t02a_tie_groups_across_blocks_are_refused(tmp_path: Path) -> None:
+    """A tie group linking the emission and the duration block cannot be updated one block at a time."""
     spec, _ = em_models.build(tmp_path, "gaussian")
     tied = tuple(
-        dataclasses.replace(s, tie_group="g") if s.name == "emission.scale" else s for s in spec.param_specs
+        dataclasses.replace(s, tie_group="g") if s.name in ("emission.scale", "duration.rate") else s
+        for s in spec.param_specs
     )
-    with pytest.raises(ConfigError, match="E13-T02b"):
+    with pytest.raises(ConfigError, match="tie groups"):
         EMEstimator().fit(
             dataclasses.replace(spec, param_specs=tied),
             em_models.dataset("gaussian", 50, 0),
