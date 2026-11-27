@@ -40,6 +40,8 @@ def build(
     mean_sojourn: float = 6.0,
     means: list[float] | None = None,
     scales: list[float] | None = None,
+    duration_cfg: dict[str, Any] | None = None,
+    cov_names: dict[str, tuple[str, ...]] | None = None,
     **model: Any,  # noqa: ANN401
 ) -> ModelSpec:
     """An `n`-regime explicit-engine model with Gaussian emissions."""
@@ -61,11 +63,15 @@ def build(
         if duration == "nonparametric"
         else {"family": duration, "params": {"rate": {"mode": "free", **init}}}
     )
+    if duration_cfg is not None:
+        m["duration"] = duration_cfg
     if duration == "negbin":
         m["duration"]["r"] = [2] * n
     m.update(model)
     cfg = parse_project_config(raw)
-    return build_model_spec_from(cfg, BuildInputs(n_series=1, cov_names={}, clock="steps", nominal_dt=1.0))
+    return build_model_spec_from(
+        cfg, BuildInputs(n_series=1, cov_names=cov_names or {}, clock="steps", nominal_dt=1.0)
+    )
 
 
 def dataset(y: np.ndarray):  # noqa: ANN201

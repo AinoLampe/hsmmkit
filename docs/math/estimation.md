@@ -196,9 +196,15 @@ minorizer `p_d = (c_d + p0_d sum_{d' <= d} w_{d'} / S0(d')) / (nu + lambda d)`, 
 (an approximation, negligible for `T >> D_max`). Left-censoring needs `initial_state: free`: otherwise the engine sets
 the first-segment law to the stationary occupancy of the jump matrix, which the M-steps do not model (a review probe
 showed non-monotone log-likelihoods). Geometric durations ignore the truncation at `d_max` (warning above 1e-6
-mass beyond it); absorbing regimes keep their pmf row. Parametric durations other than geometric (E13-T03b), duration or
-transition covariates, duration-dependent jumps, tempering and tied / ordered duration or transition parameters are
-refused with a `ConfigError`. `diagnostics["gem"]` names the method per block.
+mass beyond it); absorbing regimes keep their pmf row. All other duration families (gamma, Weibull, lognormal, Poisson, negative binomial) and every member of a
+per-state mix are updated by weighted maximum likelihood: the expected objective `Q_member` (complete, censored
+and residual first segments on the member's rows of the counts, `+ log p + log|J|` under priors) is minimized over
+the member's unconstrained coordinates by `estimation.newton.newton_minimize` (modified Newton steps with
+`max(|lambda|, 1e-6)` eigenvalues, step halving, at most 30 iterations; central differences of the gradient where
+the objective has no second derivative, as the incomplete gamma; BFGS fallback when Newton stalls). With entry-time
+duration covariates the counts per segment start (`eta_entry`) enter and `(phi, c)` is updated together.
+Transition covariates, duration-dependent jumps, tempering and tied / ordered transition parameters are refused
+with a `ConfigError`. `diagnostics["gem"]` names the method per block.
 
 ## E-step accumulators (expanded engine)
 
@@ -258,5 +264,5 @@ Explicit engine: the last segment `(s, j)` is drawn from `inner + term` (right-c
 | restarts | `FitResult.restarts` (one row per start) |
 | standard errors | `estimation.report.std_errors` |
 | EM | `estimation.em.EMEstimator`, `em_fit`, `estimation.mstep` |
-| GEM | `estimation.gem.GEMEstimator`, `censored_pmf` |
+| GEM | `estimation.gem.GEMEstimator`, `censored_pmf`, `estimation.newton.newton_minimize` |
 | E-step counts | `engine.estep.expanded_estep`, `ExpandedEStats` |

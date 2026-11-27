@@ -49,7 +49,7 @@ def test_e13_t03a_nonparametric_gem_is_monotone(
     assert res.estimator == "gem"
     assert trace[-1] > trace[0]
     assert np.all(np.diff(trace[:-1]) >= -(1e-10 + 1e-13 * np.abs(trace[:-2])))
-    assert res.diagnostics["gem"]["duration"].startswith("closed-form")
+    assert res.diagnostics["gem"]["duration"] == "censored-pmf"
     pmf = np.asarray(res.params["duration.logits"])
     np.testing.assert_allclose(pmf.sum(axis=1), 1.0, atol=1e-10)
 
@@ -127,8 +127,6 @@ def test_e13_t03a_the_method_key_and_refusals(tmp_path: Path) -> None:
     spec = gem_models.build(tmp_path, 2, 12)
     res = dispatch_fit(spec, data, cfg, 0, ParamManager(spec.param_specs).init_u())
     assert res.estimator == "gem"
-    with pytest.raises(ConfigError, match="E13-T03b"):
-        GEMEstimator().fit(gem_models.build(tmp_path, 2, 12, duration="negbin"), data, cfg, 0)
     with pytest.raises(ConfigError, match="explicit"):
         GEMEstimator().fit(
             gem_models.build(tmp_path, 2, 12, duration="geometric", engine="expanded"), data, cfg, 0
@@ -146,7 +144,3 @@ def test_e13_t03a_left_censoring_needs_a_free_initial_law(tmp_path: Path) -> Non
     spec = gem_models.build(tmp_path, 2, 12, left=True)
     with pytest.raises(ConfigError, match="initial_state: free"):
         GEMEstimator().fit(spec, data, EstimationSection(method="gem", restarts=0), 0)
-    per_state = gem_models.build(tmp_path, 2, 12)
-    object.__setattr__(per_state, "duration", type("PerStateDuration", (), {})())
-    with pytest.raises(ConfigError, match="per-state"):
-        GEMEstimator().fit(per_state, data, EstimationSection(method="gem", restarts=0), 0)
