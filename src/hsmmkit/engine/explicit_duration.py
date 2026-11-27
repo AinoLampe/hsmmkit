@@ -231,8 +231,12 @@ def _at(x: Array, s: int) -> Array:
     return x[s] if x.ndim == 3 else x
 
 
-def _forward(inp: _Inputs) -> tuple[Array, Array]:
-    """`(inner (T, N), G (T, N))`: log-prob of a segment starting at each boundary `0..T-1`."""
+def _forward_end(inp: _Inputs) -> tuple[Array, Array, Array]:
+    """`(inner (T, N), G (T, N), end (T, N))`: log-prob of a segment starting at each boundary `0..T-1`.
+
+    `end[s, j] = log E[s, j]` is the log-prob that a regime-`j` segment ends exactly at boundary `s`
+    (`-inf` at `s = 0`); the E-step (E13-T01b) needs it for the jump posteriors.
+    """
     cum, lp = inp.cum, inp.log_pmf
     t_len, (d_max, n) = cum.shape[0] - 1, (lp.shape[-1], lp.shape[-2])
     pad = jnp.full((1, n), _NEG_INF)
@@ -247,17 +251,24 @@ def _forward(inp: _Inputs) -> tuple[Array, Array]:
     dummy = jnp.zeros((t_len - 1,))
     xs = (cum[1:t_len], inp.log_pi[1:] if inp.log_pi.ndim == 3 else dummy, lp[1:] if lp.ndim == 3 else dummy)
 
-    def body(pend: Array, s_in: tuple[Array, Array, Array]) -> tuple[Array, tuple[Array, Array]]:
+    def body(pend: Array, s_in: tuple[Array, Array, Array]) -> tuple[Array, tuple[Array, Array, Array]]:
         c_s, pi_x, lp_x = s_in
         log_pi_s = pi_x if inp.log_pi.ndim == 3 else inp.log_pi
         end = c_s + pend[0]  # log E[s, :]
         inner = _safe_logsumexp(end[:, None] + log_pi_s, axis=0)
         g = inner - c_s
-        return scatter(pend, g, lp_x if lp.ndim == 3 else lp), (inner, g)
+        return scatter(pend, g, lp_x if lp.ndim == 3 else lp), (inner, g, end)
 
-    _, (inner_rest, g_rest) = jax.lax.scan(body, pend1, xs)
+    _, (inner_rest, g_rest, end_rest) = jax.lax.scan(body, pend1, xs)
     inner = jnp.concatenate([inp.log_rho[None, :], inner_rest], axis=0)
     g = jnp.concatenate([g0[None, :], g_rest], axis=0)
+    end = jnp.concatenate([pad, end_rest], axis=0)
+    return inner, g, end
+
+
+def _forward(inp: _Inputs) -> tuple[Array, Array]:
+    """`(inner (T, N), G (T, N))`: log-prob of a segment starting at each boundary `0..T-1`."""
+    inner, g, _ = _forward_end(inp)
     return inner, g
 
 
@@ -290,8 +301,11 @@ def _loglik(inner: Array, term: Array) -> Array:
     return _safe_logsumexp((inner + term).reshape(-1), axis=0)
 
 
-def _backward(inp: _Inputs, term: Array) -> tuple[Array, Array]:
-    """`(B (T, N), cont0 (N,))`: `B[tau, i]` = future log-prob given a regime-`i` segment ends at `tau`."""
+def _backward_cont(inp: _Inputs, term: Array) -> tuple[Array, Array]:
+    """`(B (T, N), cont (T, N))`: `B[tau, i]` = future log-prob given a regime-`i` segment ends at `tau`.
+
+    `cont[s, j]` is the log-prob of everything after a regime-`j` segment *starts* at `s` (closed or final).
+    """
     cum, lp, log_pi = inp.cum, inp.log_pmf, inp.log_pi
     t_len, n, d_max = cum.shape[0] - 1, lp.shape[-2], lp.shape[-1]
 
@@ -308,6 +322,12 @@ def _backward(inp: _Inputs, term: Array) -> tuple[Array, Array]:
     dummy = jnp.zeros((t_len,))
     xs = (cum[:t_len], term, log_pi if log_pi.ndim == 3 else dummy, lp if lp.ndim == 3 else dummy)
     _, (beta, cont) = jax.lax.scan(body, jnp.full((d_max, n), _NEG_INF), xs, reverse=True)
+    return beta, cont
+
+
+def _backward(inp: _Inputs, term: Array) -> tuple[Array, Array]:
+    """`(B (T, N), cont0 (N,))`: `B[tau, i]` = future log-prob given a regime-`i` segment ends at `tau`."""
+    beta, cont = _backward_cont(inp, term)
     return beta, cont[0]
 
 

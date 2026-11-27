@@ -169,6 +169,23 @@ the regime marginals). Over the valid transitions of every sequence:
 
 Tempered EM (`beta_temper = beta < 1`) runs the pass on `beta * ell`; `loglik` is always the untempered value.
 
+## E-step accumulators (explicit-duration engine)
+
+`engine.estep_explicit.explicit_estep` accumulates, inside scans over the segment start `s` (never as a
+`(T, N, D_max)` table), the expected segment and jump counts of the segmental recursion:
+
+| Statistic | Definition |
+|---|---|
+| `eta[j, d]` | expected complete segments of regime `j` and duration `d` (`s + d < T`) |
+| `eta_censored[j, d]` | the segment covering `T`, by elapsed `d = T - s` (survival term) |
+| `eta_first[j, d]` | closed left-censored first segments (residual-life pmf) |
+| `xi[i, j]` | expected jumps `i -> j` |
+| `gamma_regime`, `rho_post` | regime marginals and the first-segment regime posterior per initial group |
+| `eta_entry`, `eta_entry_censored` | per-start segment counts, only with entry-time duration covariates |
+
+Mass balance: `sum d (eta + eta_censored + eta_first) = T`; `sum_j xi[i, j] = sum_d (eta + eta_first)[i, d]`.
+Duration-dependent jumps are handled by the expanded `(regime, elapsed)` chain (`expanded_estep`).
+
 ## Symbols and code names
 
 | Math | Code |
