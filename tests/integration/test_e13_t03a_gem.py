@@ -28,12 +28,20 @@ def _chain(t_len: int, seed: int, d_max: int = 12):  # noqa: ANN202
     return gem_models.dataset(y), pmf
 
 
-@pytest.mark.parametrize("left", [False, True])
-def test_e13_t03a_nonparametric_gem_is_monotone(tmp_path: Path, left: bool, monkeypatch) -> None:  # noqa: ANN001
+@pytest.mark.parametrize(
+    ("left", "seed"), [(False, 1), (False, 2), (True, 1), (True, 2), (True, 3), (True, 4)]
+)
+def test_e13_t03a_nonparametric_gem_is_monotone(
+    tmp_path: Path,
+    left: bool,
+    seed: int,
+    monkeypatch,  # noqa: ANN001
+) -> None:
     """AC1: the log-likelihood never decreases beyond 1e-10 (with and without left-censoring)."""
-    monkeypatch.setenv("HSMMKIT_DEBUG", "1")  # run_gem raises on a decrease
-    data, _ = _chain(600, 1)
-    spec = gem_models.build(tmp_path, 2, 12, left=left, means=[-0.5, 0.5], scales=[0.8, 0.8])
+    monkeypatch.setenv("HSMMKIT_DEBUG", "1")  # the run raises on a decrease
+    data, _ = _chain(300 if left else 600, seed)
+    extra = {"initial_state": "free"} if left else {}
+    spec = gem_models.build(tmp_path, 2, 12, left=left, means=[-0.5, 0.5], scales=[0.8, 0.8], **extra)
     cfg = EstimationSection(method="gem", restarts=0, max_iter=60, tol_f=1e-14, use_priors=False)
     start = ParamManager(spec.param_specs).init_u()
     res = GEMEstimator().fit(spec, data, cfg, 0, warm_start=start)
@@ -130,3 +138,15 @@ def test_e13_t03a_the_method_key_and_refusals(tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigError, match="tempering"):
         GEMEstimator().fit(spec, data, tempered, 0, ParamManager(spec.param_specs).init_u())
+
+
+def test_e13_t03a_left_censoring_needs_a_free_initial_law(tmp_path: Path) -> None:
+    """With `uniform` the engine ties the first segment to the jump matrix: refused (monotonicity)."""
+    data, _ = _chain(100, 1)
+    spec = gem_models.build(tmp_path, 2, 12, left=True)
+    with pytest.raises(ConfigError, match="initial_state: free"):
+        GEMEstimator().fit(spec, data, EstimationSection(method="gem", restarts=0), 0)
+    per_state = gem_models.build(tmp_path, 2, 12)
+    object.__setattr__(per_state, "duration", type("PerStateDuration", (), {})())
+    with pytest.raises(ConfigError, match="per-state"):
+        GEMEstimator().fit(per_state, data, EstimationSection(method="gem", restarts=0), 0)

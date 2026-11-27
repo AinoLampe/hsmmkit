@@ -25,6 +25,8 @@ tangent of the convex `-log mu` give the minorizer
 censoring this is `p ~ eta`. A segment that is both first and last is counted as a plain survival term
 (its exact likelihood is a tail sum of the residual pmf), a negligible approximation for `T >> D_max`.
 
+Left-censoring needs `initial_state: free` (else the engine ties the first-segment law to the jump matrix).
+Geometric durations ignore the truncation at `d_max` (a warning when more than 1e-6 of the mass is beyond it).
 Not supported (`ConfigError`): the expanded engine, parametric durations, per-state duration families,
 duration or transition covariates, duration-dependent jumps, tempering, tied parameters across blocks.
 """
@@ -32,6 +34,7 @@ duration or transition covariates, duration-dependent jumps, tempering, tied par
 from __future__ import annotations
 
 import os
+import warnings
 from functools import partial
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
@@ -46,7 +49,6 @@ from hsmmkit.engine.explicit_duration import ExplicitDurationEngine
 from hsmmkit.estimation import ecm
 from hsmmkit.estimation.em import MONOTONE_SLACK, EMEstimator, Plan
 from hsmmkit.estimation.mstep import (
-    NoClosedFormError,
     _plain,
     apply_modes,
     block_plan,
@@ -147,7 +149,14 @@ def duration_mstep(
         total = jnp.sum(c, axis=-1) + jnp.sum(w, axis=-1)
         p0 = theta["duration.logits"]
         new = jax.vmap(censored_pmf)(p0, c, w, n_first)
-        out["duration.logits"] = jnp.where((total > 0)[:, None], new, p0)
+        topology = getattr(spec.transition, "topology", None)
+        absorbing = np.isin(np.arange(spec.n_states), topology.absorbing) if topology is not None else None
+        keep = total > 0
+        if (
+            absorbing is not None and absorbing.any()
+        ):  # the engine replaces their pmf by a point mass at D_max
+            keep = keep & ~jnp.asarray(absorbing)
+        out["duration.logits"] = jnp.where(keep[:, None], new, p0)
         return out
     d = jnp.arange(1, stats.eta.shape[-1] + 1)
     n_done = jnp.sum(stats.eta + stats.eta_first, axis=-1)
@@ -219,6 +228,17 @@ def check_gem_supported(spec: ModelSpec) -> None:
     if spec.engine != "explicit":
         raise ConfigError("GEM needs engine: explicit (the expanded engine: method em)", path="model.engine")
     family = spec.duration
+    if type(family).__name__ == "PerStateDuration":
+        raise ConfigError(
+            "per-state duration families are not supported by GEM yet (Follow-up in STATUS)",
+            path="model.duration.per_state",
+        )
+    if spec.left_censored and spec.initial != "free":
+        raise ConfigError(
+            "left-censoring under GEM needs initial_state: free (otherwise the engine ties the first-segment "
+            "law to the jump matrix, which the M-steps do not model)",
+            path="model.initial_state",
+        )
     if not isinstance(family, NonparametricDuration) and not (
         hasattr(family, "from_advance_prob") and type(family).__name__ == "GeometricDuration"
     ):
@@ -310,6 +330,14 @@ class GEMEstimator(EMEstimator):
                 converged = True
                 break
             theta = dict(new)
+        if "duration.rate" in theta:
+            lost = float(jnp.max((1.0 - -jnp.expm1(-theta["duration.rate"] * pb.nominal_dt)) ** spec.d_max))
+            if lost > 1e-6:
+                warnings.warn(
+                    f"geometric durations under GEM ignore the truncation at d_max={spec.d_max}: "
+                    f"up to {lost:.2g} of the pmf lies beyond it (the closed form is then approximate)",
+                    stacklevel=2,
+                )
         return theta, trace, converged, n_iter
 
     def _final(self, theta: Params, spec: ModelSpec, space: StateSpace, pb: PaddedBatch) -> float:
@@ -317,5 +345,4 @@ class GEMEstimator(EMEstimator):
         return float(jnp.sum(stats.loglik))
 
 
-_ = NoClosedFormError  # re-exported for callers that catch it
 REGISTRY.register("estimator", GEMEstimator.name, GEMEstimator(), provenance=provenance_of(__name__))

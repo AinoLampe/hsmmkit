@@ -193,7 +193,10 @@ topology); `initial_state: free` from `rho_post`; geometric durations
 minorizer `p_d = (c_d + p0_d sum_{d' <= d} w_{d'} / S0(d')) / (nu + lambda d)`, `lambda = n_first / mu0`, `nu` from
 `sum p = 1` by bisection; it is iterated to `||dp||_1 < 1e-12` (at most 200 steps) and never decreases `Q`
 (without censoring it is `p ~ eta`). A segment that is both first and last is counted as a plain survival term
-(an approximation, negligible for `T >> D_max`). Parametric durations other than geometric (E13-T03b), duration or
+(an approximation, negligible for `T >> D_max`). Left-censoring needs `initial_state: free`: otherwise the engine sets
+the first-segment law to the stationary occupancy of the jump matrix, which the M-steps do not model (a review probe
+showed non-monotone log-likelihoods). Geometric durations ignore the truncation at `d_max` (warning above 1e-6
+mass beyond it); absorbing regimes keep their pmf row. Parametric durations other than geometric (E13-T03b), duration or
 transition covariates, duration-dependent jumps, tempering and tied / ordered duration or transition parameters are
 refused with a `ConfigError`. `diagnostics["gem"]` names the method per block.
 
