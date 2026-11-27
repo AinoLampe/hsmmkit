@@ -448,7 +448,7 @@ def run_vb(
             break
         q, point = q_next, point_next
     theta = ctx.means(q_eval, point_eval, pb)
-    shapes = {s.name: s.shape for s in spec.param_specs}  # init strategies may return `(N,)` for `(N, 1)`
+    shapes = {s.name: s.shape for s in spec.param_specs}  # init methods may return `(N,)` for `(N, 1)`
     theta = {k: (jnp.reshape(v, shapes[k]) if k in shapes else v) for k, v in theta.items()}
     eps = cfg.vb.prune_below if cfg.vb is not None else 0.01
     pruned = tuple(int(i) for i in np.flatnonzero(occupancy < eps))
