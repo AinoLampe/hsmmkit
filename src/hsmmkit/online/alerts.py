@@ -5,6 +5,8 @@ Concept refs: Part II §14.11 (alerts), §15.4 (`online.alerts`). Rules are eval
 
 * probability rule `{regime, p_on, p_off}`: `on` when `P(regime) >= p_on` while inactive, `off` when
   `P(regime) < p_off` while active (`p_off < p_on`: a path hovering around `p_on` does not flap);
+* `use: smoothed` (probability rules) reads the fixed-lag marginal of step `t - lag`; duration rules always use
+  the filtered probability of the current step;
 * remaining-duration rule `{regime, remaining_duration_below: d, p_min}`: `on` when `P(regime) >= p_min` and
   the expected remaining duration of the current segment (clock units) is `< d`; `off` when it rises above
   `HYSTERESIS * d` or the regime's probability falls below `p_min`.
@@ -145,7 +147,9 @@ def evaluate(
     out = np.array(active, dtype=bool, copy=True)
     events: list[AlertEvent] = []
     for i, rule in enumerate(rules):
-        source = smoothed if rule.use == "smoothed" and smoothed is not None else filtered
+        # `use: smoothed` applies to probability rules; a duration rule is about the current step
+        use_smoothed = rule.use == "smoothed" and smoothed is not None and rule.kind == "probability"
+        source = smoothed if use_smoothed else filtered
         p = float(source[rule.regime])
         if math.isnan(p):
             continue  # the smoothed source is still filling

@@ -410,7 +410,7 @@ class ExpandedOnlineFilter:
                 self.rules,
                 np.asarray(state.alerts),
                 int(t),
-                int(t) if time is None else time,
+                int(t) if time is None else _normalize_time(time),
                 np.asarray(filtered),
                 None if smoothed is None else np.asarray(smoothed),
                 rem,
@@ -454,6 +454,8 @@ class ExpandedOnlineFilter:
                 raise ConfigError(f"expected width {width}, got {arr.shape[1]}", path=f"zs.{key}")
             return arr
 
+        if times is not None and np.asarray(times).shape[0] != n:
+            raise ConfigError("times must have T' entries", path="times")
         alpha, log_norm, t, filtered, buffer, smoothed, remaining = self._steps(
             self.theta,
             self.space,
@@ -479,8 +481,6 @@ class ExpandedOnlineFilter:
         events: list[AlertEvent] = []
         if self.rules:
             stamps = None if times is None else np.asarray(times)
-            if stamps is not None and stamps.shape[0] != n:
-                raise ConfigError("times must have T' entries", path="times")
             f_np = np.asarray(filtered)
             s_np = None if smoothed is None else np.asarray(smoothed)
             r_np = None if remaining is None else np.asarray(remaining)
