@@ -203,13 +203,17 @@ def post_sort_states(theta: Params, spec: ModelSpec, by: str | None = None) -> t
         by = next((n for n in _SCALE_NAMES if n in theta), _SCALE_NAMES[0])
     if by not in theta:
         raise ConfigError(f"cannot sort by {by!r}: not in theta", path=by)
-    n = spec.n_states
     state_key = getattr(spec.emission, "state_sort_key", None)  # mixtures: component-weighted key per state
     key = np.asarray(state_key(theta, by) if state_key is not None else theta[by])
     key = key if key.ndim == 1 else key[:, 0]
-    permute = getattr(spec.emission, "permute_state_axis", None)
     perm = np.argsort(key, kind="stable").astype(np.int64)
+    return permute_states(theta, spec, perm), perm
 
+
+def permute_states(theta: Params, spec: ModelSpec, perm: np.ndarray) -> Params:
+    """`theta` with the states renumbered: new state `i` is old state `perm[i]` (all state-indexed blocks)."""
+    n = spec.n_states
+    permute = getattr(spec.emission, "permute_state_axis", None)
     sorted_theta: dict[str, jnp.ndarray] = {}
     transition_done = False
     shared = set(getattr(spec.emission, "shared_param_names", ()))  # emission parameters with no state axis
@@ -239,4 +243,4 @@ def post_sort_states(theta: Params, spec: ModelSpec, by: str | None = None) -> t
             sorted_theta[name] = arr[..., jnp.asarray(perm)]  # `(n,)` or one row per group `(G, n)`
         else:
             raise ConfigError(f"don't know how to relabel parameter {name!r}", path=name)
-    return sorted_theta, perm
+    return sorted_theta

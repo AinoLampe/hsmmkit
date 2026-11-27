@@ -303,6 +303,30 @@ class NormalWishart:
         sigma = 0.5 * (sigma + jnp.swapaxes(sigma, -1, -2))
         return {"emission.mean": q["m"], "emission.chol": pack_lower(jnp.linalg.cholesky(sigma))}
 
+    def sample_params(self, key: Array, q: dict[str, Array]) -> dict[str, Array]:
+        """One draw `Lambda ~ Wishart(W, nu)` (Bartlett), `mean | Lambda ~ N(m, (kappa Lambda)^-1)` (Gibbs).
+
+        Returns `emission.mean` and the packed Cholesky factor of `Sigma = Lambda^-1`.
+        """
+        n_reg, m_dim = q["m"].shape
+        keys = jax.random.split(key, n_reg)
+
+        def one(k: Array, m: Array, kappa: Array, w: Array, nu: Array) -> tuple[Array, Array]:
+            k_chi, k_off, k_mean = jax.random.split(k, 3)
+            dof = nu - jnp.arange(m_dim)
+            diag = jnp.sqrt(2.0 * jax.random.gamma(k_chi, 0.5 * dof))
+            a = jnp.tril(jax.random.normal(k_off, (m_dim, m_dim)), -1) + jnp.diag(diag)
+            la = jnp.linalg.cholesky(w) @ a
+            lam = la @ la.T
+            sigma = jnp.linalg.inv(lam)
+            sigma = 0.5 * (sigma + sigma.T)
+            chol = jnp.linalg.cholesky(sigma)
+            mean = m + chol @ jax.random.normal(k_mean, (m_dim,)) / jnp.sqrt(kappa)
+            return mean, pack_lower(chol)
+
+        mean, chol = jax.vmap(one)(keys, q["m"], q["kappa"], q["W"], q["nu"])
+        return {"emission.mean": mean, "emission.chol": chol}
+
     def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
         """Posterior SD of the mean: `sqrt(diag((nu W)^-1) / kappa)`."""
         sigma = jnp.linalg.inv(q["nu"][:, None, None] * q["W"])
