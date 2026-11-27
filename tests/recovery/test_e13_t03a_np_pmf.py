@@ -16,7 +16,7 @@ D_MAX = 60
 
 
 def _truth() -> np.ndarray:
-    """Compact supports (<= 10 bins each): with ~1000+ segments per regime the sampling TV stays below 0.05."""
+    """Compact supports (<= 10 bins each): with >1000 segments per regime the sampling TV stays below 0.05."""
     pmf = np.zeros((3, D_MAX))
     pmf[0, 1:6] = [0.1, 0.3, 0.3, 0.2, 0.1]  # d = 2..6
     pmf[1, 5:10] = [0.1, 0.2, 0.4, 0.2, 0.1]  # d = 6..10

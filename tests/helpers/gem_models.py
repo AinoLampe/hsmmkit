@@ -1,4 +1,4 @@
-"""Explicit-engine GEM test models (not collected): Gaussian emissions, nonparametric / geometric durations."""
+"""Explicit-engine GEM test models (not collected): Gaussian emissions, nonparametric / geometric duration."""
 
 from __future__ import annotations
 
