@@ -51,8 +51,6 @@ def _case(name: str) -> dict[str, Any]:
         raw["evaluation"]["cv"] = {"splitter": "sequence_kfold", "folds": 3}
     elif name == "evaluation.grid":
         raw["evaluation"]["grid"] = {"n_states": [2, 3]}
-    elif name == "online.lag":
-        raw["online"] = {"lag": 5}
     elif name == "online.alerts":
         raw["online"] = {"alerts": [{"regime": 1, "p_on": 0.8, "p_off": 0.5}]}
     else:  # pragma: no cover - a new row needs a case here

@@ -29,10 +29,12 @@ from hsmmkit.engine.expanded_hmm import (
     expanded_log_emis,
     forward_step,
 )
+from hsmmkit.online.buffer import RingBuffer, buffer_from_prefix, empty_buffer, push, smooth_window
 from hsmmkit.online.state import OnlineState, spec_hash
 from hsmmkit.statespace.builders import build_expanded, initial_log_rho
 from hsmmkit.utils.clock import get_clock, parse_clock_options
 from hsmmkit.utils.errors import ConfigError, NumericalError
+from hsmmkit.utils.typing import Array
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
@@ -42,7 +44,9 @@ if TYPE_CHECKING:
     from hsmmkit.model.params import Params
     from hsmmkit.model.spec import ModelSpec
     from hsmmkit.statespace.index import StateSpace
-    from hsmmkit.utils.typing import Array
+
+Step = tuple[OnlineState, Array] | tuple[OnlineState, Array, Array]
+"""`(state', filtered)`, plus the lagged smoothed marginals when the filter has `lag > 0`."""
 
 Covariates = Mapping[str, Any]
 """Covariate rows of one step: keys `transition`, `duration`, `emission`, each `(K,)` (missing: width 0)."""
@@ -77,10 +81,15 @@ def _step_fn(
     z_pi: Array,
     z_d: Array,
     z_e: Array,
+    buffer: RingBuffer | None,
     *,
     spec: ModelSpec,
-) -> tuple[Array, Array, Array, Array]:
-    """`(log_alpha', log_norm', t', filtered)`; the first observation (`t == 0`) starts from `log_rho`."""
+    lag: int,
+) -> tuple[Array, Array, Array, Array, RingBuffer | None, Array | None]:
+    """`(log_alpha', log_norm', t', filtered, buffer', smoothed)`.
+
+    The first observation (`t == 0`) starts from `log_rho`; `buffer`/`smoothed` are `None` without a lag.
+    """
     mask = ~jnp.isnan(y)
     ell = expanded_log_emis(theta, spec, space, y[None, :], mask[None, :], dt[None], z_e[None, :])[0]
     # `log_alpha` holds `log_rho` before the first observation (`start`), so the same
@@ -92,7 +101,10 @@ def _step_fn(
     new = jnp.where(t == 0, alpha_first, alpha_next)
     log_norm = _safe_logsumexp(new, axis=0)
     filtered = filtered_row(new, space.index.collapse)
-    return new, log_norm, t + 1, filtered
+    if buffer is None:
+        return new, log_norm, t + 1, filtered, None, None
+    buffer = push(buffer, ell, z_pi, z_d, dt, new)
+    return new, log_norm, t + 1, filtered, buffer, smooth_window(theta, space, buffer, lag)
 
 
 def _steps_fn(
@@ -105,16 +117,23 @@ def _steps_fn(
     z_pis: Array,
     z_ds: Array,
     z_es: Array,
+    buffer: RingBuffer | None,
     *,
     spec: ModelSpec,
-) -> tuple[Array, Array, Array, Array]:
-    def body(carry: tuple[Array, Array], xs: tuple[Array, ...]) -> tuple[tuple[Array, Array], Array]:
-        alpha, tt = carry
-        alpha, _, tt, filtered = _step_fn(theta, space, alpha, tt, *xs, spec=spec)
-        return (alpha, tt), filtered
+    lag: int,
+) -> tuple[Array, Array, Array, Array, RingBuffer | None, Array | None]:
+    def body(carry: tuple[Any, ...], xs: tuple[Array, ...]) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
+        alpha, tt, buf = carry
+        y, dt, z_pi, z_d, z_e = xs
+        alpha, _, tt, filtered, buf, smoothed = _step_fn(
+            theta, space, alpha, tt, y, dt, z_pi, z_d, z_e, buf, spec=spec, lag=lag
+        )
+        return (alpha, tt, buf), (filtered, smoothed)
 
-    (alpha, tt), filtered = jax.lax.scan(body, (log_alpha, t), (ys, dts, z_pis, z_ds, z_es))
-    return alpha, _safe_logsumexp(alpha, axis=0), tt, filtered
+    (alpha, tt, buf), (filtered, smoothed) = jax.lax.scan(
+        body, (log_alpha, t, buffer), (ys, dts, z_pis, z_ds, z_es)
+    )
+    return alpha, _safe_logsumexp(alpha, axis=0), tt, filtered, buf, smoothed
 
 
 class ExpandedOnlineFilter:
@@ -133,7 +152,14 @@ class ExpandedOnlineFilter:
         ConfigError: `engine: explicit`, time-step memory, a recurrent emission carry, or a missing `group`.
     """
 
-    def __init__(self, fit: FitResult, *, group: str | None = None, nominal_dt: float | None = None) -> None:
+    def __init__(
+        self,
+        fit: FitResult,
+        *,
+        group: str | None = None,
+        nominal_dt: float | None = None,
+        lag: int | None = None,
+    ) -> None:
         """Validate the model, build the state space and freeze the parameters used by every step."""
         spec = fit.spec
         if spec.engine != "expanded":
@@ -151,8 +177,14 @@ class ExpandedOnlineFilter:
             self.theta["initial.logits"] = self._group_row(fit, group)
         self.hash = spec_hash(fit)
         # `spec` is bound once (hashing an equinox module costs ~40 us per call); compiled once per filter
-        self._step = jax.jit(partial(_step_fn, spec=spec))
-        self._steps = jax.jit(partial(_steps_fn, spec=spec))
+        if lag is None:
+            lag = int((fit.config_resolved.get("online") or {}).get("lag", 0))
+        if lag < 0:
+            raise ConfigError(f"lag must be >= 0, got {lag}", path="online.lag")
+        self.lag = lag
+        self._step = jax.jit(partial(_step_fn, spec=spec, lag=lag))
+        self._steps = jax.jit(partial(_steps_fn, spec=spec, lag=lag))
+        self._smooth: dict[int, Any] = {}  # lag -> jitted smoother
         self._w_pi = self.theta["transition.b"].shape[-1] if "transition.b" in self.theta else 0
         self._w_d = self.theta["duration.c"].shape[-1] if "duration.c" in self.theta else 0
         self._clock = str(fit.config_resolved.get("data", {}).get("clock", "steps"))
@@ -199,7 +231,7 @@ class ExpandedOnlineFilter:
                 t=jnp.zeros((), dtype=jnp.int64),
                 carry=None,
                 last_time=None,
-                buffer=None,
+                buffer=self._empty_buffer(),
                 spec_hash=self.hash,
             )
         if initial.observations.shape[0] == 0:
@@ -213,13 +245,26 @@ class ExpandedOnlineFilter:
             t=jnp.asarray(initial.observations.shape[0], dtype=jnp.int64),
             carry=None,
             last_time=_normalize_time(times[-1]),
-            buffer=None,
+            buffer=None
+            if self.lag == 0
+            else buffer_from_prefix(self.theta, self.spec, self.space, initial, log_alpha, self.lag),
             spec_hash=self.hash,
         )
+
+    def _empty_buffer(self) -> RingBuffer | None:
+        if self.lag == 0:
+            return None
+        return empty_buffer(self.lag, self.space.n_expanded, self._w_pi, self._w_d)
 
     # -- updating -------------------------------------------------------------------------
 
     def _check_state(self, state: OnlineState) -> None:
+        have = None if state.buffer is None else state.buffer.lag
+        if have != (self.lag or None):
+            raise ConfigError(
+                f"the state carries a fixed-lag buffer of lag {have}, the filter has lag {self.lag}",
+                path="state.buffer",
+            )
         if state.spec_hash != self.hash:
             raise ConfigError(
                 f"the state belongs to another model (spec_hash {state.spec_hash} != {self.hash})",
@@ -248,28 +293,31 @@ class ExpandedOnlineFilter:
         y: ArrayLike,
         dt: float,
         z: Covariates | None = None,
-    ) -> tuple[OnlineState, Array]:
+    ) -> Step:
         """Absorb one observation `y (M,)` (`NaN` = unobserved) after a gap `dt`; `z` the lagged rows.
 
         Returns:
-            `(state', filtered)` with `filtered (N,)` the filtered regime probabilities.
+            `(state', filtered)` with `filtered (N,)` the filtered regime probabilities; with `lag > 0`
+            `(state', filtered, smoothed_lagged)` where `smoothed_lagged (N,)` is the smoothed marginal of
+            step `t - lag` given the data up to `t` (`NaN` until `lag + 1` observations were seen).
 
         Raises:
             NumericalError: a non-finite log-likelihood (every regime impossible).
         """
         self._check_state(state)
         ins = self._inputs(y, dt, z)
-        alpha, log_norm, t, filtered = self._step(
+        alpha, log_norm, t, filtered, buffer, smoothed = self._step(
             self.theta,
             self.space,
             state.log_alpha,
             state.t,
             *ins,
+            state.buffer,
         )
         if not math.isfinite(float(log_norm)):
             raise NumericalError(f"non-finite running log-likelihood at step {int(t)}", path="state.log_norm")
-        new = OnlineState(alpha, log_norm, t, None, state.last_time, state.buffer, state.spec_hash)
-        return new, filtered
+        new = OnlineState(alpha, log_norm, t, None, state.last_time, buffer, state.spec_hash)
+        return (new, filtered) if smoothed is None else (new, filtered, smoothed)
 
     def update_many(
         self,
@@ -277,11 +325,12 @@ class ExpandedOnlineFilter:
         ys: ArrayLike,
         dts: ArrayLike,
         zs: Covariates | None = None,
-    ) -> tuple[OnlineState, Array]:
+    ) -> Step:
         """`lax.scan` of `update` over `T'` observations: `ys (T', M)`, `dts (T',)`, `zs` blocks `(T', K)`.
 
         Returns:
-            `(state', filtered)` with `filtered (T', N)`.
+            `(state', filtered)` with `filtered (T', N)`; with `lag > 0` also `smoothed (T', N)`
+            (row `i`: step `t_i - lag` given data up to `t_i`, `NaN` while the buffer fills).
         """
         self._check_state(state)
         ys_arr = np.asarray(ys, dtype=np.float64)
@@ -303,7 +352,7 @@ class ExpandedOnlineFilter:
                 raise ConfigError(f"expected width {width}, got {arr.shape[1]}", path=f"zs.{key}")
             return arr
 
-        alpha, log_norm, t, filtered = self._steps(
+        alpha, log_norm, t, filtered, buffer, smoothed = self._steps(
             self.theta,
             self.space,
             state.log_alpha,
@@ -313,13 +362,29 @@ class ExpandedOnlineFilter:
             jnp.asarray(block("transition", self._w_pi)),
             jnp.asarray(block("duration", self._w_d)),
             jnp.asarray(block("emission", None)),
+            state.buffer,
         )
         if n and not bool(jnp.isfinite(log_norm)):
             raise NumericalError("non-finite running log-likelihood", path="state.log_norm")
         new = OnlineState(
-            alpha, log_norm if n else state.log_norm, t, None, state.last_time, state.buffer, state.spec_hash
+            alpha, log_norm if n else state.log_norm, t, None, state.last_time, buffer, state.spec_hash
         )
-        return new, filtered
+        return (new, filtered) if smoothed is None else (new, filtered, smoothed)
+
+    def smoothed_at(self, state: OnlineState, lag: int | None = None) -> Array:
+        """Smoothed regime marginals `(N,)` of step `t - lag` given the data up to `t` (`NaN` while filling).
+
+        Equals the offline smoother run on the prefix `y_{1:t}` (`data.window(0, t + 1)`), and the full-data
+        smoother at `t - lag` when `t` is the last step. `lag <= self.lag`; cost `O(lag S^2)`.
+        """
+        self._check_state(state)
+        use = self.lag if lag is None else lag
+        if state.buffer is None or not 0 < use <= self.lag:
+            raise ConfigError(f"fixed-lag smoothing needs 0 < lag <= {self.lag} (filter lag)", path="lag")
+        if use not in self._smooth:
+            self._smooth[use] = jax.jit(partial(smooth_window, lag=use))
+        out: Array = self._smooth[use](self.theta, self.space, state.buffer)
+        return out
 
     def update_from_time(
         self,
@@ -327,7 +392,7 @@ class ExpandedOnlineFilter:
         time: Any,  # noqa: ANN401
         y: ArrayLike,
         z: Covariates | None = None,
-    ) -> tuple[OnlineState, Array]:
+    ) -> Step:
         """`update` with `dt` computed from `state.last_time` and `time` by the configured clock.
 
         The first observation of a stream without a warm start has no predecessor: its `dt` is `nominal_dt`
@@ -346,8 +411,7 @@ class ExpandedOnlineFilter:
             opts = parse_clock_options(self._clock, self._clock_options)
             pair = np.asarray([state.last_time, _normalize_time(time)])
             dt = float(clk.dt(pair, 1, opts)[0])
-        new, filtered = self.update(state, y, dt, z)
+        new, *rest = self.update(state, y, dt, z)
         t = _normalize_time(time)
-        return OnlineState(
-            new.log_alpha, new.log_norm, new.t, new.carry, t, new.buffer, new.spec_hash
-        ), filtered
+        stamped = OnlineState(new.log_alpha, new.log_norm, new.t, new.carry, t, new.buffer, new.spec_hash)
+        return (stamped, *rest)  # type: ignore[return-value]

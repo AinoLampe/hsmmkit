@@ -19,6 +19,7 @@ import jax.numpy as jnp
 import numpy as np
 from safetensors.numpy import load_file, save_file
 
+from hsmmkit.online.buffer import RingBuffer
 from hsmmkit.utils.errors import PersistenceError
 
 if TYPE_CHECKING:
@@ -42,7 +43,7 @@ class OnlineState:
         t: `()` int64, the number of observations processed.
         carry: emission carry; `None` for every family that has no recurrent state.
         last_time: the last timestamp / step index seen (for `dt` under calendar clocks), or `None`.
-        buffer: the fixed-lag smoothing ring buffer (E15-T02); `None` here.
+        buffer: the fixed-lag smoothing `RingBuffer` (E15-T02); `None` without a lag.
         spec_hash: `spec_hash(fit)` of the fit the state belongs to.
     """
 
@@ -61,16 +62,15 @@ class OnlineState:
 
 
 def _flatten(state: OnlineState) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
-    return (state.log_alpha, state.log_norm, state.t, state.carry), (
+    return (state.log_alpha, state.log_norm, state.t, state.carry, state.buffer), (
         state.last_time,
-        state.buffer,
         state.spec_hash,
     )
 
 
 def _unflatten(aux: tuple[Any, ...], children: tuple[Any, ...]) -> OnlineState:
-    log_alpha, log_norm, t, carry = children
-    last_time, buffer, spec_hash_ = aux
+    log_alpha, log_norm, t, carry, buffer = children
+    last_time, spec_hash_ = aux
     return OnlineState(log_alpha, log_norm, t, carry, last_time, buffer, spec_hash_)
 
 
@@ -102,7 +102,7 @@ def spec_hash(fit: FitResult) -> str:
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8"))
     for name in sorted(fit.params):
         digest.update(name.encode("utf-8"))
-        digest.update(np.ascontiguousarray(np.asarray(fit.params[name], dtype=np.float64)).tobytes())
+        digest.update(np.array(fit.params[name], dtype=np.float64, order="C").tobytes())
     return digest.hexdigest()
 
 
@@ -131,10 +131,20 @@ def _time_from_json(blob: Any) -> Any:  # noqa: ANN401
     raise PersistenceError(f"unknown last_time kind {kind!r}", path="state.json")
 
 
+_BUFFER_FIELDS = ("ell", "z_pi", "z_d", "dt", "log_alpha", "head", "count")
+
+
+def _load_buffer(arrays: dict[str, np.ndarray], lag: int | None) -> RingBuffer | None:
+    if lag is None:
+        return None
+    try:
+        return RingBuffer(**{name: jnp.asarray(arrays[f"buffer.{name}"]) for name in _BUFFER_FIELDS})
+    except KeyError as exc:
+        raise PersistenceError(f"the state is missing the buffer array {exc}", path=STATE_ARRAYS) from exc
+
+
 def save_state(state: OnlineState, path: Path | str) -> Path:
     """Write `state.safetensors` and `state.json` into the directory `path` (created if needed)."""
-    if state.buffer is not None:
-        raise PersistenceError("saving a fixed-lag buffer is not supported yet", path="state.buffer")
     if state.carry is not None:
         raise PersistenceError("saving an emission carry is not supported yet", path="state.carry")
     from hsmmkit import __version__
@@ -142,15 +152,19 @@ def save_state(state: OnlineState, path: Path | str) -> Path:
     out = Path(path)
     out.mkdir(parents=True, exist_ok=True)
     arrays = {
-        "log_alpha": np.ascontiguousarray(np.asarray(state.log_alpha)),
-        "log_norm": np.ascontiguousarray(np.asarray(state.log_norm)),
+        "log_alpha": np.array(state.log_alpha, order="C"),
+        "log_norm": np.array(state.log_norm, order="C"),
     }
+    if state.buffer is not None:
+        for name in _BUFFER_FIELDS:
+            arrays[f"buffer.{name}"] = np.array(getattr(state.buffer, name), order="C")
     save_file(arrays, str(out / STATE_ARRAYS))
     meta = {
         "state_version": STATE_VERSION,
         "t": state.step,
         "last_time": _time_to_json(state.last_time),
         "spec_hash": state.spec_hash,
+        "buffer_lag": None if state.buffer is None else state.buffer.lag,
         "library_version": __version__,
     }
     (out / STATE_META).write_text(json.dumps(meta, indent=2), encoding="utf-8")
@@ -183,6 +197,6 @@ def load_state(path: Path | str, fit: FitResult) -> OnlineState:
         t=jnp.asarray(meta["t"], dtype=jnp.int64),
         carry=None,
         last_time=_time_from_json(meta["last_time"]),
-        buffer=None,
+        buffer=_load_buffer(arrays, meta.get("buffer_lag")),
         spec_hash=expected,
     )

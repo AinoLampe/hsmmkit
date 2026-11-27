@@ -160,8 +160,8 @@ def test_e15_t01_covariate_preparer_matches_the_offline_alignment(
         prep.row(n + 5)
 
 
-def test_e15_t01_the_online_gate_is_removed_but_lag_and_alerts_stay_gated(tmp_path: Path) -> None:
-    """The `online` key builds; `online.lag` stays gated until E15-T02."""
+def test_e15_t01_the_online_gate_is_removed_but_alerts_stay_gated(tmp_path: Path) -> None:
+    """The `online` key builds; `online.alerts` stays gated until E15-T03."""
     from hsmmkit.config import gates
     from hsmmkit.config.schema import parse_project_config
     from tests.helpers.core_config import core_raw
@@ -169,8 +169,8 @@ def test_e15_t01_the_online_gate_is_removed_but_lag_and_alerts_stay_gated(tmp_pa
     raw = core_raw(tmp_path)
     raw["online"] = {}
     gates.check(parse_project_config(raw))  # builds now
-    raw["online"] = {"lag": 5}
-    with pytest.raises(ConfigError, match="not available before E15-T02"):
+    raw["online"] = {"alerts": [{"regime": 1, "p_on": 0.8, "p_off": 0.5}]}
+    with pytest.raises(ConfigError, match="not available before E15-T03"):
         gates.check(parse_project_config(raw))
 
 
