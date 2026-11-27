@@ -12,7 +12,6 @@ from ruamel.yaml import YAML
 from typer.testing import CliRunner
 
 from hsmmkit.cli.app import app
-from hsmmkit.presets.fixtures import segmentation_gaussian_ltr
 from hsmmkit.project import Project
 from hsmmkit.selection.grid import COLUMNS, make_cells, recommend
 from tests.helpers import core_config as cc
@@ -28,11 +27,19 @@ def _dump(raw: dict[str, Any], path: Path) -> Path:
 
 @pytest.fixture(scope="module")
 def base(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
-    """20 sessions of 60 steps (two regimes, three channels) and a diagonal-Gaussian MAP configuration."""
+    """20 sequences of 150 steps (two Gaussian regimes, three channels) and a diagonal-Gaussian MAP config."""
     root = tmp_path_factory.mktemp("grid")
-    frame = segmentation_gaussian_ltr(0)["data/sensor_windows.parquet"]
-    frame = frame[frame["session_id"].isin(frame["session_id"].unique()[:20])]
-    frame = frame.groupby("session_id", sort=False).head(60).reset_index(drop=True)
+    rng = np.random.default_rng(5)
+    rows = []
+    for seq in range(20):  # two regimes, three independent channels, mean sojourn 20 steps
+        state = int(rng.integers(2))
+        for t in range(150):
+            mean = (-1.0, 1.0)[state]
+            sd = (0.6, 1.2)[state]
+            rows.append((f"s{seq}", t, *rng.normal(mean, sd, 3)))
+            if rng.random() < 1 / 20:
+                state = 1 - state
+    frame = pd.DataFrame(rows, columns=["session_id", "t", "acc_x", "acc_y", "acc_z"])
     frame.to_parquet(root / "sessions.parquet", index=False)
     raw = cc.core_raw(root)
     raw["project"].update(output_dir=str(root / "runs"), seed=7)
@@ -55,8 +62,8 @@ def base(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
             "scale": {"mode": "free", "init": [1.0, 1.0]},
         },
     }
-    raw["model"]["duration"]["params"]["rate"]["init_mean_sojourn_steps"] = [15.0, 15.0]
-    raw["estimation"].update(restarts=1, max_iter=25, init=["rolling_kmeans"])
+    raw["model"]["duration"]["params"]["rate"]["init_mean_sojourn_steps"] = [20.0, 20.0]
+    raw["estimation"].update(restarts=1, max_iter=60, init=["rolling_kmeans"])
     raw["forecast"]["n_sim"] = 20
     raw["evaluation"]["metrics"] = ["log_score", "bic"]
     return {"root": root, "raw": raw}
