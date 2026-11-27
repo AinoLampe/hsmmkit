@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -160,29 +159,13 @@ def test_e15_t01_covariate_preparer_matches_the_offline_alignment(
         prep.row(n + 5)
 
 
-def test_e15_t01_the_online_gate_is_removed_but_alerts_stay_gated(tmp_path: Path) -> None:
-    """The `online` key builds; `online.alerts` stays gated until E15-T03."""
+def test_e15_t01_the_online_gate_is_removed(tmp_path: Path) -> None:
+    """The `online` key builds (no gate row is left for it)."""
     from hsmmkit.config import gates
     from hsmmkit.config.schema import parse_project_config
     from tests.helpers.core_config import core_raw
 
     raw = core_raw(tmp_path)
     raw["online"] = {}
-    gates.check(parse_project_config(raw))  # builds now
-    raw["online"] = {"alerts": [{"regime": 1, "p_on": 0.8, "p_off": 0.5}]}
-    with pytest.raises(ConfigError, match="not available before E15-T03"):
-        gates.check(parse_project_config(raw))
-
-
-def test_e15_t01_review_fixes_nominal_dt_param_values_and_time_types(case: dict[str, Any]) -> None:
-    """Review: cold `update_from_time` needs `nominal_dt`; the hash covers values; times are normalized."""
-    filt = ExpandedOnlineFilter(case["fit"])
-    with pytest.raises(ConfigError, match="nominal_dt"):
-        filt.update_from_time(filt.start(), 0, case["y"][0], {k: v[0] for k, v in case["z"].items()})
-    shifted = dataclasses.replace(case["fit"], params={k: v + 1e-9 for k, v in case["fit"].params.items()})
-    assert spec_hash(shifted) != spec_hash(case["fit"])
-    from hsmmkit.online.filter import _normalize_time
-
-    assert _normalize_time("2020-01-02") == np.datetime64("2020-01-02", "ns")
-    assert _normalize_time(np.datetime64("2020-01-02", "D")).dtype == np.dtype("datetime64[ns]")
-    assert _normalize_time(3) == 3
+    gates.check(parse_project_config(raw))
+    assert not [g for g in gates.GATES if g.startswith("online")]

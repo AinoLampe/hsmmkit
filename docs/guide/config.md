@@ -349,10 +349,13 @@ The whole resolved configuration of the domain-neutral core.
 
 | Field | Type | Default |
 |---|---|---|
+| `name` | `str \| None` | `None` |
 | `regime` | `int` | required |
 | `p_on` | `float \| None` | `None` |
 | `p_off` | `float \| None` | `None` |
 | `remaining_duration_below` | `float \| None` | `None` |
+| `p_min` | `float` | `0.5` |
+| `use` | `'filtered' \| 'smoothed'` | `'filtered'` |
 
 ## `data.labels.boundaries`
 

@@ -34,7 +34,21 @@ state = load_state("run/state", fit)  # PersistenceError if it belongs to anothe
   `y_{1:t}` (`data.window(0, t + 1)`) to 1e-12, and the full-data smoother at `t - L` when `t` is the last step; it
   only approximates the full-data smoother for earlier `t`. `hsmmkit.online.buffer.smoothed_series(fit, data, lag)`
   replays a whole dataset (row `t` = `gamma_{t-lag | t}`). The buffer is saved with the state.
+* **Alerts.** `online.alerts` (or `alerts=` of the filter) are evaluated after each step in plain Python; the
+  active flags live in `OnlineState.alerts` and are saved with it. `update` / `update_many` append the list of
+  `AlertEvent(time, t, rule, kind, regime, value, threshold)` (`to_dict` / `from_dict`, JSON-serializable) as their
+  last element when rules exist. A probability rule `{regime, p_on, p_off}` fires `on` at `P >= p_on` and `off`
+  below `p_off`, so a path that hovers around `p_on` does not flap; `use: smoothed` takes the fixed-lag marginal
+  (needs `lag > 0`). A remaining-duration rule `{regime, remaining_duration_below: d, p_min}` fires when
+  `P(regime) >= p_min` and the expected remaining duration of the current segment
+  (`sum_c P(phase c | regime) (r - c + 1) / a(t)` steps, times `nominal_dt`; phase-type durations) is below `d`; it
+  switches off when the remaining duration exceeds `1.2 d` (fixed hysteresis factor) or `P(regime)` drops below
+  `p_min`.
+* **Forecasting.** `filt.forecast(state, horizon, n_sim, data, covariate_forecaster=..., seed=...)` samples from
+  `softmax(state.log_alpha)` with the offline Monte-Carlo forecaster; with the same seed and origin it equals the
+  offline `MonteCarloForecaster.forecast` bitwise. `data` is the prepared history ending at the origin (origin
+  time, clock, last covariate row, covariate-forecaster training data).
 * **Labels and boundaries** are not applied online: a warm-start prefix that carries `labels` / `boundaries` constrains the offline forward pass, but the streaming smoother (`active=False`) does not, so its lagged marginals can differ from the offline prefix smoother in that case.
 * **Limits (0.4.0).** `engine: explicit`, time-step memory (`memory_mode: steps`) and families with a recurrent
-  emission carry raise `ConfigError("online filtering requires engine: expanded")`; alerts follow in E15-T03. The filter compiles its step once per instance; a step costs about 0.13 ms at `S = 12`
+  emission carry raise `ConfigError("online filtering requires engine: expanded")`; the stream CLI follows in E15-T04. The filter compiles its step once per instance; a step costs about 0.13 ms at `S = 12`
   on a cloud CPU.
