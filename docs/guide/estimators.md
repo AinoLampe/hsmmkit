@@ -14,8 +14,8 @@ generated [parity table](../generated/estimator_parity.md); the mathematics is i
 | Engine | expanded, explicit | expanded | explicit (`engine: explicit`) | expanded | expanded, explicit (NUTS); expanded (Gibbs) |
 | Needs | differentiable log-density | `m_step` or an ECM-able block | nonparametric / geometric / parametric durations | conjugate blocks, others stay point estimates (hybrid) | NUTS: priors on every free parameter (`default_priors`); Gibbs: all blocks conjugate |
 | Covariates | all links | ECM blocks | duration covariates (entry-time); no transition covariates | point blocks (hybrid) | NUTS: all links; Gibbs: none |
-| Cost per iteration | `O(T S^2)` forward-backward + backward pass for the gradient (L-BFGS: tens to hundreds of iterations) | one E-step `O(T S^2)`, closed-form M-step | one E-step `O(T N D_max)`, closed form / Newton M-step | one E-step `O(T S^2)`, closed-form `q` update | NUTS: `2^depth` gradient evaluations per draw; Gibbs: one FFBS `O(T S^2)` per sweep |
-| Memory | `O(T S)` | `O(T S)` (no `(T, S, S)`) | `O(T N)` plus `(N, D_max)` | `O(T S)` | `O(T S)` per chain plus the draws |
+| Cost per iteration | one forward-backward pass and its gradient (linear in `T`; per step set by the number of expanded states `S`, at most `S^2`); L-BFGS needs tens to hundreds of iterations | one E-step (a forward-backward pass), closed-form or ECM M-step | one explicit-duration E-step (`T N D_max` work), closed-form or Newton M-step | one E-step, closed-form `q` update | NUTS: `2^depth` gradient evaluations per draw; Gibbs: one FFBS pass per sweep |
+| Memory | `O(T S)` | `O(T S)` (never `(T, S, S)`) | `O(T N)`; a `(T, N, D_max)` table with left-censoring, labels or entry-time covariates | `O(T S)` | `O(T S)` per chain plus the draws |
 | Outputs | `std_errors` (Hessian, optional) | `loglik_trace` | `loglik_trace` | `elbo`, `elbo_trace`, `q_params`, `pruned_states`, posterior SDs | `posterior_samples`, `r_hat`, `ess_bulk`, `ess_tail`, divergences |
 | Failure modes | local optima (use restarts), flat likelihoods | local optima, slow near saddles (tempering helps), ECM stalls | the same; duration pmf not identifiable with short sequences | ELBO looseness, local optima, mean-field underestimates posterior SDs | label switching (relabelled afterwards), divergences, poor mixing (low ESS), cost |
 | Use it when | you want fast point estimates and the Hessian | the model is (near-)conjugate and you want the monotone, derivative-free route, or MAP is slow | durations are not geometric / negative binomial and you want the segmental model | you want uncertainty quickly, or to prune unused regimes | you need honest uncertainty, small samples, or to check VB |
@@ -58,7 +58,8 @@ From Python: `Project.compare_estimators(["map", "em", "vb"], write=True)`.
 For the sampler: `estimation.method: mcmc` with `estimation.mcmc: {sampler: nuts, chains: 4, warmup: 1000, draws: 1000}`
 returns `FitResult.posterior_samples` (an ArviZ object) and `diagnostics["mcmc"]` (`r_hat`, `ess_bulk`, `ess_tail`,
 `divergences`, library versions). On the fixture both samplers recover the truth within two posterior standard
-deviations with `R-hat <= 1.05` and bulk ESS above 200 (rows `nuts vs truth`, `gibbs vs truth` of the parity table).
+deviations with `R-hat <= 1.05` and bulk ESS above 200 (rows `nuts vs truth`, `gibbs vs truth` of the parity table;
+those rows are slow and need the `bayes` extra: `scripts/gen_parity_table.py --slow`).
 
 ## Not covered
 

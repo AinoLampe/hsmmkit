@@ -73,3 +73,14 @@ def test_e13_t07_compare_estimators_refuses_unknown_names_and_several_configs(wo
     assert two.exit_code == 2, two.output
     assert "unknown estimator" in bad.output
     assert "exactly one configuration" in two.output
+
+
+def test_e13_t07_an_estimator_that_cannot_fit_the_model_fails_before_any_fit(world: dict[str, Path]) -> None:
+    """`gem` needs the explicit engine: refused up front (exit 2), not after the other fits."""
+    out = world["root"] / "out3"
+    result = _runner.invoke(
+        app, ["--out", str(out), "compare", str(world["config"]), "--estimators", "map,gem"]
+    )
+    assert result.exit_code == 2, result.output
+    assert "engine: explicit" in result.output
+    assert not (out / "compare.parquet").exists()

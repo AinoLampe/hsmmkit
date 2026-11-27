@@ -26,5 +26,9 @@ def test_e13_t07_a_broken_m_step_fails_its_parity_row(
 
     monkeypatch.setattr(mstep, "phase_mstep", broken)
     jax.clear_caches()  # the jitted EM step must be traced again with the broken M-step
-    bad = evaluate_em_vs_map(tmp_path, "gaussian", "geometric", {})
+    try:
+        bad = evaluate_em_vs_map(tmp_path, "gaussian", "geometric", {})
+    finally:
+        monkeypatch.undo()
+        jax.clear_caches()  # never leave the broken step in the compilation cache
     assert bad.status == "FAILED", bad
