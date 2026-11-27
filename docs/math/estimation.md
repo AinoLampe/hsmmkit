@@ -222,8 +222,23 @@ initialization strategy (one E-step there gives the first `q`); restarts follow 
 `from_advance_prob`), `objective = -ELBO`, `loglik` the log-likelihood at those means, and
 `diagnostics["vb"]` has `elbo_trace` and `q_params`. Priors are the weakly informative defaults (Gaussian priors
 scaled to the data: `E[tau] = 1 / var(y)`, `kappa0 = 0.01`; Beta(1, 1); Dirichlet(1)); `use_priors: false` is
-invalid; `diagnostics["vb"]["q_params"]` keep the run's state numbering (`relabelled` flags a renumbering of `params`). Expanded engine, `initial_state: uniform`, no covariates, constant step, no fixed / tied / ordered
-parameters; everything else is refused ("VB-EM hybrid available from E13-T05b").
+invalid; `diagnostics["vb"]["q_params"]` keep the run's state numbering (`relabelled` flags a renumbering of `params`).
+Expanded engine and `initial_state: uniform` only.
+
+**VB-EM hybrid.** A block is conjugate only if its family has a conjugate prior, no covariate link, a constant step
+and free, untied, unordered parameters. Every other block (covariate links, Student-t, irregular steps, fixed /
+bounded / tied / ordered parameters) is a *point* block: its parameters are point estimates, updated by the ECM
+conditional step on the expected counts of the current `q(s)`; the E-step uses its log-density at the point estimate
+and the ELBO contains `log p(theta) + log|J|` at the point estimate instead of a KL term (the bound of a partially
+collapsed objective; it is still non-decreasing). `diagnostics["vb"]["treatment"]` lists `conjugate` / `point` per
+component.
+
+**Pruning and report.** After convergence a regime with expected occupancy `sum gamma / sum T` below
+`estimation.vb.prune_below` (default 0.01) is listed in `FitResult.pruned_states` and
+`diagnostics["vb"]["occupancy"]`, with a warning that suggests a smaller `n_states`; the model keeps its structure
+and `decode` returns the pruned regimes in `PosteriorResult.pruned_states`. `FitResult.std_errors` holds the
+posterior standard deviations of the conjugate blocks on the constrained scale (delta method for `eta`, `scale`
+and `rate`). Agreement with MAP: `docs/generated/vb_parity.md`.
 
 ## E-step accumulators (expanded engine)
 

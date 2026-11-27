@@ -97,6 +97,10 @@ class GammaConjugate:
         """Posterior-mean rate as `emission.eta = log rate`."""
         return {"emission.eta": jnp.log(q["a"] / q["b"])}
 
+    def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
+        """Posterior SD of `emission.eta = log rate` (delta method): `1 / sqrt(a)`."""
+        return {"emission.eta": 1.0 / jnp.sqrt(q["a"])}
+
 
 @dataclass(frozen=True)
 class BetaConjugate:
@@ -126,6 +130,10 @@ class BetaConjugate:
         """Posterior-mean probability as `emission.eta = logit p`."""
         return {"emission.eta": jnp.log(q["a"]) - jnp.log(q["b"])}
 
+    def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
+        """Posterior SD of `emission.eta = logit p` (delta method): `sqrt(1/a + 1/b)`."""
+        return {"emission.eta": jnp.sqrt(1.0 / q["a"] + 1.0 / q["b"])}
+
 
 @dataclass(frozen=True)
 class DirichletConjugate:
@@ -153,6 +161,11 @@ class DirichletConjugate:
         """Posterior-mean probabilities as `emission.eta = log(p[1:] / p[0])`."""
         p = q["alpha"] / jnp.sum(q["alpha"], axis=-1, keepdims=True)
         return {"emission.eta": jnp.log(p[:, 1:]) - jnp.log(p[:, :1])}
+
+    def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
+        """Posterior SD of `emission.eta = log(p[1:] / p[0])` (delta method)."""
+        alpha = q["alpha"]
+        return {"emission.eta": jnp.sqrt(1.0 / alpha[:, 1:] + 1.0 / alpha[:, :1])}
 
 
 @dataclass(frozen=True)
@@ -208,6 +221,14 @@ class NormalGamma:
     def mean_params(self, q: dict[str, Array]) -> dict[str, Array]:
         """Posterior mean `m` and `scale = 1 / sqrt(E[tau])` as `emission.mean` / `emission.scale`."""
         return {"emission.mean": q["m"], "emission.scale": jnp.sqrt(q["b"] / q["a"])}
+
+    def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
+        """Posterior SD of the mean (`sqrt(b / (kappa (a - 1)))`) and, by the delta method, of the scale."""
+        a, b, kappa = q["a"], q["b"], q["kappa"]
+        sd_mean = jnp.sqrt(b / (kappa * jnp.maximum(a - 1.0, 0.5)))
+        tau = a / b
+        sd_scale = 0.5 * tau**-1.5 * jnp.sqrt(a) / b
+        return {"emission.mean": sd_mean, "emission.scale": sd_scale}
 
 
 def posterior(

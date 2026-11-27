@@ -30,3 +30,5 @@ class FitResult:
     spec: ModelSpec
     prep_stats: PrepStats
     config_resolved: dict[str, Any]
+    pruned_states: tuple[int, ...] = ()
+    """Regimes with expected occupancy below `estimation.vb.prune_below` (VB; the model keeps them)."""

@@ -303,6 +303,12 @@ class NormalWishart:
         sigma = 0.5 * (sigma + jnp.swapaxes(sigma, -1, -2))
         return {"emission.mean": q["m"], "emission.chol": pack_lower(jnp.linalg.cholesky(sigma))}
 
+    def sd_params(self, q: dict[str, Array]) -> dict[str, Array]:
+        """Posterior SD of the mean: `sqrt(diag((nu W)^-1) / kappa)`."""
+        sigma = jnp.linalg.inv(q["nu"][:, None, None] * q["W"])
+        var = jnp.diagonal(sigma, axis1=-2, axis2=-1) / q["kappa"][:, None]
+        return {"emission.mean": jnp.sqrt(var)}
+
 
 @register("emission", "gaussian")
 @dataclass(frozen=True)

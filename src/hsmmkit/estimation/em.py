@@ -353,13 +353,16 @@ class EMEstimator:
         ll = lls[best]
         theta, relabelled = relabel_states(theta, spec, first)
         u = manager.flatten(theta)
+        best_extras = dict(extras[best] or {})
+        std_errors = best_extras.pop("std_errors", None) or None
+        pruned_states = tuple(best_extras.get("pruned_states", ()))
         diagnostics: dict[str, Any] = {
             self.diagnostics_key: {
                 **dict(plan),
                 "tempering": em_cfg.tempering.model_dump(),
                 "ecm_inner_iter": em_cfg.ecm.inner_iter,
                 "warm_start_from": em_cfg.warm_start_from,
-                **(extras[best] or {}),
+                **best_extras,
                 **({"relabelled": relabelled} if extras[best] else {}),
             }
         }
@@ -379,11 +382,12 @@ class EMEstimator:
             restarts=pd.DataFrame(rows),
             converged=bool(rows[best]["converged"]),
             n_iter=int(rows[best]["n_iter"]),  # type: ignore[call-overload]
-            std_errors=None,
+            std_errors=std_errors,
             diagnostics=diagnostics,
             spec=spec,
             prep_stats=first.prep_stats,
             config_resolved={},
+            pruned_states=pruned_states,
         )
 
 

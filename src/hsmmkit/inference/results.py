@@ -30,6 +30,7 @@ class PosteriorResult:
     icl: float
     path_samples: np.ndarray | None = None  # (R, T) posterior regime paths (`decode(..., samples=R)`)
     boundary_prob: np.ndarray | None = None  # (T,) P(a new segment starts at t), from the path samples
+    pruned_states: tuple[int, ...] = ()  # regimes a VB fit reports as unused (`FitResult.pruned_states`)
 
 
 @dataclass(frozen=True)
