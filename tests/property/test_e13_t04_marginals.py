@@ -93,3 +93,24 @@ def test_e13_t04_topology_is_respected(tmp_path: Path) -> None:
     assert np.all(np.diff(regimes, axis=1) >= 0)
     smoothed = np.asarray(ExpandedHMMEngine().forward_backward(theta, spec, space, data).regime_smoothed())
     _check(regimes, smoothed)
+
+
+@pytest.mark.parametrize("engine", ["expanded", "explicit"])
+def test_e13_t04_padded_sequences_match_their_own_smoothed_marginals(engine: str) -> None:
+    """Review: sequences of different lengths in one padded batch each follow their own posterior."""
+    if engine == "expanded":
+        sc: Any = make_scenario(3, [2, 1, 2], 1, 30, n_cov_pi=2, n_cov_d=1, seed=5)
+        fn, eng = ffbs_expanded, ExpandedHMMEngine()
+    else:
+        sc = make_explicit_scenario(3, 5, 30, family="negbin", n_cov_pi=2, seed=5)
+        fn, eng = ffbs_explicit, ExplicitDurationEngine()
+    seqs = (sc.data.window(0, 30), sc.data.window(8, 21), sc.data.window(20, 24))
+    pb = SequenceBatch(seqs, (32,)).padded()
+    paths = np.asarray(fn(jax.random.key(11), sc.theta, sc.spec, sc.space, pb, N_DRAWS))
+    for b, seq in enumerate(seqs):
+        n_b = int(seq.observations.shape[0])
+        draws = paths[:, b, :n_b]
+        regimes = np.asarray(sc.space.index.regime_of)[draws] if engine == "expanded" else draws
+        smoothed = np.asarray(eng.forward_backward(sc.theta, sc.spec, sc.space, seq).regime_smoothed())
+        _check(regimes, smoothed)
+        assert np.all(paths[:, b, n_b:] == -1)
