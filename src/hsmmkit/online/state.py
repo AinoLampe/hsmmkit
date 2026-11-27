@@ -45,6 +45,7 @@ class OnlineState:
         last_time: the last timestamp / step index seen (for `dt` under calendar clocks), or `None`.
         buffer: the fixed-lag smoothing `RingBuffer` (E15-T02); `None` without a lag.
         spec_hash: `spec_hash(fit)` of the fit the state belongs to.
+        alerts: `(n_rules,)` bool active flags of the alert rules (E15-T03), or `None` without rules.
     """
 
     log_alpha: Array
@@ -54,6 +55,7 @@ class OnlineState:
     last_time: Any
     buffer: Any
     spec_hash: str
+    alerts: Any = None
 
     @property
     def step(self) -> int:
@@ -62,16 +64,16 @@ class OnlineState:
 
 
 def _flatten(state: OnlineState) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
-    return (state.log_alpha, state.log_norm, state.t, state.carry, state.buffer), (
+    return (state.log_alpha, state.log_norm, state.t, state.carry, state.buffer, state.alerts), (
         state.last_time,
         state.spec_hash,
     )
 
 
 def _unflatten(aux: tuple[Any, ...], children: tuple[Any, ...]) -> OnlineState:
-    log_alpha, log_norm, t, carry, buffer = children
+    log_alpha, log_norm, t, carry, buffer, alerts = children
     last_time, spec_hash_ = aux
-    return OnlineState(log_alpha, log_norm, t, carry, last_time, buffer, spec_hash_)
+    return OnlineState(log_alpha, log_norm, t, carry, last_time, buffer, spec_hash_, alerts)
 
 
 jax.tree_util.register_pytree_node(OnlineState, _flatten, _unflatten)
@@ -155,6 +157,8 @@ def save_state(state: OnlineState, path: Path | str) -> Path:
         "log_alpha": np.array(state.log_alpha, order="C"),
         "log_norm": np.array(state.log_norm, order="C"),
     }
+    if state.alerts is not None:
+        arrays["alerts"] = np.array(state.alerts, dtype=np.uint8, order="C")  # safetensors has no bool
     if state.buffer is not None:
         for name in _BUFFER_FIELDS:
             arrays[f"buffer.{name}"] = np.array(getattr(state.buffer, name), order="C")
@@ -164,6 +168,7 @@ def save_state(state: OnlineState, path: Path | str) -> Path:
         "t": state.step,
         "last_time": _time_to_json(state.last_time),
         "spec_hash": state.spec_hash,
+        "n_alerts": None if state.alerts is None else int(np.asarray(state.alerts).shape[0]),
         "buffer_lag": None if state.buffer is None else state.buffer.lag,
         "library_version": __version__,
     }
@@ -198,5 +203,6 @@ def load_state(path: Path | str, fit: FitResult) -> OnlineState:
         carry=None,
         last_time=_time_from_json(meta["last_time"]),
         buffer=_load_buffer(arrays, meta.get("buffer_lag")),
+        alerts=None if meta.get("n_alerts") is None else np.asarray(arrays["alerts"], dtype=bool),
         spec_hash=expected,
     )

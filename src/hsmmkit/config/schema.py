@@ -590,12 +590,20 @@ class EvaluationSection(_Base):
 
 
 class AlertCfg(_Base):
-    """`online.alerts[]:` — hysteresis on a regime probability, or on the remaining duration."""
+    """`online.alerts[]:` — hysteresis on a regime probability, or on the remaining duration.
 
+    `name` labels the events (default `alert<i>`), `use` picks the probability source (`smoothed` is the
+    fixed-lag smoothed marginal and needs `online.lag > 0`), `p_min` is the probability a regime needs for a
+    remaining-duration rule to apply.
+    """
+
+    name: str | None = None
     regime: int = Field(ge=0)
     p_on: float | None = Field(default=None, gt=0.0, le=1.0)
     p_off: float | None = Field(default=None, ge=0.0, lt=1.0)
     remaining_duration_below: float | None = Field(default=None, gt=0.0)
+    p_min: float = Field(default=0.5, gt=0.0, le=1.0)
+    use: Literal["filtered", "smoothed"] = "filtered"
 
     @model_validator(mode="after")
     def _one_kind(self) -> AlertCfg:
@@ -618,6 +626,16 @@ class OnlineCfg(_Base):
 
     lag: int = Field(default=0, ge=0)
     alerts: list[AlertCfg] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _alert_names_and_sources(self) -> OnlineCfg:
+        names = [a.name for a in self.alerts if a.name is not None]
+        if len(set(names)) != len(names):
+            raise ConfigError("alert names must be unique", path="online.alerts.name")
+        for i, alert in enumerate(self.alerts):
+            if alert.use == "smoothed" and self.lag == 0:
+                raise ConfigError("use: smoothed needs online.lag > 0", path=f"online.alerts[{i}].use")
+        return self
 
 
 class OutputSection(_Base):

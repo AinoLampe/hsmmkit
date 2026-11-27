@@ -139,8 +139,8 @@ def test_e15_t02_lag_mismatch_and_bad_arguments(case: dict[str, Any]) -> None:
         ExpandedOnlineFilter(case["fit"], lag=-1)
 
 
-def test_e15_t02_the_online_lag_key_builds_and_alerts_stay_gated(tmp_path: Path) -> None:
-    """The `online.lag` gate row is gone; `online.alerts` still names E15-T03."""
+def test_e15_t02_the_online_lag_key_builds(tmp_path: Path) -> None:
+    """The `online.lag` gate row is gone."""
     from hsmmkit.config import gates
     from hsmmkit.config.schema import parse_project_config
     from tests.helpers.core_config import core_raw
@@ -149,6 +149,3 @@ def test_e15_t02_the_online_lag_key_builds_and_alerts_stay_gated(tmp_path: Path)
     raw["online"] = {"lag": 5}
     gates.check(parse_project_config(raw))
     assert "online.lag" not in gates.GATES
-    raw["online"] = {"lag": 5, "alerts": [{"regime": 1, "p_on": 0.8, "p_off": 0.5}]}
-    with pytest.raises(ConfigError, match="E15-T03"):
-        gates.check(parse_project_config(raw))
