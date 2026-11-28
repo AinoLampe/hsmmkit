@@ -119,8 +119,8 @@ def test_e14_t04_bootstrap_se_matches_the_simulation_sd_at_t_5000(tmp_path: Path
     """AC1: bootstrap SE within 20 % of the SD of the estimates over independent datasets (T = 5000).
 
     The reference SD uses 150 datasets (the ticket's 50 carry ~10 % sampling error of their own; measured:
-    0.0229 vs 0.0200 for one scale) and the bootstrap SE is averaged over three datasets, because one dataset's
-    `theta_hat` moves its SE by ~10 %. The 20 % tolerance is the ticket's.
+    0.0229 vs 0.0200 for one scale) and the bootstrap SE is averaged over three datasets, because one
+    dataset's `theta_hat` moves its SE by ~10 %. The 20 % tolerance is the ticket's.
     """
     spec = _spec(tmp_path, 2)
     truth = _truth(spec, [0.0, 1.5], [0.5, 1.2], 25.0)
@@ -207,3 +207,21 @@ def test_e14_t04_cli_bootstrap_writes_the_table_and_a_report_section(tmp_path: P
     assert "## Other" in report
     bad = runner.invoke(app, ["--out", str(out), "bootstrap", str(config), "--model", str(model), "--R", "1"])
     assert bad.exit_code != 0
+
+
+def test_e14_t04_em_fits_with_a_map_warm_start_are_refitted_from_the_mle(small: tuple[Any, Any, Any]) -> None:
+    """Review: `em` with `warm_start_from: map` still refits from `theta_hat` only (no MAP start is added)."""
+    spec, data, _ = small
+    cfg = EstimationSection.model_validate(
+        {
+            "method": "em",
+            "restarts": 1,
+            "init": ["rolling_kmeans"],
+            "max_iter": 40,
+            "em": {"warm_start_from": "map"},
+        }
+    )
+    fit = run_fit(spec, data, cfg, 0)
+    res = bootstrap_se(fit, data, 3, 1, estimation=cfg)
+    assert res.n_failed == 0
+    assert len(res.table) == 6

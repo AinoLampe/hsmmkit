@@ -130,6 +130,8 @@ def _simulate_like(theta: Params, spec: ModelSpec, data: PreparedDataset | Seque
         th = theta
         if spec.n_groups > 1:
             group = seq.group if seq.group is not None else names[0]
+            if group not in names:
+                raise ConfigError(f"sequence group {group!r} is not one of {list(names)}", path="group")
             th = {**theta, "initial.logits": theta["initial.logits"][list(names).index(group)]}
         res = simulate_paths(
             jax.random.fold_in(key, b),
@@ -180,7 +182,12 @@ def _refit(
 ) -> FitResult:
     """One refit: from `warm` only (`mle`; `restarts = 0` leaves just the warm start) or the inits."""
     if refit_from == "mle":
-        return run_fit(spec, data, est.model_copy(update={"restarts": 0}), seed, warm)
+        single = est.model_copy(update={"restarts": 0})
+        if single.em is not None and single.em.warm_start_from != "none":  # that would add a MAP start
+            single = single.model_copy(
+                update={"em": single.em.model_copy(update={"warm_start_from": "none"})}
+            )
+        return run_fit(spec, data, single, seed, warm)
     return run_fit(spec, data, est, seed)
 
 
@@ -358,7 +365,9 @@ def bootstrap_lrt(
 
     The null model is refitted from its optimum on each simulated dataset; the alternative is refitted from
     its own optimum **and** the configured init strategies (`estimation.restarts` starts, default 1 plus the
-    warm start), so that `D_r >= 0` is not lost to a poor local optimum. `D_r` is clipped at 0.
+    warm start), so that `D_r >= 0` is not lost to a poor local optimum. `D_r` is clipped at 0. The two
+    models are not refitted with equal effort (the alternative has more starts), which makes the p-value
+    conservative; the observed `D` uses the log-likelihoods of the fits passed in.
 
     Raises:
         ConfigError: unsupported fits, `R < 2` or fewer than two accepted replicates.
