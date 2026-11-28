@@ -65,7 +65,7 @@ def test_e13_t08_frozen_parameters_and_a_one_over_t_schedule_reproduce_the_offli
     np.testing.assert_allclose(counts.sum(axis=1) - np.diag(counts), np.asarray(stats.advance), rtol=0.01)
 
 
-def test_e13_t08_a_stationary_run_converges_to_the_batch_fixed_point() -> None:
+def test_e13_t08_a_stationary_run_recovers_the_true_parameters_with_kappa_one() -> None:
     """With kappa = 1 and no drift the one-pass estimate is within 5 % of the truth."""
     y, _, _ = oem.simulate_drift(20_000, seed=1, drift=0.0)
     path, online = oem.track(y, oem.initial_params(), kappa=1.0, burn_in=500)

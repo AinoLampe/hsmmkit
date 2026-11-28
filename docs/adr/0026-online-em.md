@@ -27,9 +27,9 @@ S_t      = sum_j alpha_t(j) rho_t(j)        theta_t = m_step(S_t)  for t >= t_mi
 | Check | Result |
 |---|---|
 | Frozen parameters, `g_t = 1/t` (the fastest admissible decay): `t S_t` vs the offline expected statistics | equal to `1e-8` against an independent NumPy forward-backward, and to `3e-12` (relative; the test asserts 1 %) against `expanded_estep` (`gamma_regime`, `stay`): the recursion is *exact* for fixed `theta`, which is the "reproduces offline EM statistics" requirement |
-| Tracking a regime-1 `sigma` that drifts +50 % over `T = 20 000` (mean abs. relative error after `t = 2000`, 5 seeds) | `kappa = 0.7`: 2.1 - 3.5 % (mean 2.7 %); `kappa = 0.6`: 3.4 - 4.3 %; one run: `0.55`: 4.4 %, `0.8`: 3.1 %; **`kappa = 1`: 10.6 %** (no forgetting: the average lags the drift) — all but `kappa = 1` below the 10 % bound |
+| Tracking a regime-1 `sigma` that drifts +50 % over `T = 20 000` (mean abs. relative error after `t = 2000`, 5 seeds; `python spikes/online_em.py` prints the table) | `kappa = 0.7`: 2.1 - 3.5 %; `0.6`: 3.4 - 4.3 %; `0.8`: 3.1 - 4.4 %; `0.55`: 4.4 - 5.1 %; **`kappa = 1`: 9.2 - 11.2 %** (no forgetting: the average lags the drift and misses the 10 % bound in 4 of 5 seeds) |
 | Stationary data, `kappa = 1`, one pass over `T = 20 000` | `sigma = (0.502, 1.205)` for truth `(0.5, 1.2)`, means `(-0.002, 1.492)` for `(0, 1.5)` |
-| Cost of the NumPy prototype | `O(N^2 K)` per step with `K = N^2 + 3 N`; 54 microseconds per step for `N = 2` (pure NumPy, one CPU core) |
+| Cost of the NumPy prototype | `O(N^2 K)` per step with `K = N^2 + 3 N`; 49 microseconds per step for `N = 2` (pure NumPy, one CPU core) |
 
 ## Decisions
 
@@ -38,17 +38,18 @@ S_t      = sum_j alpha_t(j) rho_t(j)        theta_t = m_step(S_t)  for t >= t_mi
    paths and forgets with a hard window); *SGD on the filtered log-likelihood* (works for families without a closed
    M-step but needs forward sensitivities `O(S p)` per step and step-size tuning per parameter scale). Block EM is
    kept as a possible follow-up for non-closed-form components; SGD is not planned.
-2. **Supported components (E15-T05).** Expanded engine only. Updated online: every component whose family has
-   `sufficient_stats` / `m_step` (the same capability discovery as `EMEstimator`: Gaussian diagonal and full,
-   Poisson, Bernoulli, categorical, mixtures and products of them; Student-t has no closed-form M-step and stays
-   frozen), geometric and fixed-`r` negative-binomial
-   durations (stay / advance counts per rate row), jump matrices and the initial distribution (frozen after the
+2. **Supported components (E15-T05).** Expanded engine only. Updated online: every component the batch EM updates in
+   closed form (the same capability discovery as `EMEstimator`): emission families with `sufficient_stats` /
+   `m_step` (Gaussian diagonal and full, Poisson, Bernoulli, categorical, MS-AR, mixtures and products of them;
+   Student-t returns `None` and stays frozen), geometric and fixed-`r` negative-binomial durations (stay / advance
+   counts per rate row through `estimation.mstep.phase_mstep`, not through a duration `m_step`), jump matrices and
+   the initial distribution (frozen after the
    first step: it does not matter on a stream). **Frozen at the fitted values:** components without a closed-form
    M-step (`m_step` returns `None`), covariate links (`gamma`, `delta`, `a`, `b`, `c`: no closed form), priors
    (online EM is the maximum-likelihood recursion; `use_priors` is ignored with a warning), and everything on the
    **explicit engine** — its `(regime, elapsed)` state would make `rho` `(N D_max, K)` and the update
-   `O((N D_max)^2 K)` per step, and nonparametric duration pmfs have no per-step form. An unsupported model raises a
-   `ConfigError` naming the component.
+   `O((N D_max)^2 K)` per step, and nonparametric duration pmfs have no per-step form. `duration_conditioning` other than `current` is out
+   of scope too (batch EM refuses it as well). An unsupported model raises a `ConfigError` naming the component.
 3. **Defaults.** `kappa = 0.7` (inside `(0.5, 1]`, best of the measured values; `kappa = 1` is allowed and means
    "stationary data"), burn-in `t_min = max(500, 25 * n_free)` observations with the parameters held fixed while
    the statistics accumulate, `update_every = 1` (an integer `> 1` runs the M-step every `k` observations and counts
@@ -56,13 +57,16 @@ S_t      = sum_j alpha_t(j) rho_t(j)        theta_t = m_step(S_t)  for t >= t_mi
    that is never visited keeps its previous parameters). Configuration under `online.em: {kappa, burn_in,
    update_every}`; absent = no online updates (the current behaviour).
 4. **`OnlineState` layout (state version 2).** Added to the arrays of `state.safetensors`: `rho (S, K)` float64
-   (`K` = size of the statistics vector: `2 R_rate + R N` transition / rate counts plus the family statistics),
+   (`K` = size of the statistics vector: the rate-row stay / advance counts and the jump counts of the state
+   space's `rate_index_of` / `row_of_state` layout plus the family statistics; the prototype's `N^2` counts are the
+   geometric-only special case),
    `stats (K,)`, `u (n_free,)` the *current* unconstrained parameter vector, and the integer `n_updates`; the
    metadata gains `online_em: {kappa, burn_in, update_every}`. Size `8 (S K + K + n_free)` bytes, e.g. `S = 6`,
-   `K = 40`: about 2 kB. `spec_hash` is unchanged: it ties the state to the model *structure and parameter layout*,
-   not to the values, so a state whose parameters moved still loads against its fit; the saved `u` wins over the
-   bundle's parameters on load (`load_state` documents it). Version-1 states keep loading (no online EM, parameters
-   from the bundle).
+   `K = 40`: about 2 kB. `spec_hash` is **not** changed and keeps being the hash of the *original fit* (it includes
+   the parameter values, `online/state.py`): a state loads only against the fit it came from, and the saved `u`
+   then overrides that fit's parameters. E15-T05 must make `OnlineFilter` and `load_state` apply `u` over the fit's
+   parameters, bump `STATE_VERSION` to 2, **read and check the version on load** (reject unknown versions; a
+   version-1 state loads without online EM and with the fit's parameters).
 5. **Reproducibility.** The update is part of the single jitted `OnlineFilter.update` step (same function for
    `push` and `push_many`), so streaming one row at a time, `push_many` and a save / load round trip in the middle
    are **bitwise equal** to each other; the schedule counts observations (`t`), not calls. Equality with the *offline*

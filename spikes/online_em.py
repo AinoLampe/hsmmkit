@@ -193,8 +193,18 @@ def initial_params() -> Params:
 
 
 if __name__ == "__main__":
-    y_, _, s1 = simulate_drift()
+    import time
+
     for kappa_ in (0.55, 0.6, 0.7, 0.8, 1.0):
-        path, _ = track(y_, initial_params(), kappa_)
-        err = np.abs(path[2000:, 1] - s1[2000:]) / s1[2000:]
-        print(f"kappa={kappa_}: mean |sigma_1 error| after t=2000: {err.mean():.3%}")
+        errors = []
+        for seed_ in range(5):
+            y_, _, s1 = simulate_drift(seed=seed_)
+            path, _ = track(y_, initial_params(), kappa_)
+            errors.append(float(np.mean(np.abs(path[2000:, 1] - s1[2000:]) / s1[2000:])))
+        print(
+            f"kappa={kappa_}: mean |sigma_1 error| after t=2000 over 5 seeds: {np.round(errors, 4).tolist()}"
+        )
+    y_, _, _ = simulate_drift()
+    started = time.perf_counter()
+    track(y_, initial_params(), 0.7)
+    print(f"cost: {(time.perf_counter() - started) / y_.shape[0] * 1e6:.0f} microseconds per step")

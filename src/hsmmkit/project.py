@@ -194,10 +194,7 @@ def _train_end(obs: ObservationSet, backtest: BacktestCfg) -> Any:  # noqa: ANN4
 
 def _nan_to_none(rows: Sequence[Mapping[Any, Any]]) -> list[dict[str, Any]]:
     """Table records with `NaN` replaced by `None` (strict JSON)."""
-    return [
-        {k: (None if isinstance(v, float) and v != v else v) for k, v in row.items()}
-        for row in rows
-    ]
+    return [{k: (None if isinstance(v, float) and v != v else v) for k, v in row.items()} for row in rows]
 
 
 def engine_for(config: ProjectConfig, kind: str) -> ExpandedHMMEngine | ExplicitDurationEngine:
