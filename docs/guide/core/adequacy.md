@@ -15,8 +15,8 @@ estimation:
 from hsmmkit.selection import pseudo_residuals, shapiro_wilk
 
 res = pseudo_residuals(fit, data)
-res.table      # per series: n, shapiro_w, shapiro_p, Ljung-Box p of r and r^2 at lags 10 / 20
-res.qq         # theoretical vs sample quantiles, ready to plot
+res.table  # per series: n, shapiro_w, shapiro_p, Ljung-Box p of r and r^2 at lags 10 / 20
+res.qq  # theoretical vs sample quantiles, ready to plot
 ```
 
 The one-step predictive distribution of series `m` is
@@ -46,7 +46,7 @@ spaced order statistics) and equals `scipy.stats.shapiro` to better than 1e-6 in
 from hsmmkit.selection import ppc
 
 chk = ppc(fit, data, R=200, seed=0, statistics=("acf_abs", "sojourn_mean", "kurtosis"))
-chk.table      # statistic, element, observed, rep_mean, rep_lower, rep_upper, p
+chk.table  # statistic, element, observed, rep_mean, rep_lower, rep_upper, p
 ```
 
 `R` datasets with the observed lengths, time steps and covariate paths are simulated from the fitted model (an

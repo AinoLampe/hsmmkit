@@ -105,13 +105,19 @@ def _draw_params(fit: FitResult, rng: np.random.Generator) -> dict[str, Any]:
     post = samples["posterior"]
     out: dict[str, Any] = dict(fit.params)
     chain_draw: tuple[int, int] | None = None
+    matched = 0
     for name in fit.params:
         if name not in post:
             continue
+        matched += 1
         arr = np.asarray(post[name])
         if chain_draw is None:
             chain_draw = (int(rng.integers(arr.shape[0])), int(rng.integers(arr.shape[1])))
         out[name] = np.asarray(arr[chain_draw[0], chain_draw[1]])
+    if matched == 0:
+        raise ConfigError(
+            "the posterior samples contain none of the model's parameters", path="posterior_samples"
+        )
     return out
 
 
@@ -123,7 +129,7 @@ def _regimes_of(fit: FitResult, data: PreparedDataset) -> np.ndarray:
 
 def _evaluate(name: str, fit: FitResult, data: PreparedDataset) -> Mapping[str, float]:
     fn = REGISTRY.get("ppc_statistic", name)
-    rows = np.asarray(data.mask).all(axis=-1)
+    rows = np.asarray(data.mask).all(axis=-1)  # unobserved rows are dropped: lags span the gaps
     y = np.asarray(data.observations)[rows]
     cache: dict[str, np.ndarray] = {}
 

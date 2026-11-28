@@ -14,8 +14,8 @@ probabilities of
   same step (`w_i^{(m)} proportional to P_i prod_{k<m} phi(z_{i,k}) / L_{i,kk}`), `z_i = L_i^{-1} (y - mu_i)`.
 
 Families without a usable `cdf` are skipped with a note. `shapiro_wilk` is an own implementation of Royston's
-AS R94 algorithm (`n <= 5000`; longer samples use 5000 evenly spaced order statistics), validated against
-scipy in the dev tests.
+AS R94 algorithm (`n <= 5000`; longer samples use a seeded random subsample of 5000 values, so the p-value is
+indicative only), validated against scipy in the dev tests.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ import pandas as pd
 
 from hsmmkit.evaluation.metrics.predictive import ljung_box, predictive_regime_probs
 from hsmmkit.model.emission.base import Support
+from hsmmkit.utils.errors import HsmmkitError
 
 if TYPE_CHECKING:
     from hsmmkit.data.contracts import PreparedDataset
@@ -62,7 +63,8 @@ def _norm_sf(x: float) -> float:
 def shapiro_wilk(x: np.ndarray | list[float]) -> tuple[float, float]:
     """`(W, p)` of the Shapiro-Wilk normality test (Royston 1992, algorithm AS R94), `3 <= n <= 5000`.
 
-    Samples with more than 5000 values use 5000 evenly spaced order statistics. A constant sample gives
+    Samples with more than 5000 values use a seeded random subsample of 5000 values (the p-value is then
+    indicative only). A constant sample gives
     `(nan, nan)`.
 
     Raises:
@@ -73,8 +75,10 @@ def shapiro_wilk(x: np.ndarray | list[float]) -> tuple[float, float]:
     n = y.shape[0]
     if n < 3:
         raise ValueError("Shapiro-Wilk needs at least 3 values")
-    if n > _SW_MAX:
-        y = y[np.round(np.linspace(0, n - 1, _SW_MAX)).astype(int)]
+    if (
+        n > _SW_MAX
+    ):  # a seeded random subsample: an evenly spaced quantile grid would be too smooth for the null
+        y = np.sort(np.random.default_rng(0).choice(y, size=_SW_MAX, replace=False))
         n = _SW_MAX
     if y[-1] - y[0] < 1e-12 * max(abs(y[-1]), 1.0):
         return float("nan"), float("nan")
@@ -226,7 +230,7 @@ def pseudo_residuals(
         else:
             cdf_t = emission.cdf(y, data.dt, fit.params, z_e)  # (T, N, M)
             u = np.asarray(jnp.sum(pred[:, :, None] * cdf_t, axis=1))
-    except (NotImplementedError, AttributeError, TypeError, ValueError) as exc:
+    except (NotImplementedError, AttributeError, TypeError, ValueError, HsmmkitError) as exc:
         notes.append(f"{type(emission).__name__}: no usable cdf ({type(exc).__name__}: {exc}); skipped")
         u = np.full((t_len, m_series), np.nan)
     observed = np.asarray(data.mask)

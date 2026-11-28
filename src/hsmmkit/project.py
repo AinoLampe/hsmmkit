@@ -192,6 +192,14 @@ def _train_end(obs: ObservationSet, backtest: BacktestCfg) -> Any:  # noqa: ANN4
     return min(end, last)
 
 
+def _nan_to_none(rows: Sequence[Mapping[Any, Any]]) -> list[dict[str, Any]]:
+    """Table records with `NaN` replaced by `None` (strict JSON)."""
+    return [
+        {k: (None if isinstance(v, float) and v != v else v) for k, v in row.items()}
+        for row in rows
+    ]
+
+
 def engine_for(config: ProjectConfig, kind: str) -> ExpandedHMMEngine | ExplicitDurationEngine:
     """The engine `kind` names, configured from `config.estimation` (`chunk_size`/`parallel_scan`)."""
     if kind == "explicit":
@@ -517,19 +525,23 @@ class Project:
         """`estimation.diagnostics` sections of the fit report: pseudo-residual and PPC tables (E14-T05)."""
         out: dict[str, object] = {}
         wanted = self.config.estimation.diagnostics
-        try:
-            if "pseudo_residuals" in wanted:
+        log = get_logger("hsmmkit.fit")
+        if "pseudo_residuals" in wanted:
+            try:
                 res = pseudo_residuals(fit, data, engine_for(self.config, fit.spec.engine))
                 out["pseudo_residuals"] = {
                     "kind": res.kind,
-                    "table": res.table.to_dict(orient="records"),
+                    "table": _nan_to_none(res.table.to_dict(orient="records")),
                     "notes": list(res.notes),
                 }
-            if "ppc" in wanted:
+            except Exception as exc:
+                log.warning("pseudo_residuals_unavailable", error=repr(exc))
+        if "ppc" in wanted:
+            try:
                 chk = ppc(fit, data, self.config.estimation.ppc_replicates, self.config.project.seed)
-                out["ppc"] = {"table": chk.table.to_dict(orient="records")}
-        except HsmmkitError as exc:
-            get_logger("hsmmkit.fit").warning("adequacy_unavailable", error=str(exc))
+                out["ppc"] = {"table": _nan_to_none(chk.table.to_dict(orient="records"))}
+            except Exception as exc:
+                log.warning("ppc_unavailable", error=repr(exc))
         return out
 
     def _write_fit_report(self, fit: FitResult, data: PreparedDataset | SequenceBatch) -> None:

@@ -108,12 +108,17 @@ def test_e14_t05_rosenblatt_residuals_of_a_full_covariance_gaussian_are_independ
     assert abs(float(np.corrcoef(res.residuals[:, 0], res.residuals[:, 1])[0, 1])) < 0.1
 
 
-def test_e14_t05_families_without_a_cdf_are_skipped_with_a_note(gauss_spec: Any) -> None:  # noqa: ANN401
-    """A family whose `cdf` raises is reported in `notes`; the residuals are NaN, nothing crashes."""
+@pytest.mark.parametrize("error", ["not_implemented", "config"])
+def test_e14_t05_families_without_a_cdf_are_skipped_with_a_note(gauss_spec: Any, error: str) -> None:  # noqa: ANN401
+    """A family whose `cdf` raises (also a `ConfigError`, as MS-AR does) is noted; nothing crashes."""
     import dataclasses
+
+    from hsmmkit.utils.errors import ConfigError
 
     class _NoCdf(type(gauss_spec.emission)):  # type: ignore[misc]
         def cdf(self, *args: object, **kwargs: object) -> object:
+            if error == "config":
+                raise ConfigError("no cdf for this form", path="model.emission")
             raise NotImplementedError("no cdf")
 
     emission = _NoCdf(
