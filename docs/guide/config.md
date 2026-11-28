@@ -93,6 +93,8 @@ The whole resolved configuration of the domain-neutral core.
 | `device` | `'cpu' \| 'gpu' \| 'auto'` | `'auto'` |
 | `chunk_size` | `int \| None` | `None` |
 | `parallel_scan` | `bool` | `False` |
+| `diagnostics` | `list['pseudo_residuals' \| 'ppc']` | `['pseudo_residuals']` |
+| `ppc_replicates` | `int` | `200` |
 
 ## `forecast`
 

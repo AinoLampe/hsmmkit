@@ -76,6 +76,8 @@ from hsmmkit.selection.cv import (
     replace_cv_section,
 )
 from hsmmkit.selection.grid import render_grid_markdown, run_grid
+from hsmmkit.selection.ppc import ppc
+from hsmmkit.selection.pseudo_residuals import pseudo_residuals
 from hsmmkit.statespace.builders import build_expanded, build_explicit
 from hsmmkit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from hsmmkit.utils.errors import ConfigError, HsmmkitError, PersistenceError
@@ -511,6 +513,25 @@ class Project:
             ),
         )
 
+    def _adequacy_sections(self, fit: FitResult, data: PreparedDataset) -> dict[str, object]:
+        """`estimation.diagnostics` sections of the fit report: pseudo-residual and PPC tables (E14-T05)."""
+        out: dict[str, object] = {}
+        wanted = self.config.estimation.diagnostics
+        try:
+            if "pseudo_residuals" in wanted:
+                res = pseudo_residuals(fit, data, engine_for(self.config, fit.spec.engine))
+                out["pseudo_residuals"] = {
+                    "kind": res.kind,
+                    "table": res.table.to_dict(orient="records"),
+                    "notes": list(res.notes),
+                }
+            if "ppc" in wanted:
+                chk = ppc(fit, data, self.config.estimation.ppc_replicates, self.config.project.seed)
+                out["ppc"] = {"table": chk.table.to_dict(orient="records")}
+        except HsmmkitError as exc:
+            get_logger("hsmmkit.fit").warning("adequacy_unavailable", error=str(exc))
+        return out
+
     def _write_fit_report(self, fit: FitResult, data: PreparedDataset | SequenceBatch) -> None:
         spec = fit.spec
         space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
@@ -523,6 +544,8 @@ class Project:
         except HsmmkitError as exc:  # the fit itself succeeded: report without diagnostics
             get_logger("hsmmkit.fit").warning("diagnostics_unavailable", error=str(exc))
             diagnostics = {}
+        if not isinstance(data, SequenceBatch):
+            diagnostics.update(self._adequacy_sections(fit, data))
         report = {
             "name": self.config.project.name,
             "seed": self.config.project.seed,

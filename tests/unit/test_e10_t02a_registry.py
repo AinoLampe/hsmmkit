@@ -65,6 +65,7 @@ def test_e10_t02a_all_kinds_exist_and_clock_transform_preset_start_empty_or_regi
     assert set(KINDS) == {
         "estimator",
         "splitter",
+        "ppc_statistic",
         "emission",
         "duration",
         "metric",

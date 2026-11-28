@@ -22,13 +22,11 @@ null), which is the main use.
 
 from __future__ import annotations
 
-import dataclasses
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
@@ -36,9 +34,9 @@ from hsmmkit.config.schema import EstimationSection
 from hsmmkit.data.batch import SequenceBatch
 from hsmmkit.estimation import fit as run_fit
 from hsmmkit.estimation.relabel import location_features, relabel_permutation
-from hsmmkit.inference.simulate import simulate_paths
 from hsmmkit.model.lattice import permute_states
 from hsmmkit.model.params.manager import ParamManager
+from hsmmkit.selection.replicate import simulate_like as _simulate_like
 from hsmmkit.statespace.builders import build_expanded, build_explicit
 from hsmmkit.utils.errors import ConfigError, HsmmkitError
 from hsmmkit.utils.rng import PURPOSE_BOOT, derive_seed, key_for
@@ -116,40 +114,6 @@ def _check_model(fit: FitResult, *, name: str = "fit") -> None:
             f"{name}: autoregressive emissions are not supported (the own lags of simulated data)",
             path="model.emission",
         )
-
-
-def _simulate_like(theta: Params, spec: ModelSpec, data: PreparedDataset | SequenceBatch, key: Any) -> Any:  # noqa: ANN401
-    """`data` with the observations replaced by one simulated path per sequence (same `dt`, covariates)."""
-    import jax
-
-    space = _space(spec)
-    seqs = data.sequences if isinstance(data, SequenceBatch) else (data,)
-    names = data.group_names if isinstance(data, SequenceBatch) else (None,)
-    out = []
-    for b, seq in enumerate(seqs):
-        th = theta
-        if spec.n_groups > 1:
-            group = seq.group if seq.group is not None else names[0]
-            if group not in names:
-                raise ConfigError(f"sequence group {group!r} is not one of {list(names)}", path="group")
-            th = {**theta, "initial.logits": theta["initial.logits"][list(names).index(group)]}
-        res = simulate_paths(
-            jax.random.fold_in(key, b),
-            th,
-            spec,
-            space,
-            seq.dt,
-            seq.cov_transition,
-            seq.cov_duration,
-            seq.cov_emission,
-            1,
-        )
-        out.append(
-            dataclasses.replace(seq, observations=jnp.asarray(res.values[0]), labels=None, boundaries=None)
-        )
-    if isinstance(data, SequenceBatch):
-        return dataclasses.replace(data, sequences=tuple(out))
-    return out[0]
 
 
 def _relabel(theta: Params, pivot: Params, spec: ModelSpec) -> Params:

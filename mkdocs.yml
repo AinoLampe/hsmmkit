@@ -59,6 +59,7 @@ nav:
       - Cross-validation: guide/cv.md
       - Model selection (grid): guide/core/model_selection.md
       - Uncertainty (bootstrap): guide/core/uncertainty.md
+      - Model adequacy (residuals, PPC): guide/core/adequacy.md
       - Validation: guide/validation.md
       - Python API and CLI: guide/project.md
       - Command line: guide/cli.md

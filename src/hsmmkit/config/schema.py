@@ -15,7 +15,7 @@ import importlib
 import itertools
 import warnings as warnings_module
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 
 import pydantic
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -480,6 +480,11 @@ class EstimationSection(_Base):
     device: Literal["cpu", "gpu", "auto"] = "auto"
     chunk_size: int | None = Field(default=None, ge=1)  # explicit engine: steps per chunk (None = auto)
     parallel_scan: bool = False  # expanded engine: associative-scan smoothing (memory T*S^2)
+    diagnostics: list[Literal["pseudo_residuals", "ppc"]] = Field(
+        default_factory=lambda: cast("list[Literal['pseudo_residuals', 'ppc']]", ["pseudo_residuals"])
+    )
+    """Model-adequacy sections of `fit_report.json` (E14-T05): normal pseudo-residuals and / or the PPC."""
+    ppc_replicates: int = Field(default=200, ge=2)
 
     @field_validator("init")
     @classmethod
