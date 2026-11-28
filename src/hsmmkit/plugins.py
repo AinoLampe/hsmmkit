@@ -31,6 +31,7 @@ Kind = Literal[
     "preset",
     "estimator",
     "splitter",
+    "ppc_statistic",
 ]
 KINDS: tuple[str, ...] = (
     "emission",
@@ -44,6 +45,7 @@ KINDS: tuple[str, ...] = (
     "preset",
     "estimator",
     "splitter",
+    "ppc_statistic",
 )
 
 T = TypeVar("T")

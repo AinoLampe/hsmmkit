@@ -76,6 +76,8 @@ from hsmmkit.selection.cv import (
     replace_cv_section,
 )
 from hsmmkit.selection.grid import render_grid_markdown, run_grid
+from hsmmkit.selection.ppc import ppc
+from hsmmkit.selection.pseudo_residuals import pseudo_residuals
 from hsmmkit.statespace.builders import build_expanded, build_explicit
 from hsmmkit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from hsmmkit.utils.errors import ConfigError, HsmmkitError, PersistenceError
@@ -188,6 +190,14 @@ def _train_end(obs: ObservationSet, backtest: BacktestCfg) -> Any:  # noqa: ANN4
     seconds = round(backtest.initial_train * CALENDAR_DAYS_PER_YEAR * 86_400)
     end: np.datetime64 = times[0] + np.timedelta64(seconds, "s")
     return min(end, last)
+
+
+def _nan_to_none(rows: Sequence[Mapping[Any, Any]]) -> list[dict[str, Any]]:
+    """Table records with `NaN` replaced by `None` (strict JSON)."""
+    return [
+        {k: (None if isinstance(v, float) and v != v else v) for k, v in row.items()}
+        for row in rows
+    ]
 
 
 def engine_for(config: ProjectConfig, kind: str) -> ExpandedHMMEngine | ExplicitDurationEngine:
@@ -511,6 +521,29 @@ class Project:
             ),
         )
 
+    def _adequacy_sections(self, fit: FitResult, data: PreparedDataset) -> dict[str, object]:
+        """`estimation.diagnostics` sections of the fit report: pseudo-residual and PPC tables (E14-T05)."""
+        out: dict[str, object] = {}
+        wanted = self.config.estimation.diagnostics
+        log = get_logger("hsmmkit.fit")
+        if "pseudo_residuals" in wanted:
+            try:
+                res = pseudo_residuals(fit, data, engine_for(self.config, fit.spec.engine))
+                out["pseudo_residuals"] = {
+                    "kind": res.kind,
+                    "table": _nan_to_none(res.table.to_dict(orient="records")),
+                    "notes": list(res.notes),
+                }
+            except Exception as exc:
+                log.warning("pseudo_residuals_unavailable", error=repr(exc))
+        if "ppc" in wanted:
+            try:
+                chk = ppc(fit, data, self.config.estimation.ppc_replicates, self.config.project.seed)
+                out["ppc"] = {"table": _nan_to_none(chk.table.to_dict(orient="records"))}
+            except Exception as exc:
+                log.warning("ppc_unavailable", error=repr(exc))
+        return out
+
     def _write_fit_report(self, fit: FitResult, data: PreparedDataset | SequenceBatch) -> None:
         spec = fit.spec
         space = build_explicit(spec) if spec.engine == "explicit" else build_expanded(spec)
@@ -523,6 +556,8 @@ class Project:
         except HsmmkitError as exc:  # the fit itself succeeded: report without diagnostics
             get_logger("hsmmkit.fit").warning("diagnostics_unavailable", error=str(exc))
             diagnostics = {}
+        if not isinstance(data, SequenceBatch):
+            diagnostics.update(self._adequacy_sections(fit, data))
         report = {
             "name": self.config.project.name,
             "seed": self.config.project.seed,
