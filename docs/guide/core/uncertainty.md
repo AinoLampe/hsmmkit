@@ -24,7 +24,7 @@ parameters, the interval the 2.5 / 97.5 percentiles. `ratio = se / hessian_se` c
 fit when it is available (it is not for a singular Hessian or explicit gamma shapes). Refits that land in a
 permuted regime labelling are relabelled towards `theta_hat` (the assignment used for MCMC draws).
 
-* `refit_from="mle"` (default) refits from `theta_hat` only; `"init"` uses the configured init strategies, which
+* `refit_from="mle"` (default) refits from `theta_hat` only; `"init"` uses the configured init methods, which
   also captures start-dependent local optima.
 * Replicate `r` uses `key_for(seed, PURPOSE_BOOT, r)` for the data and `derive_seed(seed, PURPOSE_BOOT, r)` for the
   fit, so the table is deterministic per seed and identical with `workers > 1` (a `spawn` process pool).
@@ -43,7 +43,7 @@ lrt.statistic, lrt.p_value
 
 `D = 2 (ℓ₁ − ℓ₀)` is compared with `D_r` of `R` datasets simulated under the null model `fit0` and fitted with both
 models; `p = (1 + #{D_r ≥ D}) / (R + 1)`. The null is refitted from its optimum, the alternative from its own
-optimum **and** the configured init strategies, and `D_r` is clipped at 0, so a poor local optimum of the larger
+optimum **and** the configured init methods, and `D_r` is clipped at 0, so a poor local optimum of the larger
 model does not make the null distribution too small. Use it instead of the χ² approximation whenever the models
 differ in the number of regimes, or a tested parameter lies on the boundary of its space.
 

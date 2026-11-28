@@ -279,7 +279,7 @@ def bootstrap_se(
         data: the data it was fitted on (lengths, `Delta_t` and covariates are reused).
         R: number of bootstrap replicates (>= 2).
         seed: replicate `r` uses `key_for(seed, PURPOSE_BOOT, r)` (data), `derive_seed(...)` (fit).
-        refit_from: `"mle"` (one refit from `theta_hat`) or `"init"` (the configured init strategies).
+        refit_from: `"mle"` (one refit from `theta_hat`) or `"init"` (the configured init methods).
         estimation: the refit configuration (default: the fit's estimator, one start).
         require_converged: also exclude refits that stopped at `max_iter`.
         workers: replicates in a `spawn` process pool when `> 1`.
@@ -364,7 +364,7 @@ def bootstrap_lrt(
     """Parametric-bootstrap likelihood-ratio test of the null model `fit0` against `fit1` (`fit0 < fit1`).
 
     The null model is refitted from its optimum on each simulated dataset; the alternative is refitted from
-    its own optimum **and** the configured init strategies (`estimation.restarts` starts, default 1 plus the
+    its own optimum **and** the configured init methods (`estimation.restarts` starts, default 1 plus the
     warm start), so that `D_r >= 0` is not lost to a poor local optimum. `D_r` is clipped at 0. The two
     models are not refitted with equal effort (the alternative has more starts), which makes the p-value
     conservative; the observed `D` uses the log-likelihoods of the fits passed in.
