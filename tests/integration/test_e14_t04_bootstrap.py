@@ -161,7 +161,9 @@ def test_e14_t04_bootstrap_lrt_two_versus_three_states(tmp_path: Path, truth_n: 
     for seed in range(5):
         data = _simulate_like(truth, spec, template, key_for(21, PURPOSE_BOOT, seed))
         fit0, fit1 = _lrt_pair(tmp_path, data)
-        res = bootstrap_lrt(fit0, fit1, data, 99, seed, estimation=_EST.model_copy(update={"restarts": 1}))
+        res = bootstrap_lrt(
+            fit0, fit1, data, 99, seed, estimation=_EST.model_copy(update={"restarts": 1}), workers=2
+        )
         passed += int(res.p_value > 0.05) if truth_n == 2 else int(res.p_value < 0.05)
     assert passed >= 4
 
