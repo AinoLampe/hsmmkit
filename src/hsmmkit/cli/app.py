@@ -264,6 +264,32 @@ def build_app(
             data = ctx.load_prepared(project)
             project.decode(project_cls.load(model), data, write=True, augmented=augmented, samples=samples)
 
+    @app.command("bootstrap")
+    def bootstrap_cmd(
+        config_path: Path,
+        model: Path = typer.Option(..., "--model", help="Model bundle directory."),
+        n_boot: int = typer.Option(200, "--R", min=2, help="Bootstrap replicates."),
+        refit_from: str = typer.Option(
+            "mle", "--refit-from", help="mle (warm start) or init (init methods)."
+        ),
+        workers: int = typer.Option(1, "--workers", min=1, help="Processes for the replicates."),
+    ) -> None:
+        """Parametric-bootstrap standard errors: `bootstrap.parquet` and a `## Bootstrap` report section."""
+        with exit_on_error():
+            configure_logging(ctx.options.log_level or "INFO")
+            if refit_from not in ("mle", "init"):
+                raise ConfigError("--refit-from must be 'mle' or 'init'", path="refit_from")
+            project = ctx.project(config_path)
+            data = project.load_batch() if project.is_multi_sequence() else ctx.load_prepared(project)
+            project.bootstrap(
+                project_cls.load(model),
+                data,
+                n_boot=n_boot,
+                refit_from="init" if refit_from == "init" else "mle",
+                workers=workers,
+                write=True,
+            )
+
     @app.command("forecast")
     def forecast_cmd(
         config_path: Path,

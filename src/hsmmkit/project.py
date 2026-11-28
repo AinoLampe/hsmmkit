@@ -17,7 +17,7 @@ import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, NamedTuple, Self, cast
+from typing import Any, ClassVar, Literal, NamedTuple, Self, cast
 
 import jax.numpy as jnp
 import numpy as np
@@ -62,6 +62,12 @@ from hsmmkit.persistence.results import (
     write_simulation,
 )
 from hsmmkit.persistence.store import ModelStore
+from hsmmkit.selection.bootstrap import (
+    BootstrapResult,
+    bootstrap_se,
+    render_bootstrap_section,
+    replace_bootstrap_section,
+)
 from hsmmkit.selection.cv import (
     CVResult,
     cross_validate,
@@ -1005,6 +1011,53 @@ class Project:
             except OSError as exc:
                 raise PersistenceError(f"cannot write the grid to {target}: {exc}", path=str(target)) from exc
         return table
+
+    def bootstrap(
+        self,
+        fit: FitResult,
+        data: PreparedDataset | SequenceBatch,
+        *,
+        n_boot: int = 200,
+        refit_from: Literal["mle", "init"] = "mle",
+        workers: int = 1,
+        write: bool = False,
+    ) -> BootstrapResult:
+        """Parametric-bootstrap standard errors of `fit` (E14-T04) with the configured estimator settings.
+
+        `write=True` writes `bootstrap.parquet` and replaces the `## Bootstrap` section of `report.md` (and
+        writes `bootstrap.md`) in the output directory.
+
+        Raises:
+            ConfigError: unsupported estimator / emission, or too few accepted refits.
+            PersistenceError: the outputs cannot be written.
+        """
+        result = bootstrap_se(
+            fit,
+            data,
+            n_boot,
+            self.config.project.seed,
+            refit_from=refit_from,
+            estimation=self.config.estimation.model_copy(update={"method": fit.estimator}),
+            workers=workers,
+        )
+        if write:
+            target = self.out_dir
+            section = render_bootstrap_section(result)
+            try:
+                target.mkdir(parents=True, exist_ok=True)
+                pq.write_table(
+                    pa.Table.from_pandas(result.table, preserve_index=False), target / "bootstrap.parquet"
+                )
+                (target / "bootstrap.md").write_text(section, encoding="utf-8")
+                report = target / "report.md"
+                if report.exists():
+                    text = report.read_text(encoding="utf-8")
+                    report.write_text(replace_bootstrap_section(text, section), encoding="utf-8")
+            except OSError as exc:
+                raise PersistenceError(
+                    f"cannot write the bootstrap to {target}: {exc}", path=str(target)
+                ) from exc
+        return result
 
     # --- selftest ----------------------------------------------------------------------------------
 

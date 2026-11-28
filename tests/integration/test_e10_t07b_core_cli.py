@@ -79,6 +79,7 @@ def test_e10_t07b_core_app_has_no_fetch_and_the_documented_commands() -> None:
         "simulate",
         "backtest",
         "cv",
+        "bootstrap",
         "compare",
         "selftest",
         "stream",
