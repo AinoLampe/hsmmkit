@@ -239,7 +239,7 @@ def _r7(seed: int, estimator: str, quick: bool) -> ExtReport:
         "covariance": "full",
         "scale_by_dt": False,
         "ito_correction": False,
-        "params": {"mean": {"mode": "free", "init": [0.0, 0.0, 0.0]}},
+        "params": {"mean": {"mode": "free", "init": [0.0, 0.0, 0.0]}, "chol": {"mode": "free"}},
     }
     duration = {
         "family": "negbin",
@@ -430,7 +430,7 @@ def _r8(seed: int, estimator: str, quick: bool) -> ExtReport:
         }
     )
     res = _fit(spec, data, est, seed, ParamManager(spec.param_specs).init_u())
-    rate_hat = np.asarray(res.params["emission.rate"]).ravel()
+    rate_hat = np.exp(np.asarray(res.params["emission.eta"]).ravel())
     order = np.argsort(rate_hat)
     per_day = rate_hat[order] * nominal
     soj = np.asarray(spec.duration.mean_sojourn(res.params, nominal))[order] / nominal
@@ -465,8 +465,8 @@ def _r10(seed: int, estimator: str, quick: bool) -> ExtReport:
         "scale_by_dt": False,
         "ito_correction": False,
         "params": {
-            "mean": {"mode": "free", "init": [0.0, 0.0]},
-            "scale": {"mode": "free", "init": [1.0, 1.0]},
+            "mean": {"mode": "free", "init": [0.0, 0.0, 0.0, 0.0]},
+            "scale": {"mode": "free", "init": [1.0, 1.0, 1.0, 1.0]},
         },
     }
     duration = {
